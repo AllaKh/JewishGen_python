@@ -1,11 +1,22 @@
+"""
+config/constants.py
+-------------------
+Single source of truth for all lists and paths used by both the GUI and
+the scraper. The scraper also defines its own copies of DATA_TYPES /
+SEARCH_TYPES / COUNTRIES as a fallback — keep them in sync manually if
+you add a new option.
+"""
 from pathlib import Path
 
-HOME_URL = "https://www.jewishgen.org/databases/"
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
+# ── project layout ─────────────────────────────────────────────────────── #
+ROOT_DIR    = Path(__file__).resolve().parent.parent
 PROFILE_DIR = ROOT_DIR / "profile" / "chromium_profile"
 RESULTS_DIR = ROOT_DIR / "results"
 
+# ── JewishGen home URL ─────────────────────────────────────────────────── #
+HOME_URL = "https://www.jewishgen.org/databases/"
+
+# ── search form options ────────────────────────────────────────────────── #
 COUNTRIES = [
     "ALL COUNTRIES", "Algeria", "Argentina", "Austria / Czechia", "Belarus",
     "Bulgaria", "Canada", "CryptoJews", "Egypt", "France", "Germany",
@@ -26,13 +37,10 @@ DATA_TYPES = [
 
 SEARCH_TYPES = [
     "Phonetically Like",
-    "Exact Match",
-    "Contains",
-    "Starts With",
-]
-
-OUTPUT_FORMATS = [
-    "DOCX",
-    "XLSX",
-    "BOTH",
+    "Sounds Like",
+    "Starts with",
+    "is Exactly",
+    "Fuzzy Match",
+    "Fuzzier Match",
+    "Fuzziest Match",
 ]

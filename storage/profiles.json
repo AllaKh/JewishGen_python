@@ -1,9 +1,34 @@
 [
   {
+    "email": "akhnv@yandex.com",
+    "password": "Rogin5496172",
+    "country": "Ukraine",
+    "keywords": [
+      "Kharkov"
+    ],
+    "rows": [
+      {
+        "data_type": "Surname",
+        "search_type": "Phonetically Like",
+        "text": "Rokhlin"
+      },
+      {
+        "data_type": "Given Name",
+        "search_type": "Phonetically Like",
+        "text": "Lev"
+      }
+    ],
+    "output_folder": "I:/Python Projects/JewishGen_python/results",
+    "output_format": "both",
+    "paid": false
+  },
+  {
     "email": "",
     "password": "",
     "country": "ALL COUNTRIES",
-    "keywords": ["Leibov"],
+    "keywords": [
+      "Leibov"
+    ],
     "rows": [
       {
         "data_type": "Surname",
@@ -11,9 +36,8 @@
         "text": "Leibov"
       }
     ],
-    "docx": true,
-    "xlsx": true,
     "output_folder": "",
+    "output_format": "both",
     "paid": false
   }
 ]

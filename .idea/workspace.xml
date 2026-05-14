@@ -4,25 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/JewishGen_python.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/READ.ME" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/constants.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/settings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/gui/main_window.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/models/search_models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scraper.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/storage/autosave.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/storage/autosave.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/storage/profiles.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/storage/profiles.py" afterDir="false" />
+    <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python v 1.0">
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gui/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/models/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/storage/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/READ.ME" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/constants.py" beforeDir="false" afterPath="$PROJECT_DIR$/config/constants.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/autosave.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/autosave.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/autosave.py" beforeDir="false" afterPath="$PROJECT_DIR$/storage/autosave.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/profiles.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/profiles.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/profiles.py" beforeDir="false" afterPath="$PROJECT_DIR$/storage/profiles.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,6 +33,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "AllaKhananashvili"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "git@github.com:AllaKh/JewishGen_python.git",
+    "accountId": "27ad4f1e-0e25-4723-9970-ebe9126e9c04"
+  }
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 5
 }</component>
@@ -78,6 +84,19 @@
       <option name="presentableId" value="Default" />
       <updated>1778675065041</updated>
     </task>
+    <task id="LOCAL-00001" summary="JewishGen_python v 1.0">
+      <option name="closed" value="true" />
+      <created>1778797849977</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1778797849977</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="JewishGen_python v 1.0" />
+    <option name="LAST_COMMIT_MESSAGE" value="JewishGen_python v 1.0" />
   </component>
 </project>
