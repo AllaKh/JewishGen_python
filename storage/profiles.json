@@ -1,0 +1,19 @@
+[
+  {
+    "email": "",
+    "password": "",
+    "country": "ALL COUNTRIES",
+    "keywords": ["Leibov"],
+    "rows": [
+      {
+        "data_type": "Surname",
+        "search_type": "Phonetically Like",
+        "text": "Leibov"
+      }
+    ],
+    "docx": true,
+    "xlsx": true,
+    "output_folder": "",
+    "paid": false
+  }
+]
