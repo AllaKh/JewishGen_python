@@ -43,6 +43,14 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, Mm
 from docx.enum.section import WD_ORIENT
 
+# Fix Playwright browser path inside PyInstaller bundle
+if getattr(sys, "frozen", False):
+    exe_dir = Path(sys.executable).resolve().parent
+    browser_dir = exe_dir / "ms-playwright"
+
+    if browser_dir.exists():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browser_dir)
+
 try:
     from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 except ImportError:

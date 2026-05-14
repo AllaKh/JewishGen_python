@@ -3,7 +3,7 @@
   "password": "Rogin5496172",
   "country": "Ukraine",
   "keywords": [
-    "Kharkov"
+    "Lev"
   ],
   "rows": [
     {
@@ -12,9 +12,9 @@
       "text": "Rokhlin"
     },
     {
-      "data_type": "Given Name",
+      "data_type": "Town",
       "search_type": "Phonetically Like",
-      "text": "Lev"
+      "text": "Kharkov"
     }
   ],
   "output_folder": "I:/Python Projects/JewishGen_python/results",
