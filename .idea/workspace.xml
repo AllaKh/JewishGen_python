@@ -5,7 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python v 2.0">
+      <change afterPath="$PROJECT_DIR$/gui/jewishgen.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gui/launcher.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/main_window.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/scraper.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/storage/autosave.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/autosave.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/storage/profiles.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/profiles.json" afterDir="false" />
@@ -25,18 +30,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "AllaKhananashvili"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;AllaKhananashvili&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "git@github.com:AllaKh/JewishGen_python.git",
-    "accountId": "27ad4f1e-0e25-4723-9970-ebe9126e9c04"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;git@github.com:AllaKh/JewishGen_python.git&quot;,
+    &quot;accountId&quot;: &quot;27ad4f1e-0e25-4723-9970-ebe9126e9c04&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 5
 }</component>
@@ -92,7 +97,15 @@
       <option name="project" value="LOCAL" />
       <updated>1778799071190</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="JewishGen_python v 2.0">
+      <option name="closed" value="true" />
+      <created>1778801411763</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1778801411763</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">

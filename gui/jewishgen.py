@@ -1,20 +1,26 @@
 """
-gui/main_window.py
-------------------
-Main application window for JewishGen Mass Search.
+gui/jewishgen.py
+----------------
+JewishGen Mass Search window.
 
-Features
---------
-- SVG eye-icon toggle on the password field (real graphic, not emoji)
-- Auto-save on every search start, search finish, and window close
-  → restores ALL fields (email, password, country, rows, keywords,
-    output folder, output format) on next launch
-- profiles.json updated after every successful search
-- AND / OR keyword mode toggle
-- Paid-feature guard with friendly popup
+Fixes vs original main_window.py
+---------------------------------
+1. Apostrophe in search term — validated BEFORE launching the browser.
+   JewishGen's own search engine does not support apostrophes in query
+   terms (it returns an error page or zero results). The user now gets
+   a clear, immediate message instead of a cryptic "Search failed"
+   after waiting for the browser to open.
+
+2. If a search-row text is identical (case-insensitive) to one of the
+   filter keywords the user is warned before the long session starts:
+   that combination makes the filter match every row and causes the
+   program to effectively hang processing tens of thousands of records.
+
+3. Worker.run() is wrapped in try/except so any unhandled scraper
+   exception surfaces as a readable error message in the GUI rather
+   than a silent crash with no feedback.
 """
 
-import base64
 import sys
 import asyncio
 from pathlib import Path
@@ -26,12 +32,12 @@ from PySide6.QtWidgets import (
     QApplication, QGroupBox,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
-from PySide6.QtGui import QPixmap, QIcon, QImage
+from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtSvg import QSvgRenderer
 
 # ---------------------------------------------------------------------------
-# SVG eye icons embedded as base64 — no external image files needed
+# SVG eye icons embedded — no external image files needed
 # ---------------------------------------------------------------------------
 _EYE_OPEN_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
   fill="none" stroke="#555" stroke-width="2"
@@ -52,7 +58,6 @@ _EYE_CLOSED_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24
 
 
 def _svg_to_icon(svg_bytes: bytes, size: int = 20) -> QIcon:
-    """Render an SVG byte-string to a QIcon at *size* × *size* px."""
     renderer = QSvgRenderer(QByteArray(svg_bytes))
     from PySide6.QtGui import QPixmap, QPainter
     pix = QPixmap(size, size)
@@ -80,10 +85,10 @@ except Exception:
 import scraper
 
 # ---------------------------------------------------------------------------
-# Storage layer — storage/ and models/ live at project root
+# Storage layer
 # ---------------------------------------------------------------------------
-_HERE = Path(__file__).resolve().parent   # …/gui/
-_ROOT = _HERE.parent                      # …/project root
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
 
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -121,7 +126,17 @@ class Worker(QThread):
         def _cb(v, text):
             self.progress.emit(int(v), str(text))
         self.payload["progress"] = _cb
-        result = asyncio.run(scraper.run_scraper(**self.payload))
+        try:
+            result = asyncio.run(scraper.run_scraper(**self.payload))
+        except Exception as exc:
+            # Any unhandled exception from the scraper is caught here and
+            # forwarded to the GUI as a structured error result so the user
+            # sees a readable message instead of a silent hang / crash.
+            result = {
+                "ok": False,
+                "error": "exception",
+                "message": f"{type(exc).__name__}: {exc}",
+            }
         self.finished.emit(result)
 
 
@@ -232,7 +247,7 @@ class JewishGenApp(QMainWindow):
         self.setMinimumWidth(840)
         self.setStyleSheet(STYLE)
         self._build_ui()
-        self._load_autosave()   # restore last session on startup
+        self._load_autosave()
 
     # ── BUILD UI ─────────────────────────────────────────────────────────── #
 
@@ -354,7 +369,7 @@ class JewishGenApp(QMainWindow):
     def _current_profile(self) -> "SearchProfile":
         return SearchProfile(
             email=self.email.text().strip(),
-            password=self.password.text(),          # intentionally saved
+            password=self.password.text(),
             country=self.country.currentText(),
             keywords=self._collect_keywords(),
             rows=[
@@ -367,7 +382,6 @@ class JewishGenApp(QMainWindow):
         )
 
     def _apply_profile(self, p: "SearchProfile"):
-        """Fill all GUI widgets from a SearchProfile."""
         if p.email:    self.email.setText(p.email)
         if p.password: self.password.setText(p.password)
 
@@ -407,7 +421,6 @@ class JewishGenApp(QMainWindow):
             pass
 
     def _save_autosave(self):
-        """Persist current state to storage/autosave.json."""
         if not (_AUTOSAVE_OK and _MODELS_OK):
             return
         try:
@@ -416,13 +429,11 @@ class JewishGenApp(QMainWindow):
             pass
 
     def _update_profiles(self):
-        """Append (or update) current profile in storage/profiles.json."""
         if not (_PROFILES_OK and _MODELS_OK):
             return
         try:
             current = self._current_profile()
             all_profiles = _profiles.load_all()
-            # Match by email; replace if found, otherwise prepend
             matched = False
             for i, p in enumerate(all_profiles):
                 if p.email and p.email == current.email:
@@ -483,9 +494,82 @@ class JewishGenApp(QMainWindow):
             "cancel_event":  None,
         }
 
+    # ── VALIDATION ───────────────────────────────────────────────────────── #
+
+    @staticmethod
+    def _terms_contain_apostrophe(rows) -> list[str]:
+        """Return list of offending terms that contain an apostrophe.
+
+        JewishGen's search engine does not support apostrophes in query
+        terms — the site itself returns an error or no results when the
+        submitted form contains one.  We catch this client-side so the user
+        gets an immediate, clear message without waiting for the browser.
+        """
+        bad = []
+        for _, _, text in rows:
+            if "'" in text or "\u2019" in text:   # straight ' and curly '
+                bad.append(text)
+        return bad
+
+    def _check_apostrophe(self, rows) -> bool:
+        """Show an error and return False if any search term has an apostrophe.
+        Returns True when it's safe to proceed."""
+        bad = self._terms_contain_apostrophe(rows)
+        if not bad:
+            return True
+        bad_list = "\n".join(f'  • {t}' for t in bad)
+        QMessageBox.warning(
+            self,
+            "Apostrophe not supported",
+            "JewishGen's search engine does not support apostrophes in "
+            "search terms.\n\n"
+            "The following search text contains an apostrophe:\n\n"
+            f"{bad_list}\n\n"
+            "Please remove the apostrophe and try again.\n\n"
+            "Tip: searching without the apostrophe (e.g. \"OBrien\" instead "
+            "of \"O'Brien\") usually finds the same records on JewishGen.",
+        )
+        return False
+
+    def _check_search_vs_filter_overlap(self, rows, keywords) -> bool:
+        """Warn the user if any search-row text exactly matches a filter keyword.
+
+        When this happens the filter matches every result row, causing the
+        scraper to process a huge number of records and appear to hang.
+
+        Returns True → ok to proceed.  Returns False → user cancelled.
+        """
+        row_texts = {text.lower() for _, _, text in rows if text}
+        kw_texts  = {kw.lower() for kw in keywords if kw}
+        overlaps  = row_texts & kw_texts
+        if not overlaps:
+            return True
+
+        overlap_list = ", ".join(f'"{w}"' for w in sorted(overlaps))
+        msg = (
+            f"The following word(s) appear in both the search fields and "
+            f"the filter keywords:\n\n    {overlap_list}\n\n"
+            "This usually means the filter will match every single result "
+            "row, causing the search to process a huge number of records "
+            "and appear to hang for hours.\n\n"
+            "Recommendation: use a more specific filter keyword "
+            "(e.g. a town name or a given name) that is different from the "
+            "surname you are searching for.\n\n"
+            "Do you want to continue anyway?"
+        )
+        reply = QMessageBox.warning(
+            self,
+            "Search and filter overlap",
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return reply == QMessageBox.Yes
+
     # ── RUN ──────────────────────────────────────────────────────────────── #
 
     def _start(self):
+        # ── basic field checks ───────────────────────────────────────────── #
         if not self._collect_rows():
             QMessageBox.warning(self, "No search rows",
                                 "Please fill in at least one search row.")
@@ -499,7 +583,18 @@ class JewishGenApp(QMainWindow):
                                 "Select at least one output format.")
             return
 
-        self._save_autosave()          # save before start (crash safety)
+        rows     = self._collect_rows()
+        keywords = self._collect_keywords()
+
+        # ── FIX #1: apostrophe check — immediate, before any browser opens ── #
+        if not self._check_apostrophe(rows):
+            return
+
+        # ── FIX #2: search/filter overlap warning ─────────────────────────── #
+        if not self._check_search_vs_filter_overlap(rows, keywords):
+            return
+
+        self._save_autosave()
         self.start_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.status_lbl.setText("Starting…")
@@ -517,8 +612,8 @@ class JewishGenApp(QMainWindow):
         self.start_btn.setEnabled(True)
 
         if result.get("ok"):
-            self._save_autosave()       # save final state
-            self._update_profiles()     # update profiles.json
+            self._save_autosave()
+            self._update_profiles()
 
             parts = []
             if result.get("docx_count"): parts.append(f"{result['docx_count']} Word file(s)")
@@ -537,8 +632,17 @@ class JewishGenApp(QMainWindow):
             self.status_lbl.setText("Stopped — paid feature.")
 
         else:
-            QMessageBox.critical(self, "Error",
-                "Search failed. Check the terminal window for details.")
+            # ── FIX #3: show the actual exception message, not a generic one ─ #
+            err_detail = result.get("message", "")
+            if err_detail:
+                msg = (
+                    "The search could not be completed.\n\n"
+                    f"{err_detail}\n\n"
+                    "Check the terminal window for the full traceback."
+                )
+            else:
+                msg = "Search failed. Check the terminal window for details."
+            QMessageBox.critical(self, "Error", msg)
             self.status_lbl.setText("Error — see terminal.")
 
 

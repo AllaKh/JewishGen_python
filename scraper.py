@@ -774,15 +774,54 @@ async def fill_search_form(page, rows, country):
             f"{available_rows} and try again."
         )
 
+    async def _safe_select(combo, label_text):
+        """select_option by label — with apostrophe-safe fallback.
+
+        Playwright's label= selector uses XPath contains() which can choke on
+        labels that include a single-quote (apostrophe).  We catch any error
+        and retry by iterating all <option> texts ourselves via JavaScript."""
+        try:
+            await combo.select_option(label=label_text)
+        except Exception:
+            # Fallback: find matching option index via JS and select by value.
+            try:
+                value = await combo.evaluate(
+                    """(el, txt) => {
+                        for (const o of el.options) {
+                            if (o.text.trim() === txt.trim()) return o.value;
+                        }
+                        // case-insensitive second pass
+                        const low = txt.trim().toLowerCase();
+                        for (const o of el.options) {
+                            if (o.text.trim().toLowerCase() === low) return o.value;
+                        }
+                        return null;
+                    }""",
+                    label_text,
+                )
+                if value is not None:
+                    await combo.select_option(value=value)
+                else:
+                    raise ValueError(
+                        f"Option {label_text!r} not found in dropdown"
+                    )
+            except Exception as exc2:
+                raise RuntimeError(
+                    f"Could not select option {label_text!r}: {exc2}"
+                ) from exc2
+
     for idx, (data_type, search_type, term) in enumerate(rows):
-        await combos.nth(idx * 2).select_option(
-            label=DATA_TYPE_TO_JG_LABEL.get(data_type, data_type)
+        await _safe_select(
+            combos.nth(idx * 2),
+            DATA_TYPE_TO_JG_LABEL.get(data_type, data_type),
         )
-        await combos.nth(idx * 2 + 1).select_option(label=search_type)
-        await textboxes.nth(idx).fill(term)
+        await _safe_select(combos.nth(idx * 2 + 1), search_type)
+        # .fill() handles apostrophes correctly — no patch needed there
+        clean_term = term.strip()
+        await textboxes.nth(idx).fill(clean_term)
 
     if country and country != "ALL COUNTRIES":
-        await combos.last.select_option(label=country)
+        await _safe_select(combos.last, country)
 
     await page.get_by_role("button", name=re.compile(r"Search our Collection", re.I)).first.click()
     await page.wait_for_load_state("domcontentloaded")

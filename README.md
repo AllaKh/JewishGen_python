@@ -18,7 +18,8 @@ JewishGen_python/
 │
 ├── gui/
 │   ├── __init__.py
-│   └── main_window.py        ← PySide6 window
+│   ├── jewishgen.py         ← PySide6 window
+│   └── launcher.py
 │
 ├── models/
 │   ├── __init__.py
