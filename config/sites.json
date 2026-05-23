@@ -1,0 +1,65 @@
+[
+  {
+    "key": "JGlogo",
+    "name": "JewishGen",
+    "subtitle": "Global Home of Jewish Genealogy — mass search across all databases",
+    "action": "open_window",
+    "window_cls": "gui.jewishgen.JewishGenApp"
+  },
+  {
+    "key": "myheritage",
+    "name": "MyHeritage",
+    "subtitle": "Family trees, DNA matching, historical records",
+    "action": "open_url",
+    "url": "https://www.myheritage.com"
+  },
+  {
+    "key": "familysearch",
+    "name": "FamilySearch",
+    "subtitle": "Free genealogy records from The Church of Jesus Christ",
+    "action": "open_url",
+    "url": "https://www.familysearch.org"
+  },
+  {
+    "key": "ancestry",
+    "name": "Ancestry",
+    "subtitle": "World's largest online family history resource",
+    "action": "open_url",
+    "url": "https://www.ancestry.com"
+  },
+  {
+    "key": "pamyat-naroda",
+    "name": "Память народа",
+    "subtitle": "Обобщённый банк данных участников Великой Отечественной войны",
+    "action": "open_url",
+    "url": "https://pamyat-naroda.ru"
+  },
+  {
+    "key": "gwar",
+    "name": "Памяти героев Великой войны",
+    "subtitle": "Участники Первой мировой войны — gwar.mil.ru",
+    "action": "open_url",
+    "url": "https://gwar.mil.ru"
+  },
+  {
+    "key": "memorial",
+    "name": "Мемориал",
+    "subtitle": "База данных жертв политических репрессий — memsearch.org/ru",
+    "action": "open_url",
+    "url": "https://memsearch.org/ru"
+  },
+  {
+    "key": "hryc",
+    "name": "hryc.by",
+    "subtitle": "Поиск в архивах, газетах и книгах",
+    "action": "open_url",
+    "url": "https://hryc.by/search"
+  },
+  {
+    "key": "skarb",
+    "name": "АИС Скарб",
+    "subtitle": "Автоматизированная информационная система архивов Беларуси",
+    "action": "open_url",
+    "url": "https://archiveskarb.by/db/"
+  }
+]

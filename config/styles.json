@@ -1,0 +1,9 @@
+{
+  "launcher": "QMainWindow, QWidget#root { background: #f0f2f7; } QScrollArea { border: none; background: transparent; } QFrame#card { background: white; border: 1px solid #d4d9e8; border-radius: 10px; } QFrame#card:hover { border: 1px solid #4472c4; background: #f5f7fd; } QLabel#siteName { font-size: 15px; font-weight: bold; color: #1a2f5e; } QLabel#siteSub { font-size: 11px; color: #5a6a8a; } QLabel#logoPlaceholder { font-size: 11px; color: #8895b0; font-style: italic; } QPushButton#openBtn { background: #2a4a7f; color: white; font-weight: bold; font-size: 12px; border: none; border-radius: 5px; padding: 6px 18px; min-width: 90px; } QPushButton#openBtn:hover { background: #3a5a9f; } QPushButton#openBtn:pressed { background: #1a3a6f; } QPushButton#openBtn[type=\"url\"] { background: #287a3c; } QPushButton#openBtn[type=\"url\"]:hover { background: #359950; }",
+
+  "header":    "font-size: 22px; font-weight: bold; color: #1a2f5e; padding: 4px 0 2px 0;",
+  "subheader": "font-size: 12px; color: #5a6a8a;",
+  "footer":    "color: #9aabcc; font-size: 10px;",
+  "divider":   "color: #d4d9e8;",
+  "logo_placeholder": "border: 1px dashed #c0c8d8; border-radius: 4px; font-size: 11px; color: #8895b0; font-style: italic;"
+}
