@@ -32,9 +32,11 @@ Requirements
 """
 
 import asyncio
+import json
 import os
 import random
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -1693,6 +1695,371 @@ async def follow_next_pages(page, keywords, acc, keyword_mode="OR",
             break
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# IMAGE DOWNLOADS — triggered by links in JewishGen result rows
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_fs_credentials():
+    """Read FamilySearch login from the FamilySearch GUI autosave file."""
+    try:
+        p = HERE / "gui" / ".fs_autosave.json"
+        if p.exists():
+            d = json.loads(p.read_text("utf-8"))
+            return d.get("username", ""), d.get("password", "")
+    except Exception:
+        pass
+    return "", ""
+
+
+def _cell_links(cell):
+    """Yield (text, href) for every link segment in a cell."""
+    for line in (cell or []):
+        for seg in (line or []):
+            if isinstance(seg, dict):
+                t = (seg.get("t") or "").strip()
+                h = seg.get("h")
+                if h:
+                    yield t, h
+
+
+def _row_image_tasks(row):
+    """
+    Analyse a result row and return image-download tasks.
+
+    Each task is a dict:
+      type      "fhl"     FamilySearch microfilm — open viewer, go to img_num, download
+                "direct"  click link → image (bracketed / plain number, or "Image" word)
+                "ukraine" slash number — DON'T click, link already in docx/xlsx
+      url       the href
+      img_num   frame number for FHL (int or None)
+    """
+    if not row:
+        return []
+
+    tasks = []
+
+    # ── second-to-last column: look for clickable word "Image" ────── #
+    if len(row) >= 2:
+        for text, href in _cell_links(row[-2]):
+            if text.lower() == "image":
+                tasks.append({"type": "direct", "url": href, "img_num": None})
+
+    # ── last column ───────────────────────────────────────────────── #
+    last_cell = row[-1] if row else []
+    all_lines = list(last_cell or [])
+
+    for li, line in enumerate(all_lines):
+        for seg in (line or []):
+            if not isinstance(seg, dict):
+                continue
+            text = (seg.get("t") or "").strip()
+            href = seg.get("h")
+            if not href:
+                continue
+
+            # FHL microfilm link (text starts with "FHL")
+            if text.upper().startswith("FHL"):
+                img_num = None
+                for lj in range(li + 1, len(all_lines)):
+                    for s2 in (all_lines[lj] or []):
+                        if isinstance(s2, dict):
+                            n = (s2.get("t") or "").strip().strip("[]").strip()
+                            if n.isdigit():
+                                img_num = int(n)
+                                break
+                    if img_num is not None:
+                        break
+                tasks.append({"type": "fhl", "url": href, "img_num": img_num})
+                break
+
+            # Ukrainian slash reference — save link only, do NOT open
+            if re.search(r"\d+\s*/\s*\d+", text):
+                tasks.append({"type": "ukraine", "url": href, "img_num": None})
+                break
+
+            # Plain or bracketed number → click and download
+            if re.match(r"^\[?\d+\]?$", text.replace(" ", "")):
+                tasks.append({"type": "direct", "url": href, "img_num": None})
+                break
+
+    return tasks
+
+
+async def _do_direct_download(context, url, dest, log):
+    """Open url in a new page, find the largest image, save it."""
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    page = await context.new_page()
+    try:
+        resp = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(2)
+
+        # If the URL itself is an image resource, save the body directly
+        ct = (resp.headers.get("content-type", "") if resp else "")
+        if resp and "image" in ct:
+            body = await resp.body()
+            if len(body) > 1000:
+                dest.write_bytes(body)
+                log(f"    Сохранено: {dest.name} ({len(body)//1024}KB)")
+                return str(dest)
+
+        # Otherwise find the largest visible image on the page
+        _SKIP = ("icon", "logo", "sprite", "avatar", "pixel",
+                 "placeholder", ".svg", "fscdn.org")
+        best, area = "", 0
+        for el in await page.query_selector_all("img[src]"):
+            try:
+                src = (await el.get_attribute("src") or "").strip()
+                if not src.startswith("http"):
+                    continue
+                if any(b in src.lower() for b in _SKIP):
+                    continue
+                w = int(await el.evaluate("e => e.naturalWidth") or 0)
+                h = int(await el.evaluate("e => e.naturalHeight") or 0)
+                if w * h > area:
+                    area, best = w * h, src
+            except Exception:
+                continue
+
+        if best:
+            img_page = await context.new_page()
+            try:
+                r2 = await img_page.goto(best, timeout=15000)
+                if r2 and r2.ok:
+                    body = await r2.body()
+                    if len(body) > 5000:
+                        dest.write_bytes(body)
+                        log(f"    Сохранено: {dest.name} ({len(body)//1024}KB)")
+                        return str(dest)
+            finally:
+                await img_page.close()
+
+        log(f"    !! direct: изображение не найдено ({url[:60]})")
+        return None
+    except Exception as e:
+        log(f"    !! direct download error: {e}")
+        return None
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
+async def _do_fhl_download(context, fs_url, img_num, dest, fs_email, fs_password, log):
+    """
+    Open FamilySearch microfilm viewer → login if needed →
+    enter img_num in the Снимок field → click highlighted thumbnail →
+    download full-size JPG via the toolbar.
+    """
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    page = await context.new_page()
+
+    try:
+        await page.goto(fs_url, wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(3)
+
+        # ── Login to FamilySearch if redirected ──────────────────── #
+        pt = (await page.title()).lower()
+        if "login" in page.url or "sign in" in pt:
+            if not fs_email or not fs_password:
+                log("    !! FHL: FamilySearch credentials не заданы — пропуск")
+                return None
+            log("    FHL: логин в FamilySearch...")
+            try:
+                await page.locator("#userName").wait_for(state="visible", timeout=15000)
+                await asyncio.sleep(1)
+                for _ in range(3):
+                    await page.fill("#userName", fs_email)
+                    await asyncio.sleep(0.3)
+                    if (await page.locator("#userName").input_value()).strip():
+                        break
+                for _ in range(3):
+                    await page.fill("#password", fs_password)
+                    await asyncio.sleep(0.3)
+                    if (await page.locator("#password").input_value()).strip():
+                        break
+                await page.click("#login")
+                await page.wait_for_url(
+                    lambda u: "familysearch.org" in u and "login" not in u,
+                    timeout=30000)
+                await asyncio.sleep(2)
+                await page.goto(fs_url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(3)
+                log("    FHL: логин OK")
+            except Exception as e:
+                log(f"    !! FHL логин провалился: {e}")
+                return None
+
+        # ── Enter image number ───────────────────────────────────── #
+        if img_num:
+            for sel in [
+                'input[aria-label*="Снимок" i]',
+                'input[aria-label*="Image" i]',
+                'input[aria-label*="Frame" i]',
+                'input[aria-label*="Shot" i]',
+                'input[type="number"][min]',
+            ]:
+                try:
+                    inp = page.locator(sel).first
+                    if await inp.count() and await inp.is_visible():
+                        await inp.triple_click(timeout=3000)
+                        await inp.fill(str(img_num))
+                        await page.keyboard.press("Enter")
+                        await asyncio.sleep(2.5)
+                        log(f"    Снимок {img_num} введён")
+                        break
+                except Exception:
+                    continue
+
+        # ── Click selected/highlighted thumbnail ─────────────────── #
+        clicked = False
+        for sel in [
+            '[class*="selected"]',
+            '[class*="highlight"]',
+            '[aria-selected="true"]',
+            '[aria-current="true"]',
+            '[class*="active"]',
+        ]:
+            try:
+                els = page.locator(sel)
+                for idx in range(min(await els.count(), 10)):
+                    el = els.nth(idx)
+                    try:
+                        tag = await el.evaluate("e => e.tagName.toLowerCase()")
+                    except Exception:
+                        continue
+                    if tag in ("input", "button", "select", "textarea"):
+                        continue
+                    try:
+                        if await el.is_visible():
+                            await el.click(timeout=5000)
+                            await asyncio.sleep(3)
+                            clicked = True
+                            log("    Миниатюра кликнута")
+                            break
+                    except Exception:
+                        continue
+                if clicked:
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            log("    !! FHL: выбранная миниатюра не найдена")
+            return None
+
+        # ── Download from the full-size viewer ──────────────────── #
+        try:
+            await page.wait_for_selector('button[aria-label*="Download" i]', timeout=8000)
+        except Exception:
+            pass
+
+        dl_dir = Path.home() / "Downloads"
+        before = set(dl_dir.glob("*.jpg")) | set(dl_dir.glob("*.jpeg"))
+        downloaded = None
+
+        try:
+            async with page.expect_download(timeout=45000) as dl_info:
+                # Download button
+                dl_ok = False
+                for sel in ['button[aria-label*="Download" i]',
+                            'button[title*="Download" i]']:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.count() and await el.is_visible():
+                            await el.click(timeout=4000)
+                            await asyncio.sleep(1.5)
+                            dl_ok = True
+                            log("    Download нажат")
+                            break
+                    except Exception:
+                        continue
+                if not dl_ok:
+                    raise RuntimeError("кнопка Download не найдена")
+
+                # JPG Only
+                for lbl in ("JPG Only", "JPG only"):
+                    try:
+                        el = page.get_by_text(lbl, exact=True).first
+                        if await el.count():
+                            await el.click(timeout=3000)
+                            await asyncio.sleep(0.5)
+                            log("    JPG Only выбран")
+                            break
+                    except Exception:
+                        continue
+
+                # Confirm download
+                for sel in ['[data-testid="full-text-confirm-download"]',
+                            'button:has-text("Download")']:
+                    try:
+                        btn = page.locator(sel).first
+                        if await btn.count() and await btn.is_visible():
+                            await btn.click(timeout=5000)
+                            log("    Confirm нажат")
+                            break
+                    except Exception:
+                        continue
+
+            dl = await dl_info.value
+            await dl.save_as(str(dest))
+            downloaded = str(dest)
+            log(f"    Сохранено: {dest.name} ({dest.stat().st_size//1024}KB)")
+
+        except Exception as exc:
+            log(f"    expect_download: {exc} → жду в Downloads...")
+            for _ in range(15):
+                await asyncio.sleep(1)
+                after = set(dl_dir.glob("*.jpg")) | set(dl_dir.glob("*.jpeg"))
+                nw = after - before
+                if nw:
+                    src_f = max(nw, key=lambda p: p.stat().st_mtime)
+                    shutil.move(str(src_f), str(dest))
+                    downloaded = str(dest)
+                    log(f"    Перемещено: {dest.name}")
+                    break
+
+        return downloaded
+
+    except Exception as e:
+        log(f"    !! FHL error: {e}")
+        return None
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
+async def _process_images_for_db(context, rows, images_dir, fs_email, fs_password, log):
+    """
+    Walk matched rows, detect image tasks, execute downloads.
+    Images saved to images_dir/row_NNN[_tN].jpg
+    """
+    if not rows:
+        return
+    for ri, row in enumerate(rows):
+        tasks = _row_image_tasks(row)
+        if not tasks:
+            continue
+        for ti, task in enumerate(tasks):
+            sfx = f"_t{ti+1}" if len(tasks) > 1 else ""
+            dest = images_dir / f"row_{ri+1:03d}{sfx}.jpg"
+            if task["type"] == "fhl":
+                log(f"    [строка {ri+1}] FHL снимок {task['img_num']}")
+                await _do_fhl_download(
+                    context, task["url"], task["img_num"],
+                    dest, fs_email, fs_password, log)
+            elif task["type"] == "direct":
+                log(f"    [строка {ri+1}] Direct image → {dest.name}")
+                await _do_direct_download(context, task["url"], dest, log)
+            elif task["type"] == "ukraine":
+                log(f"    [строка {ri+1}] Ukrainian ref (ссылка сохранена, не скачиваем): "
+                    f"{task['url'][:60]}")
+
+
 # ---------- main ------------------------------------------------------------ #
 async def goto_with_retries(page, url, attempts=6, backoff=3.0):
     """Navigate, retrying on 5xx errors (502 Bad Gateway, 503 Service
@@ -1810,6 +2177,7 @@ async def run_scraper(
         context = await p.chromium.launch_persistent_context(
             str(PROFILE_DIR),
             headless=False,
+            accept_downloads=True,
         )
         try:
             page = context.pages[0] if context.pages else await context.new_page()
@@ -1934,6 +2302,16 @@ async def run_scraper(
                 if not acc["rows"]:
                     log("    no match — skipping")
                     continue
+
+                # ── Download images linked from result rows ─────────── #
+                _img_dir = (output_folder / "images"
+                            / (safe_filename(desc or label) or f"db_{i}"))
+                _fs_u, _fs_p = _get_fs_credentials()
+                try:
+                    await _process_images_for_db(
+                        context, acc["rows"], _img_dir, _fs_u, _fs_p, log)
+                except Exception as _exc:
+                    log(f"    !! image processing error: {_exc}")
 
                 if want_xlsx:
                     databases_for_xlsx.append({

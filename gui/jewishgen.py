@@ -77,12 +77,12 @@ try:
     SEARCH_TYPES = C.SEARCH_TYPES
     COUNTRIES    = C.COUNTRIES
 except Exception:
-    import scraper as _s
+    import jewishgen_scraper as _s
     DATA_TYPES   = _s.DATA_TYPES
     SEARCH_TYPES = _s.SEARCH_TYPES
     COUNTRIES    = _s.COUNTRIES
 
-import scraper
+import jewishgen_scraper as scraper
 
 # ---------------------------------------------------------------------------
 # Storage layer
