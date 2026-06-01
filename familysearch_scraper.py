@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
 """
-familysearch_scraper.py — v11
-================================
-Flow:
-1.  Open home page, fill First/Last Names (+ Place, Birth Year), click SEARCH.
-2.  Wait for results. Click "Historical Records" tab (data-testid="hr-tab").
-3.  Set results per page = 60.
-4.  Collect rows, filter name-match >= 80%.
-5.  Click FIRST qualifying result.
-    FamilySearch redirects to sign-in — complete login — navigate back to record.
-6.  Scrape first record: all text fields + full JPG image download via viewer.
-7.  Go back to results page.
-8a. NO advanced fields: continue scraping remaining qualifying results (>=80%).
-8b. HAS advanced fields: REFRESH PAGE (mandatory!), click Advanced Search
-    (data-testid="advanced-search-form-button"), fill modal, search,
-    re-collect results, scrape ALL.
-9.  Write Word (.docx) named "{FirstNames} {LastNames}.docx" with text + image.
-    Write Excel (.xlsx) named "{FirstNames} {LastNames}.xlsx" with text only.
+familysearch_scraper.py
+========================
+АЛГОРИТМ (точно по требованию):
+
+1.  Домашняя страница → First Names, Last Names, Place, Birth Year → SEARCH.
+2.  Ждать 5 секунд результаты.
+3.  Кликнуть таб Historical Records [data-testid="hr-tab"].
+    URL меняется на ?tab=records — ждать ИМЕННО ЭТО, не networkidle.
+4.  Кликнуть ПЕРВЫЙ результат → если редирект на логин → залогиниться ОДИН РАЗ:
+      page.fill('#userName', email)
+      page.fill('#password', password)
+      page.click('#login')
+5.  Все записи открываются на ОДНОЙ главной странице (не в новых вкладках) —
+    сессия не теряется, логин не повторяется.
+6.  На каждой странице записи: скопировать текст + превьюшку → Word.
+7.  Кликнуть картинку → вьюер → download → JPG Only →
+    [data-testid="full-text-confirm-download"] → сохранить JPG.
+8.  Вернуться на результаты (go_back).
+9.  Если НЕТ advanced: оставшиеся результаты ≥80%.
+10. Если ЕСТЬ advanced: reload (обязательно!) → Advanced Search →
+    [data-testid="advanced-search-form-button"] → все результаты ≥80%.
+11. Имена файлов: {FirstNames} {LastNames}.docx / .xlsx
 """
 
 import asyncio, difflib, io, json, os, re, shutil, sys
@@ -51,29 +56,28 @@ try:
 except ImportError:
     _OPENPYXL_OK = False
 
-# ── Config ───────────────────────────────────────────────────────────────────── #
+# ── Конфиг ────────────────────────────────────────────────────────────────── #
 _HERE     = Path(__file__).resolve().parent
-_CFG_PATH = _HERE / "config" / "familysearch.json"
 try:
-    _CFG = json.loads(_CFG_PATH.read_text(encoding="utf-8"))
+    _CFG = json.loads((_HERE / "config" / "familysearch.json").read_text("utf-8"))
 except Exception:
     _CFG = {}
 
 HOME_URL      = _CFG.get("home_url", "https://www.familysearch.org/en/global")
+FS_BASE       = "https://www.familysearch.org"
 MIN_MATCH     = int(_CFG.get("min_match", 80))
-BAD_PATHS     = _CFG.get("bad_paths", [
-    "/records/images", "/search/linker", "/linker",
-    "/en/tree/", "/tree/person/", "/tree/",
-    "/catalog", "/wiki", "/books", "/films",
-])
+BAD_PATHS     = ["/records/images", "/search/linker", "/linker",
+                 "/en/tree/", "/tree/person/", "/tree/",
+                 "/catalog", "/wiki", "/books", "/films"]
 _dl           = _CFG.get("downloads_dir", "")
 DOWNLOADS_DIR = Path(_dl) if _dl else Path.home() / "Downloads"
-HYPERLINK_REL = (
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
-)
+HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
+                 "officeDocument/2006/relationships/hyperlink")
+_IMG_SKIP     = ("icon", "logo", "sprite", "avatar", "pixel", "placeholder",
+                 ".svg", "fscdn.org")
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────── #
+# ── Утилиты ───────────────────────────────────────────────────────────────── #
 
 def _sim(a: str, b: str) -> float:
     a = re.sub(r"\s+", " ", a.strip().lower())
@@ -86,8 +90,8 @@ def _sim(a: str, b: str) -> float:
 
 
 def safe_fn(s: str, n: int = 100) -> str:
-    s = re.sub(r'[\\/*?:"<>|]', "_", s.strip())
-    return re.sub(r"\s+", " ", s)[:n].strip() or "document"
+    return re.sub(r"\s+", " ",
+                  re.sub(r'[\\/*?:"<>|]', "_", s.strip()))[:n].strip() or "document"
 
 
 def _is_record(href: str) -> bool:
@@ -99,44 +103,46 @@ def _is_record(href: str) -> bool:
     return "/ark:" in href
 
 
-# ── Type into a form field ───────────────────────────────────────────────────── #
+def _abs(href: str) -> str:
+    return FS_BASE + href if href.startswith("/") else href
 
-async def _type(page, sels: list, val: str, label: str, log) -> bool:
+
+# ── Ввод в поле поиска ────────────────────────────────────────────────────── #
+
+async def _type_field(page, sel: str, val: str, label: str, log) -> bool:
+    """Кликнуть, очистить Ctrl+A/Del, печатать посимвольно."""
     if not val:
         return True
-    for sel in sels:
-        try:
-            el = page.locator(sel).first
-            if not await el.count():
-                continue
-            await el.scroll_into_view_if_needed(timeout=4000)
-            await page.evaluate(
-                "s => { const e=document.querySelector(s); if(e) e.focus(); }", sel)
-            await asyncio.sleep(0.1)
-            await el.click(timeout=3000)
-            await page.keyboard.press("Control+a")
-            await page.keyboard.press("Delete")
-            await asyncio.sleep(0.1)
-            await page.keyboard.type(val, delay=40)
-            await asyncio.sleep(0.2)
-            if (await el.input_value(timeout=2000)).strip():
-                log(f"  OK  {label}")
-                return True
-        except Exception:
-            continue
-    log(f"  !!  field not found: {label}")
+    try:
+        el = page.locator(sel).first
+        if not await el.count():
+            log(f"  !! поле {label} не найдено ({sel})")
+            return False
+        await el.scroll_into_view_if_needed(timeout=4000)
+        await el.click(timeout=3000)
+        await asyncio.sleep(0.1)
+        await page.keyboard.press("Control+a")
+        await page.keyboard.press("Delete")
+        await page.keyboard.type(val, delay=40)
+        await asyncio.sleep(0.2)
+        got = (await el.input_value(timeout=2000)).strip()
+        if got:
+            log(f"  OK  {label} = {got!r}")
+            return True
+        log(f"  !! {label}: поле осталось пустым")
+    except Exception as e:
+        log(f"  !! {label}: {e}")
     return False
 
 
-# ── Step 1: Search from home page ────────────────────────────────────────────── #
+# ── 1. ПОИСК ──────────────────────────────────────────────────────────────── #
 
-async def _search_from_home(page, first_names, last_names,
-                             place_lived, birth_year, log) -> None:
-    log(f"  Opening: {HOME_URL}")
+async def _search(page, fn, ln, place, year, log):
+    log(f"  Открываю {HOME_URL}")
     await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(3)
 
-    # Wait for the search form to appear
+    # Ждём форму
     for sel in ['input[placeholder*="First and Middle" i]',
                 'input[id*="givenName" i]']:
         try:
@@ -145,26 +151,20 @@ async def _search_from_home(page, first_names, last_names,
         except Exception:
             continue
 
-    await _type(page,
-        ['input[placeholder*="First and Middle" i]',
-         'input[id*="givenName" i]', 'input[name*="givenName" i]'],
-        first_names, "First Names", log)
-
-    await _type(page,
-        ['input[placeholder*="Last or Maiden" i]',
-         'input[id*="surname" i]', 'input[name*="surname" i]'],
-        last_names, "Last Names", log)
-
-    if place_lived:
-        await _type(page,
-            ['input[placeholder*="City, County, State" i]'],
-            place_lived, "Place Lived", log)
-
-    if birth_year:
-        await _type(page,
-            ['input[placeholder*="Birth Year" i]',
-             'input[id*="birthYear" i]'],
-            birth_year, "Birth Year", log)
+    await _type_field(page,
+        'input[placeholder*="First and Middle" i], input[id*="givenName" i]',
+        fn, "First Names", log)
+    await _type_field(page,
+        'input[placeholder*="Last or Maiden" i], input[id*="surname" i]',
+        ln, "Last Names", log)
+    if place:
+        await _type_field(page,
+            'input[placeholder*="City, County, State" i]',
+            place, "Place Lived", log)
+    if year:
+        await _type_field(page,
+            'input[placeholder*="Birth Year" i], input[id*="birthYear" i]',
+            year, "Birth Year", log)
 
     for sel in ['button:has-text("SEARCH")', 'button:has-text("Search")',
                 'button[type="submit"]']:
@@ -172,245 +172,274 @@ async def _search_from_home(page, first_names, last_names,
             el = page.locator(sel).first
             if await el.count() and await el.is_visible():
                 await el.click(timeout=6000)
-                log("  SEARCH clicked")
+                log("  SEARCH нажат")
                 break
         except Exception:
             continue
 
     try:
-        await page.wait_for_url(
-            lambda u: "search" in u and "discovery" in u, timeout=20000)
+        await page.wait_for_url(lambda u: "discovery/results" in u, timeout=20000)
     except Exception:
         pass
+    await asyncio.sleep(5)  # обязательно 5 секунд
+    log(f"  Результаты: {page.url}")
+
+
+# ── 2. ЛОГИН ЧЕРЕЗ NAV-КНОПКУ (до HR tab) ────────────────────────────────── #
+
+async def _sign_in_if_needed(page, email: str, password: str, log) -> bool:
+    """
+    Смотрим есть ли [data-testid='no-loggedin-sign-in-button'].
+    Если есть — кликаем, логинимся, возвращаемся на results.
+    Если нет — уже залогинены.
+    Без логина HR tab показывает 0 строк!
+    """
+    log("  Проверяю авторизацию...")
+    results_url = page.url
+
     try:
-        await page.wait_for_load_state("networkidle", timeout=15000)
-    except Exception:
-        await asyncio.sleep(4)
-    log(f"  Results page: {page.url}")
-
-
-# ── Click Historical Records tab ─────────────────────────────────────────────── #
-
-async def _click_historical_tab(page, log) -> None:
-    # Prefer exact data-testid (from user's HTML inspection)
-    for sel in ['[data-testid="hr-tab"]', 'div[data-testid="hr-tab"]']:
+        btn = page.locator('[data-testid="no-loggedin-sign-in-button"]').first
+        await btn.wait_for(state="visible", timeout=6000)
+        log("  Не авторизован — кликаю Sign In...")
+        await btn.click(timeout=5000)
         try:
-            el = page.locator(sel).first
-            if await el.count() and await el.is_visible():
-                await el.click(timeout=5000)
-                await asyncio.sleep(2)
-                log("  Historical Records tab clicked (data-testid=hr-tab)")
-                return
-        except Exception:
-            continue
-
-    # Fallback: by role or text
-    for label in ("Historical Records", "Historical records"):
-        try:
-            el = page.get_by_role("tab", name=re.compile(re.escape(label), re.I)).first
-            if not await el.count():
-                el = page.locator(
-                    f'[role="tab"]:has-text("{label}"), '
-                    f'a:has-text("{label}"), button:has-text("{label}")'
-                ).first
-            if await el.count():
-                await el.click(timeout=5000)
-                await asyncio.sleep(2)
-                log(f"  Historical Records tab clicked (text fallback)")
-                return
+            await page.wait_for_url(lambda u: "login" in u, timeout=10000)
         except Exception:
             pass
-    log("  (Historical Records tab not found — continuing)")
+        await asyncio.sleep(2)
+        ok = await _login(page, email, password, log)
+        if ok and "discovery/results" not in page.url:
+            log("  Возвращаюсь на страницу результатов...")
+            await page.goto(results_url, wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(3)
+        return ok
+    except Exception:
+        log("  Уже авторизован (кнопка Sign In не найдена)")
+        return True
 
 
-# ── Set 60 per page ──────────────────────────────────────────────────────────── #
+# ── 3. ТАБ HISTORICAL RECORDS ─────────────────────────────────────────────── #
 
-async def _set_60(page, log) -> None:
-    for sel in ['select[aria-label*="result" i]', 'select[name*="result" i]',
-                'select[id*="result" i]', 'select']:
-        try:
-            el = page.locator(sel).last
-            if await el.count():
-                opts = await el.evaluate(
-                    "e => Array.from(e.options).map(o => o.value)")
-                if "60" in opts:
-                    await el.select_option(value="60")
-                    await asyncio.sleep(2)
-                    log("  Results per page: 60")
-                    return
-        except Exception:
-            continue
+async def _click_hr(page, log):
+    """
+    Кликнуть [data-testid='hr-tab'].
+    URL меняется на ?tab=records.
+    После этого ждать появления строк таблицы (tbody tr) — до 10 секунд.
+    """
+    clicked = False
     try:
-        el = page.get_by_text(re.compile(r"^60$")).first
-        if await el.count():
-            await el.click(timeout=3000)
-            await asyncio.sleep(2)
+        el = page.locator('[data-testid="hr-tab"]').first
+        if await el.count() and await el.is_visible():
+            await el.click(timeout=5000)
+            clicked = True
     except Exception:
         pass
 
-
-# ── Collect result rows ──────────────────────────────────────────────────────── #
-
-async def _collect(page, qname: str, log) -> list:
-    await asyncio.sleep(2)
-    results, seen = [], set()
-    rows = await page.query_selector_all("tbody tr")
-    log(f"  Rows found: {len(rows)}")
-    for row in rows:
+    if not clicked:
         try:
-            lnk = None
-            for a in await row.query_selector_all("a[href]"):
-                href = await a.get_attribute("href") or ""
-                if _is_record(href):
-                    lnk = a
-                    break
-            if not lnk:
-                continue
-            href = await lnk.get_attribute("href") or ""
-            name = (await lnk.text_content() or "").strip()
-            if not href or not name:
-                continue
-            url = ("https://www.familysearch.org" + href
-                   if href.startswith("/") else href)
-            if url in seen:
-                continue
-            seen.add(url)
-            cells = await row.query_selector_all("td")
-            results.append({
-                "url":   url,
-                "name":  name,
-                "coll":  (await cells[1].text_content() or "").strip() if len(cells) > 1 else "",
-                "evts":  (await cells[2].text_content() or "").strip() if len(cells) > 2 else "",
-                "rels":  (await cells[3].text_content() or "").strip() if len(cells) > 3 else "",
-                "score": round(_sim(qname, name), 1),
-            })
+            el = page.get_by_role("tab", name=re.compile(r"Historical Records", re.I)).first
+            if await el.count():
+                await el.click(timeout=5000)
+                clicked = True
         except Exception:
-            continue
-    log(f"  Candidates: {len(results)}")
-    return results
+            pass
+
+    if not clicked:
+        log("  (HR tab не найден)")
+        return
+
+    # Ждём URL с tab=records
+    try:
+        await page.wait_for_url(lambda u: "tab=records" in u, timeout=8000)
+    except Exception:
+        await asyncio.sleep(2)
+
+    # Ждём СТРОКИ ТАБЛИЦЫ (таблица грузится через XHR после смены URL)
+    try:
+        await page.wait_for_selector("tbody tr", timeout=10000)
+    except Exception:
+        await asyncio.sleep(5)  # если не дождались — всё равно идём дальше
+
+    log(f"  HR tab → {page.url}")
 
 
-# ── Sign-in ──────────────────────────────────────────────────────────────────── #
+# ── 3. ЛОГИН — ОДИН РАЗ ──────────────────────────────────────────────────── #
 
-async def _do_login(page, username: str, password: str, log) -> bool:
-    log("  Filling sign-in form...")
-    await asyncio.sleep(1.5)
+async def _login(page, username: str, password: str, log) -> bool:
+    """
+    Заполнить #userName и #password через page.fill().
+    Нажать #login. Ждать редиректа обратно на familysearch.org.
+    Вызывать ТОЛЬКО ОДИН РАЗ за сессию.
+    """
+    log(f"  Страница логина: {page.url[:80]}")
 
-    found = False
-    for attempt in range(3):
-        try:
-            await page.locator('#userName').wait_for(state="visible", timeout=8000)
-            found = True
-            break
-        except Exception:
-            log(f"  Waiting for sign-in form... attempt {attempt + 1}")
-            await asyncio.sleep(2)
-
-    if not found:
-        log("  !! Sign-in form (#userName) not found")
+    # Ждём поле #userName
+    try:
+        await page.locator("#userName").wait_for(state="visible", timeout=20000)
+    except Exception:
+        log("  !! #userName не появился")
         return False
 
-    # Use JavaScript to set values reliably (React controlled inputs)
+    await asyncio.sleep(1)  # дать форме полностью отрисоваться
+
+    # page.fill() — официальный метод Playwright для React-инпутов
     try:
-        await page.evaluate("""([u, p]) => {
-            function setVal(sel, val) {
-                const el = document.querySelector(sel);
-                if (!el) return false;
-                const nativeSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value').set;
-                nativeSetter.call(el, val);
-                el.dispatchEvent(new Event('input',  {bubbles: true}));
-                el.dispatchEvent(new Event('change', {bubbles: true}));
-                return true;
-            }
-            setVal('#userName', u);
-            setVal('#password', p);
-        }""", [username, password])
-        log("  Credentials set via JS")
-        await asyncio.sleep(0.5)
-    except Exception as exc:
-        log(f"  JS set failed ({exc}), using keyboard...")
-        for sel, val, lbl in [
-            ('#userName', username, 'username'),
-            ('#password', password, 'password'),
-        ]:
-            try:
-                el = page.locator(sel).first
-                await el.click(timeout=3000)
-                await page.keyboard.press("Control+a")
-                await page.keyboard.press("Delete")
-                await page.keyboard.type(val, delay=50)
-                log(f"  Typed {lbl}")
-            except Exception as e2:
-                log(f"  !! Could not type {lbl}: {e2}")
-                return False
+        await page.fill("#userName", username)
+        log(f"  #userName заполнен")
+    except Exception as e:
+        log(f"  !! fill #userName: {e}")
+        return False
 
-    # Click SIGN IN
-    clicked = False
-    for sel in ['button:has-text("SIGN IN")', 'button:has-text("Sign In")',
-                'button:has-text("Sign in")', 'button[type="submit"]']:
-        try:
-            el = page.locator(sel).first
-            if await el.count() and await el.is_visible():
-                await el.click(timeout=6000)
-                log(f"  Sign-in submitted ({sel})")
-                clicked = True
-                break
-        except Exception:
-            continue
-    if not clicked:
-        await page.keyboard.press("Enter")
-        log("  Sign-in via Enter")
+    await asyncio.sleep(0.3)
 
+    try:
+        await page.fill("#password", password)
+        log(f"  #password заполнен")
+    except Exception as e:
+        log(f"  !! fill #password: {e}")
+        return False
+
+    await asyncio.sleep(0.3)
+
+    # Проверить что поля НЕ пусты
+    u_val = await page.locator("#userName").input_value()
+    p_val = await page.locator("#password").input_value()
+    log(f"  Проверка: user={'OK' if u_val else '!ПУСТО'}, "
+        f"pass={'OK' if p_val else '!ПУСТО'}")
+
+    if not u_val.strip() or not p_val.strip():
+        log("  !! Поля пустые — логин провалится")
+        return False
+
+    # Нажать ТОЛЬКО #login — ничего другого
+    try:
+        await page.click("#login", timeout=5000)
+        log("  #login нажат")
+    except Exception as e:
+        log(f"  !! #login: {e}")
+        return False
+
+    # Ждём редирект
     try:
         await page.wait_for_url(
-            lambda u: (
-                "familysearch.org" in u
-                and "/identity/login" not in u
-                and "/auth/familysearch/login" not in u
-            ),
-            timeout=30000,
-        )
+            lambda u: "familysearch.org" in u and "login" not in u,
+            timeout=30000)
     except Exception:
-        await asyncio.sleep(5)
+        await asyncio.sleep(6)
 
-    cur = page.url
-    ok  = ("familysearch.org" in cur
-           and "/identity/login" not in cur
-           and "/auth/familysearch/login" not in cur)
-    log(f"  {'Sign-in OK' if ok else 'SIGN-IN FAILED'}. URL: {cur}")
+    ok = "familysearch.org" in page.url and "login" not in page.url
+    log(f"  Логин {'OK ✓' if ok else 'ПРОВАЛИЛСЯ ✗'}  URL: {page.url[:80]}")
     return ok
 
 
-# ── Advanced Search modal ────────────────────────────────────────────────────── #
+# ── 4. СОБРАТЬ СТРОКИ ТАБЛИЦЫ ────────────────────────────────────────────── #
 
-async def _advanced_search(page, adv: dict, log) -> None:
-    log("  Opening Advanced Search...")
+async def _collect(page, qname: str, log) -> list:
+    """
+    Структура таблицы (подтверждена):
+      cells[0] = ссылка "More"  href=/ark:... ← URL записи, НЕ имя!
+      cells[1] = картинка
+      cells[2] = <strong>Имя</strong> + коллекция 2-й строкой
+      cells[3] = Events
+      cells[4] = Relationships
+    """
+    await asyncio.sleep(2)
+    results, seen = [], set()
+    rows = await page.query_selector_all("tbody tr")
+    log(f"  Строк: {len(rows)}")
 
-    # Exact data-testid provided by user, with text fallbacks
-    opened = False
-    for sel in [
-        '[data-testid="advanced-search-form-button"]',
-        'button:has-text("Advanced Search")',
-        'button:has-text("ADVANCED SEARCH")',
-        'a:has-text("Advanced Search")',
-    ]:
+    for row in rows:
         try:
-            el = page.locator(sel).first
-            if await el.count() and await el.is_visible():
-                await el.click(timeout=5000)
-                await asyncio.sleep(1.5)
-                log(f"  Advanced Search modal opened ({sel[:60]})")
-                opened = True
-                break
+            cells = await row.query_selector_all("td")
+            if not cells:
+                continue
+            # URL из ark-ссылки в cells[0]
+            url = ""
+            for a in await row.query_selector_all("a[href]"):
+                h = (await a.get_attribute("href") or "").strip()
+                if _is_record(h):
+                    url = _abs(h)
+                    break
+            if not url or url in seen:
+                continue
+            seen.add(url)
+
+            # Имя из cells[2] <strong>
+            idx  = 2 if len(cells) > 3 else max(0, len(cells) - 3)
+            name = ""
+            coll = ""
+            if len(cells) > idx:
+                nc = cells[idx]
+                try:
+                    b = await nc.query_selector("strong, b")
+                    if b:
+                        name = (await b.text_content() or "").strip()
+                except Exception:
+                    pass
+                if not name:
+                    lines = [ln.strip()
+                             for ln in (await nc.text_content() or "").splitlines()
+                             if ln.strip()]
+                    name = lines[0] if lines else ""
+                    coll = lines[1] if len(lines) > 1 else ""
+                else:
+                    try:
+                        lines = [ln.strip()
+                                 for ln in (await nc.text_content() or "").splitlines()
+                                 if ln.strip()]
+                        coll = lines[1] if len(lines) > 1 else ""
+                    except Exception:
+                        pass
+
+            if not name:
+                continue
+            evts = (await cells[idx+1].text_content() or "").strip() if len(cells)>idx+1 else ""
+            rels = (await cells[idx+2].text_content() or "").strip() if len(cells)>idx+2 else ""
+            score = round(_sim(qname, name), 1)
+            results.append({"url": url, "name": name, "coll": coll,
+                            "evts": evts, "rels": rels, "score": score})
+            log(f"    {score:5.1f}%  {name}")
         except Exception:
             continue
 
-    if not opened:
-        log("  !! Advanced Search button not found")
+    log(f"  Кандидатов: {len(results)}")
+    return results
+
+
+# ── 5. УСТАНОВИТЬ 60 НА СТРАНИЦУ ─────────────────────────────────────────── #
+
+async def _set_60(page, log):
+    for sel in ['select[aria-label*="result" i]',
+                'select[name*="result" i]',
+                'select[id*="result" i]']:
+        try:
+            el = page.locator(sel).last
+            if not await el.count():
+                continue
+            opts = await el.evaluate("e => Array.from(e.options).map(o=>o.value)")
+            if "60" in opts:
+                await el.select_option(value="60")
+                await asyncio.sleep(1)
+                log("  60 результатов на странице")
+                return
+        except Exception:
+            continue
+
+
+# ── 6. РАСШИРЕННЫЙ ПОИСК ─────────────────────────────────────────────────── #
+
+async def _advanced(page, adv: dict, log):
+    log("  Открываю Advanced Search...")
+    try:
+        btn = page.locator('[data-testid="advanced-search-form-button"]').first
+        await btn.wait_for(state="visible", timeout=5000)
+        await btn.click(timeout=5000)
+        await asyncio.sleep(1.5)
+        log("  Модальное окно открыто")
+    except Exception as e:
+        log(f"  !! Advanced Search: {e}")
         return
 
-    # Life Events (tabs: BIRTH, DEATH, MARRIAGE, RESIDENCE, ANY)
     event_map = {
         "birth_place":     ("BIRTH",     'input[placeholder*="City, County, State, Province"]'),
         "birth_year":      ("BIRTH",     'input[placeholder="Year"]'),
@@ -423,49 +452,45 @@ async def _advanced_search(page, adv: dict, log) -> None:
         "any_place":       ("ANY",       'input[placeholder*="City, County, State, Province"]'),
         "any_year":        ("ANY",       'input[placeholder="Year"]'),
     }
-    opened_tabs: set = set()
-    for key, (tab_label, input_sel) in event_map.items():
+    opened: set = set()
+    for key, (tab, sel) in event_map.items():
         val = adv.get(key, "")
         if not val:
             continue
-        if tab_label not in opened_tabs:
+        if tab not in opened:
             try:
-                t = page.get_by_text(
-                    re.compile(rf"^{re.escape(tab_label)}$", re.I)).first
+                t = page.get_by_text(re.compile(rf"^{re.escape(tab)}$", re.I)).first
                 if await t.count():
                     await t.click(timeout=3000)
                     await asyncio.sleep(0.7)
-                    opened_tabs.add(tab_label)
+                    opened.add(tab)
             except Exception:
                 pass
-        await _type(page, [input_sel], val, key, log)
+        await _type_field(page, sel, val, key, log)
 
-    # Family Members (tabs: SPOUSE, FATHER, MOTHER, OTHER PERSON)
     fam_map = {
         "spouse": ("SPOUSE",       "Spouse's First Names",       "Spouse's Last Names"),
         "father": ("FATHER",       "Father's First Names",       "Father's Last Names"),
         "mother": ("MOTHER",       "Mother's First Names",       "Mother's Last Names"),
         "other":  ("OTHER PERSON", "Other Person's First Names", "Other Person's Last Names"),
     }
-    for key, (tab_label, first_ph, last_ph) in fam_map.items():
+    for key, (tab, fp, lp) in fam_map.items():
         fv = adv.get(f"{key}_first", "")
         lv = adv.get(f"{key}_last",  "")
         if not fv and not lv:
             continue
         try:
-            t = page.get_by_text(
-                re.compile(rf"^{re.escape(tab_label)}$", re.I)).first
+            t = page.get_by_text(re.compile(rf"^{re.escape(tab)}$", re.I)).first
             if await t.count():
                 await t.click(timeout=3000)
                 await asyncio.sleep(0.7)
         except Exception:
             pass
         if fv:
-            await _type(page, [f'input[placeholder="{first_ph}"]'], fv, f"{key} first", log)
+            await _type_field(page, f'input[placeholder="{fp}"]', fv, f"{key}_first", log)
         if lv:
-            await _type(page, [f'input[placeholder="{last_ph}"]'], lv, f"{key} last", log)
+            await _type_field(page, f'input[placeholder="{lp}"]', lv, f"{key}_last", log)
 
-    # Location (country / state)
     if adv.get("country"):
         try:
             t = page.get_by_text(re.compile(r"^LOCATION$", re.I)).first
@@ -474,18 +499,15 @@ async def _advanced_search(page, adv: dict, log) -> None:
                 await asyncio.sleep(0.5)
         except Exception:
             pass
-        await _type(page, ['input[placeholder="Country or Location"]'],
-                   adv["country"], "country", log)
+        await _type_field(page, 'input[placeholder="Country or Location"]',
+                         adv["country"], "country", log)
     if adv.get("state"):
-        await _type(page, ['input[placeholder="State or Province"]'],
-                   adv["state"], "state", log)
-
-    # Keywords
+        await _type_field(page, 'input[placeholder="State or Province"]',
+                         adv["state"], "state", log)
     if adv.get("keywords"):
-        await _type(page, ['input[placeholder*="keyword" i]'],
-                   adv["keywords"], "keywords", log)
+        await _type_field(page, 'input[placeholder*="keyword" i]',
+                         adv["keywords"], "keywords", log)
 
-    # Submit inside modal (use .last to target modal button, not main search bar)
     for sel in ['button:has-text("SEARCH")', 'button:has-text("Search")']:
         try:
             el = page.locator(sel).last
@@ -496,178 +518,195 @@ async def _advanced_search(page, adv: dict, log) -> None:
             continue
 
     try:
-        await page.wait_for_load_state("networkidle", timeout=20000)
+        await page.wait_for_url(lambda u: "tab=records" in u, timeout=15000)
     except Exception:
         await asyncio.sleep(3)
-    log("  Advanced Search submitted.")
+    log("  Advanced Search отправлен")
 
 
-# ── Thumbnail bytes (for Word embed, no viewer) ──────────────────────────────── #
+# ── 7. СКАЧАТЬ БАЙТЫ КАРТИНКИ ─────────────────────────────────────────────── #
 
-async def _get_thumb_bytes(ctx, page) -> bytes | None:
-    """Fetch thumbnail image bytes for embedding in Word document."""
-    SKIP = ("icon", "logo", "sprite", "avatar", "pixel", "button", "badge")
-    for sel in [
-        'img[alt="Thumbnail"]',
-        'img[class*="imageThumb"]',
-        'img[src*="dz/v1"]',
-        'img[src*="/image/"]',
-        '.imageViewer img',
-        '[class*="thumbnail" i] img',
-        'main img[src*="http"]',
-    ]:
-        try:
-            for el in await page.query_selector_all(sel):
-                src = (await el.get_attribute("src") or "").strip()
-                if not src.startswith("http"):
-                    continue
-                if any(b in src.lower() for b in SKIP):
-                    continue
-                ip = await ctx.new_page()
-                try:
-                    r = await ip.goto(src, timeout=10000)
-                    if r and r.ok:
-                        body = await r.body()
-                        if len(body) > 5000:
-                            return body
-                finally:
-                    await ip.close()
-        except Exception:
-            continue
+async def _fetch_bytes(ctx, src: str) -> bytes | None:
+    if not src or not src.startswith("http"):
+        return None
+    pg = await ctx.new_page()
+    try:
+        r = await pg.goto(src, timeout=15000)
+        if r and r.ok:
+            body = await r.body()
+            if len(body) > 5000:
+                return body
+    except Exception:
+        pass
+    finally:
+        await pg.close()
     return None
 
 
-# ── Download full-resolution JPG from viewer ─────────────────────────────────── #
+# ── 8. НАЙТИ ЛУЧШУЮ КАРТИНКУ НА СТРАНИЦЕ ─────────────────────────────────── #
 
-async def _download_full_image(ctx, page, dest_dir: Path,
-                                title: str, log) -> str | None:
+async def _best_img(page) -> str:
+    best, area = "", 0
+    for el in await page.query_selector_all("img[src]"):
+        try:
+            src = (await el.get_attribute("src") or "").strip()
+            if not src.startswith("http"):
+                continue
+            if any(b.lower() in src.lower() for b in _IMG_SKIP):
+                continue
+            w = int(await el.evaluate("e => e.naturalWidth")  or 0)
+            h = int(await el.evaluate("e => e.naturalHeight") or 0)
+            if w * h > area:
+                area = w * h
+                best = src
+        except Exception:
+            continue
+    return best
+
+
+# ── 9. СКАЧАТЬ ПОЛНОФОРМАТНУЮ JPG ЧЕРЕЗ ВЬЮЕР ────────────────────────────── #
+
+async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | None:
     """
-    1. Click thumbnail → viewer opens (same page or new tab).
-    2. Click the download arrow button in the viewer toolbar.
-    3. Select JPG Only in popup.
-    4. Click DOWNLOAD (data-testid="full-text-confirm-download").
-    Falls back to saving thumbnail bytes if any step fails.
+    Кликнуть картинку → вьюер → download → JPG Only →
+    [data-testid="full-text-confirm-download"] → сохранить файл.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
     fname  = safe_fn(title) + ".jpg"
     dest   = dest_dir / fname
     before = set(DOWNLOADS_DIR.glob("*.jpg")) | set(DOWNLOADS_DIR.glob("*.jpeg"))
-    pages_before = set(ctx.pages)
+    tabs_before = set(ctx.pages)
 
-    # Click the thumbnail image to open full viewer
-    thumb_clicked = False
-    for sel in [
-        'img[alt="Thumbnail"]',
-        'img[class*="imageThumb"]',
-        'img[src*="dz/v1"]',
-        'img[src*="/image/"]',
-        'a > img[src*="familysearch"]',
-        '.imageViewer img',
-        '[class*="thumbnail" i] img',
-        'main img[src*="http"]',
-    ]:
+    # Найти и кликнуть лучшую картинку
+    img_src = await _best_img(page)
+    clicked = False
+    if img_src:
         try:
-            el = page.locator(sel).first
+            el = page.locator(f'img[src="{img_src}"]').first
             if await el.count() and await el.is_visible():
                 await el.click(timeout=5000)
                 await asyncio.sleep(3)
-                log(f"    Thumbnail clicked ({sel})")
-                thumb_clicked = True
-                break
+                clicked = True
+                log("    Картинка кликнута")
         except Exception:
-            continue
+            pass
 
-    if not thumb_clicked:
-        log("    No thumbnail found — skipping full image download")
+    if not clicked:
+        for sel in ['img[src*="dz/v1"]', 'img[src*="apiv2"]',
+                    'img[alt="Thumbnail"]', 'main img']:
+            try:
+                el = page.locator(sel).first
+                if not await el.count():
+                    continue
+                src = await el.get_attribute("src") or ""
+                if any(b.lower() in src.lower() for b in _IMG_SKIP):
+                    continue
+                if await el.is_visible():
+                    await el.click(timeout=5000)
+                    await asyncio.sleep(3)
+                    img_src = src
+                    clicked = True
+                    log(f"    Картинка кликнута ({sel})")
+                    break
+            except Exception:
+                continue
+
+    if not clicked:
+        log("    Картинка на странице не найдена")
         return None
 
-    # Viewer may open in a new tab
+    # Вьюер может открыться в новой вкладке
     viewer = page
     await asyncio.sleep(1)
-    new_pg = set(ctx.pages) - pages_before
-    if new_pg:
-        viewer = list(new_pg)[0]
+    new_tabs = set(ctx.pages) - tabs_before
+    if new_tabs:
+        viewer = list(new_tabs)[0]
+        try:
+            await viewer.wait_for_load_state("domcontentloaded", timeout=10000)
+        except Exception:
+            pass
         await asyncio.sleep(2)
-        log("    Viewer opened in new tab")
+        log("    Вьюер в новой вкладке")
 
-    # Click the download arrow button in the viewer toolbar
-    dl_clicked = False
-    for sel in [
-        'button[aria-label*="Download" i]',
-        'button[title*="Download" i]',
-        '[data-testid*="download" i]:not([data-testid="full-text-confirm-download"])',
-        'button[class*="download" i]',
-        '[class*="toolbar"] button:nth-last-child(3)',
-        '[class*="toolbar"] button:nth-last-child(2)',
-        '[class*="tools"] button:nth-last-child(3)',
-        '[class*="tools"] button:nth-last-child(2)',
-    ]:
-        try:
-            el = viewer.locator(sel).first
-            if await el.count() and await el.is_visible():
-                await el.click(timeout=4000)
-                await asyncio.sleep(1.5)
-                dl_clicked = True
-                log(f"    Download button clicked ({sel})")
-                break
-        except Exception:
-            continue
-
-    if not dl_clicked:
-        log("    Download button not found — saving thumbnail preview instead")
-        if viewer is not page:
-            try: await viewer.close()
-            except Exception: pass
-        return await _save_thumb_preview(ctx, page, dest_dir, title, log)
-
-    # Select "JPG Only" in the popup
-    for lbl in ("JPG Only", "JPG only", "JPG"):
-        try:
-            el = viewer.get_by_text(lbl, exact=True).first
-            if await el.count():
-                await el.click(timeout=3000)
-                await asyncio.sleep(0.5)
-                log("    JPG Only selected")
-                break
-        except Exception:
-            continue
-
-    # Click DOWNLOAD button — use exact data-testid first
+    # Весь блок download обёрнут в expect_download чтобы не пропустить событие
     downloaded = None
     try:
-        async with viewer.expect_download(timeout=30000) as dl_info:
+        async with viewer.expect_download(timeout=45000) as dl_info:
+            # Кнопка download (стрелка вниз)
+            dl_ok = False
             for sel in [
-                '[data-testid="full-text-confirm-download"]',
-                'button:has-text("DOWNLOAD")',
-                'button:has-text("Download")',
+                'button[aria-label*="Download" i]',
+                'button[title*="Download" i]',
+                '[data-testid*="download" i]:not([data-testid="full-text-confirm-download"])',
+                '[class*="toolbar"] button:nth-last-child(3)',
+                '[class*="toolbar"] button:nth-last-child(2)',
+                '[class*="tools"] button:nth-last-child(2)',
             ]:
+                try:
+                    el = viewer.locator(sel).first
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=4000)
+                        await asyncio.sleep(1.5)
+                        dl_ok = True
+                        log(f"    Download нажат ({sel})")
+                        break
+                except Exception:
+                    continue
+
+            if not dl_ok:
+                raise RuntimeError("кнопка download не найдена")
+
+            # JPG Only
+            for lbl in ("JPG Only", "JPG only"):
+                try:
+                    el = viewer.get_by_text(lbl, exact=True).first
+                    if await el.count():
+                        await el.click(timeout=3000)
+                        await asyncio.sleep(0.5)
+                        log("    JPG Only выбран")
+                        break
+                except Exception:
+                    continue
+
+            # Confirm download
+            for sel in ['[data-testid="full-text-confirm-download"]',
+                        'button:has-text("Download")',
+                        'button:has-text("DOWNLOAD")']:
                 try:
                     btn = viewer.locator(sel).first
                     if await btn.count() and await btn.is_visible():
                         await btn.click(timeout=5000)
-                        log(f"    Download confirmed ({sel})")
+                        log(f"    Download нажат ({sel})")
                         break
                 except Exception:
                     continue
+
         dl = await dl_info.value
         await dl.save_as(str(dest))
         downloaded = str(dest)
-        log(f"    Saved: {fname}")
+        log(f"    Сохранено: {fname} ({dest.stat().st_size//1024}KB)")
     except Exception as exc:
-        log(f"    expect_download failed ({exc}) — watching Downloads folder...")
+        log(f"    expect_download: {exc} → жду в Downloads...")
         for _ in range(15):
             await asyncio.sleep(1)
             after = set(DOWNLOADS_DIR.glob("*.jpg")) | set(DOWNLOADS_DIR.glob("*.jpeg"))
-            new_f = after - before
-            if new_f:
-                src_f = max(new_f, key=lambda p: p.stat().st_mtime)
+            nw = after - before
+            if nw:
+                src_f = max(nw, key=lambda p: p.stat().st_mtime)
                 shutil.move(str(src_f), str(dest))
                 downloaded = str(dest)
-                log(f"    Moved from Downloads: {fname}")
+                log(f"    Перемещено: {fname}")
                 break
 
-    # Close stray non-FamilySearch tabs (Adobe Express, Photos, etc.)
-    await asyncio.sleep(1)
+    if not downloaded and not img_src:
+        # Кнопка не найдена, нет картинки
+        if viewer is not page:
+            try: await viewer.close()
+            except Exception: pass
+        return None
+
+    # Закрыть лишние вкладки
+    await asyncio.sleep(0.5)
     for pg in list(ctx.pages):
         if pg not in (page, viewer) and "familysearch" not in pg.url:
             try: await pg.close()
@@ -678,156 +717,133 @@ async def _download_full_image(ctx, page, dest_dir: Path,
 
     if downloaded:
         return downloaded
-
-    # Last resort: save thumbnail bytes
-    return await _save_thumb_preview(ctx, page, dest_dir, title, log)
-
-
-async def _save_thumb_preview(ctx, page, dest_dir: Path,
-                               title: str, log) -> str | None:
-    """Download thumbnail and save as *_preview.jpg (fallback)."""
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / (safe_fn(title) + "_preview.jpg")
-    SKIP = ("icon", "logo", "sprite", "avatar", "pixel", "button", "badge")
-    for sel in [
-        'img[alt="Thumbnail"]',
-        'img[class*="imageThumb"]',
-        'img[src*="dz/v1"]',
-        'img[src*="/image/"]',
-        '.imageViewer img',
-        '[class*="thumbnail" i] img',
-        'main img[src*="http"]',
-    ]:
-        try:
-            for el in await page.query_selector_all(sel):
-                src = (await el.get_attribute("src") or "").strip()
-                if not src.startswith("http"):
-                    continue
-                if any(b in src.lower() for b in SKIP):
-                    continue
-                ip = await ctx.new_page()
-                try:
-                    r = await ip.goto(src, timeout=15000)
-                    if r and r.ok:
-                        body = await r.body()
-                        if len(body) > 5000:
-                            dest.write_bytes(body)
-                            log(f"    Preview saved: {dest.name} ({len(body)//1024}KB)")
-                            return str(dest)
-                finally:
-                    await ip.close()
-        except Exception:
-            continue
+    # Fallback: сохранить превьюшку
+    if img_src:
+        body = await _fetch_bytes(ctx, img_src)
+        if body:
+            fp = dest_dir / (safe_fn(title) + "_preview.jpg")
+            fp.write_bytes(body)
+            log(f"    Fallback превьюшка: {fp.name}")
+            return str(fp)
     return None
 
 
-# ── Scrape one record page ───────────────────────────────────────────────────── #
+# ── 10. СКРАПИНГ СТРАНИЦЫ ЗАПИСИ ─────────────────────────────────────────── #
 
-async def _scrape_record(ctx, url: str, name_hint: str,
-                          images_root: Path, log) -> dict:
+async def _scrape_page(ctx, page, url: str, name_hint: str,
+                       images_root: Path, logged_in_ref: list,
+                       email: str, password: str, log) -> dict:
+    """
+    Навигировать main page на url.
+    Если редирект на логин — войти (только если logged_in_ref[0] == False).
+    Скрапить данные, скачать картинку.
+    НЕ закрывает page — вызывающий делает go_back().
+    """
+    rec = {"url": url, "title": name_hint, "name": name_hint,
+           "table_data": {}, "images": [], "thumb_bytes": None,
+           "events": "", "relationships": "", "collection": ""}
+
     for bad in BAD_PATHS:
         if bad in url:
-            log(f"  Skip bad URL: {url[:80]}")
-            return _empty(url, name_hint)
+            return rec
 
-    rec  = _empty(url, name_hint)
-    page = await ctx.new_page()
+    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    await asyncio.sleep(3)
+
+    # Если редирект на логин — залогиниться ОДИН РАЗ
+    if "login" in page.url:
+        if logged_in_ref[0]:
+            log(f"  !! Повторный логин-редирект (уже был вход). URL: {page.url[:60]}")
+            return rec
+        if not email or not password:
+            log("  !! Нет credentials для логина")
+            return rec
+        log("  → Форма логина, входим...")
+        ok = await _login(page, email, password, log)
+        if not ok:
+            log("  !! Вход провалился")
+            return rec
+        logged_in_ref[0] = True
+        # После логина state= редиректит на нужную запись,
+        # но если нет — навигируем вручную
+        if url.split("?")[0] not in page.url:
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(3)
+
+    # Заголовок
+    for sel in ["h1", '[class*="title" i]', "h2"]:
+        try:
+            t = (await page.locator(sel).first.text_content(timeout=3000) or "").strip()
+            if 3 < len(t) < 300:
+                rec["title"] = t
+                break
+        except Exception:
+            pass
+
+    # Данные: dl/dt/dd
+    td: dict = {}
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=25000)
-        await asyncio.sleep(2)
-
-        # Page title
-        for sel in ["h1", '[class*="title" i]', "h2"]:
-            try:
-                t = (await page.locator(sel).first
-                     .text_content(timeout=3000) or "").strip()
-                if 3 < len(t) < 300:
-                    rec["title"] = t
-                    break
-            except Exception:
-                pass
-
-        # Structured data: dl/dt/dd first, then table rows
-        td: dict = {}
+        dts = await page.query_selector_all("dl dt")
+        dds = await page.query_selector_all("dl dd")
+        for dt, dd in zip(dts, dds):
+            k = (await dt.text_content() or "").strip().rstrip(":")
+            v = (await dd.text_content() or "").strip()
+            if k and v:
+                td[k] = v
+    except Exception:
+        pass
+    if not td:
         try:
-            dts = await page.query_selector_all("dl dt")
-            dds = await page.query_selector_all("dl dd")
-            for dt, dd in zip(dts, dds):
-                k = (await dt.text_content() or "").strip().rstrip(":")
-                v = (await dd.text_content() or "").strip()
-                if k and v:
-                    td[k] = v
+            for row in await page.query_selector_all("table tr"):
+                cells = await row.query_selector_all("td, th")
+                if len(cells) >= 2:
+                    k = (await cells[0].text_content() or "").strip().rstrip(":")
+                    v = (await cells[1].text_content() or "").strip()
+                    if k and v:
+                        td[k] = v
         except Exception:
             pass
-        if not td:
-            try:
-                for row in await page.query_selector_all("table tr"):
-                    cells = await row.query_selector_all("td, th")
-                    if len(cells) >= 2:
-                        k = (await cells[0].text_content() or "").strip().rstrip(":")
-                        v = (await cells[1].text_content() or "").strip()
-                        if k and v:
-                            td[k] = v
-            except Exception:
-                pass
-        rec["table_data"] = td
+    rec["table_data"] = td
 
-        # Links on page
-        links: list = []
-        try:
-            for a in await page.query_selector_all("a[href]"):
-                href = (await a.get_attribute("href") or "").strip()
-                text = (await a.text_content() or "").strip()
-                if href.startswith("http") and text and len(text) < 200:
-                    full = ("https://www.familysearch.org" + href
-                            if href.startswith("/") else href)
-                    links.append(f"{text}: {full}")
-        except Exception:
-            pass
-        rec["links"] = links
+    # Метка для имени файла
+    img_label = name_hint
+    if td:
+        parts = [name_hint]
+        for k in ("Event Type", "Type"):
+            if td.get(k):
+                parts.append(td[k]); break
+        for k in ("Event Date", "Date", "Birth Date", "Death Date", "Marriage Date"):
+            if td.get(k):
+                parts.append(td[k]); break
+        if len(parts) > 1:
+            img_label = " — ".join(parts)
 
-        # Build meaningful image/folder name from record data
-        img_label = name_hint
-        if td:
-            parts = [name_hint]
-            for k in ("Event Type", "Type", "Event"):
-                if td.get(k):
-                    parts.append(td[k])
-                    break
-            for k in ("Event Date", "Date", "Death Date", "Birth Date",
-                      "Marriage Date", "Naturalization Date"):
-                if td.get(k):
-                    parts.append(td[k])
-                    break
-            if len(parts) > 1:
-                img_label = " — ".join(parts)
+    img_dir = images_root / safe_fn(img_label)
 
-        img_dir = images_root / safe_fn(img_label)
+    # Превьюшка (маленькая) для Word
+    img_src = await _best_img(page)
+    if img_src:
+        rec["thumb_bytes"] = await _fetch_bytes(ctx, img_src)
+        if rec["thumb_bytes"]:
+            log(f"    Превьюшка: {len(rec['thumb_bytes'])//1024}KB")
+        else:
+            log("    Превьюшка: не получена")
+    else:
+        log("    На странице нет картинки документа")
 
-        # Grab thumbnail bytes for embedding in Word
-        rec["thumb_bytes"] = await _get_thumb_bytes(ctx, page)
+    # Полноформатная JPG
+    if img_src:
+        jp = await _download_jpg(ctx, page, img_dir, img_label, log)
+        rec["images"] = [jp] if jp else []
+    else:
+        rec["images"] = []
 
-        # Download full-resolution JPG via viewer
-        img_path = await _download_full_image(ctx, page, img_dir, img_label, log)
-        rec["images"] = [img_path] if img_path else []
-
-    except Exception as exc:
-        log(f"    !! Record error: {exc}")
-    finally:
-        await page.close()
     return rec
 
 
-def _empty(url, name):
-    return {"url": url, "title": name, "name": name,
-            "table_data": {}, "links": [], "images": [],
-            "thumb_bytes": None,
-            "events": "", "relationships": "", "collection": ""}
+# ── Word ──────────────────────────────────────────────────────────────────── #
 
-
-# ── Word output ──────────────────────────────────────────────────────────────── #
-
-def _add_hyperlink(para, text, url):
+def _add_link(para, text, url):
     rid = para.part.relate_to(url, HYPERLINK_REL, is_external=True)
     hl  = OxmlElement("w:hyperlink"); hl.set(qn("r:id"), rid)
     run = OxmlElement("w:r"); rPr = OxmlElement("w:rPr")
@@ -839,115 +855,98 @@ def _add_hyperlink(para, text, url):
     run.append(t); hl.append(run); para._p.append(hl)
 
 
-def write_docx(path: Path, records: list, qlines: list) -> None:
+def write_docx(path: Path, records: list, qlines: list):
     if not _DOCX_OK:
-        raise RuntimeError("python-docx not installed")
+        raise RuntimeError("python-docx не установлен")
     doc = Document()
-    sec = doc.sections[0]
-    sec.page_width  = Mm(297); sec.page_height = Mm(210)
-    sec.left_margin = sec.right_margin = Mm(18)
-    sec.top_margin  = sec.bottom_margin = Mm(15)
-    h = doc.add_heading("FamilySearch Search Results", 0)
+    s = doc.sections[0]
+    s.page_width  = Mm(297); s.page_height = Mm(210)
+    s.left_margin = s.right_margin = Mm(15)
+    s.top_margin  = s.bottom_margin = Mm(15)
+
+    h = doc.add_heading("FamilySearch — Результаты", 0)
     h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph("Search parameters:")
+    doc.add_paragraph("Параметры:")
     for ln in qlines:
         doc.add_paragraph(ln, style="List Bullet")
-    doc.add_paragraph(f"Records found: {len(records)}  (match >= {MIN_MATCH}%)")
+    doc.add_paragraph(f"Найдено: {len(records)} (совпадение ≥{MIN_MATCH}%)")
     doc.add_paragraph("")
 
     for i, rec in enumerate(records, 1):
         title = rec.get("title") or rec.get("name", "—")
         doc.add_heading(f"{i}. {title}", level=2)
 
-        p = doc.add_paragraph()
-        p.add_run("Match: ").bold = True
-        p.add_run(f"{rec.get('score', '?')}%")
-
-        for label, key in [("Collection",     "collection"),
-                            ("Events",         "events"),
-                            ("Relationships",  "relationships")]:
-            if rec.get(key):
-                pp = doc.add_paragraph()
-                pp.add_run(f"{label}: ").bold = True
-                pp.add_run(rec[key])
-
         if rec.get("url"):
             pp = doc.add_paragraph()
-            pp.add_run("Source: ").bold = True
-            _add_hyperlink(pp, rec["url"], rec["url"])
+            pp.add_run("Источник: ").bold = True
+            _add_link(pp, rec["url"], rec["url"])
 
-        td = rec.get("table_data", {})
-        if td:
+        p = doc.add_paragraph()
+        p.add_run("Совпадение: ").bold = True
+        p.add_run(f"{rec.get('score','?')}%")
+
+        rows_data = []
+        if rec.get("collection"):
+            rows_data.append(("Коллекция", rec["collection"]))
+        if rec.get("events"):
+            rows_data.append(("События", rec["events"]))
+        if rec.get("relationships"):
+            rows_data.append(("Родственники", rec["relationships"]))
+        for f, v in rec.get("table_data", {}).items():
+            rows_data.append((str(f), str(v)))
+
+        if rows_data:
             tbl = doc.add_table(rows=1, cols=2)
             tbl.style = "Table Grid"
             hdr = tbl.rows[0].cells
-            hdr[0].text = "Field"; hdr[1].text = "Value"
+            hdr[0].text = "Поле"; hdr[1].text = "Значение"
             for cell in hdr:
-                for r in cell.paragraphs[0].runs:
-                    r.bold = True
-            for f, v in td.items():
-                row = tbl.add_row().cells
-                row[0].text = str(f)
-                row[1].text = str(v)
+                for run in cell.paragraphs[0].runs:
+                    run.bold = True
+            for f, v in rows_data:
+                r = tbl.add_row().cells
+                r[0].text = f; r[1].text = v
 
-        links = rec.get("links", [])
-        if links:
-            doc.add_paragraph("")
-            pl = doc.add_paragraph()
-            pl.add_run("Page links:").bold = True
-            for lnk in links[:20]:
-                parts = lnk.split(": ", 1)
-                p_l = doc.add_paragraph(style="List Bullet")
-                if len(parts) == 2:
-                    _add_hyperlink(p_l, parts[0], parts[1])
-                else:
-                    p_l.add_run(lnk)
-
-        # Image: prefer downloaded full-res JPG, fall back to thumbnail bytes
         doc.add_paragraph("")
+
         imgs = rec.get("images", [])
         tb   = rec.get("thumb_bytes")
-
         if imgs and Path(imgs[0]).exists():
-            doc.add_paragraph("Document image:").runs[0].bold = True
-            doc.add_paragraph(Path(imgs[0]).name, style="List Bullet")
+            doc.add_paragraph("Изображение документа:").runs[0].bold = True
             try:
-                if Path(imgs[0]).suffix.lower() in (".jpg", ".jpeg", ".png"):
-                    doc.add_picture(imgs[0], width=Inches(5))
+                doc.add_picture(imgs[0], width=Inches(4))
             except Exception:
-                pass
+                doc.add_paragraph(f"  [{Path(imgs[0]).name}]")
         elif tb:
-            doc.add_paragraph("Document preview (thumbnail):").runs[0].bold = True
+            doc.add_paragraph("Превью документа:").runs[0].bold = True
             try:
-                doc.add_picture(io.BytesIO(tb), width=Inches(5))
+                doc.add_picture(io.BytesIO(tb), width=Inches(4))
             except Exception:
-                pass
-
+                doc.add_paragraph("  [не удалось вставить]")
+        else:
+            doc.add_paragraph("  [изображение недоступно]")
         doc.add_paragraph("")
     doc.save(path)
 
 
-# ── Excel output ─────────────────────────────────────────────────────────────── #
+# ── Excel ─────────────────────────────────────────────────────────────────── #
 
-def write_xlsx(path: Path, records: list, qlines: list) -> None:
+def write_xlsx(path: Path, records: list, qlines: list):
     if not _OPENPYXL_OK:
-        raise RuntimeError("openpyxl not installed")
+        raise RuntimeError("openpyxl не установлен")
     wb = Workbook(); ws = wb.active; ws.title = "FamilySearch"
     HF = PatternFill("solid", fgColor="006B6B")
     HN = Font(bold=True, color="FFFFFF", size=11)
     TS = Side(style="thin", color="B0C8C8")
     T  = Border(left=TS, right=TS, top=TS, bottom=TS)
 
-    # Collect all unique table_data field names across all records
     aff: list = []
     for rec in records:
         for k in rec.get("table_data", {}):
-            if k not in aff:
-                aff.append(k)
+            if k not in aff: aff.append(k)
 
-    cols = ["#", "Title", "Match %", "Collection", "Events",
-            "Relationships", "Image file", "URL"] + aff
-
+    cols = ["#", "Имя", "Совп. %", "Коллекция", "События",
+            "Родственники", "Файл JPG", "URL"] + aff
     for ci, cn in enumerate(cols, 1):
         c = ws.cell(row=1, column=ci, value=cn)
         c.font = HN; c.fill = HF; c.border = T
@@ -956,34 +955,25 @@ def write_xlsx(path: Path, records: list, qlines: list) -> None:
     for ri, rec in enumerate(records, 2):
         td   = rec.get("table_data", {})
         imgs = "\n".join(Path(p).name for p in rec.get("images", []))
-        vals = [
-            ri - 1,
-            rec.get("title", rec.get("name", "")),
-            rec.get("score", ""),
-            rec.get("collection", ""),
-            rec.get("events", ""),
-            rec.get("relationships", ""),
-            imgs,
-            rec.get("url", ""),
-        ] + [td.get(f, "") for f in aff]
+        vals = [ri-1, rec.get("title", rec.get("name","")),
+                rec.get("score",""), rec.get("collection",""),
+                rec.get("events",""), rec.get("relationships",""),
+                imgs, rec.get("url","")] + [td.get(f,"") for f in aff]
         for ci, val in enumerate(vals, 1):
             c = ws.cell(row=ri, column=ci, value=val)
             c.border = T
             c.alignment = Alignment(wrap_text=True, vertical="top")
 
-    for ci in range(1, len(cols) + 1):
-        letter = get_column_letter(ci)
-        mw = max(
-            len(str(cols[ci - 1])),
-            *(len(str(ws.cell(row=r, column=ci).value or "").split("\n")[0])
-              for r in range(2, ws.max_row + 1)),
-            8,
-        )
-        ws.column_dimensions[letter].width = min(mw + 4, 60)
+    for ci in range(1, len(cols)+1):
+        ltr = get_column_letter(ci)
+        mw  = max(len(str(cols[ci-1])),
+                  *(len(str(ws.cell(row=r, column=ci).value or "").split("\n")[0])
+                    for r in range(2, ws.max_row+1)), 8)
+        ws.column_dimensions[ltr].width = min(mw+4, 60)
     wb.save(path)
 
 
-# ── Main entry point ─────────────────────────────────────────────────────────── #
+# ── ГЛАВНАЯ ФУНКЦИЯ ───────────────────────────────────────────────────────── #
 
 async def run_scraper(
     *,
@@ -1004,8 +994,7 @@ async def run_scraper(
 
     def _prog(pct, txt):
         log(txt)
-        if progress:
-            progress(pct, txt)
+        if progress: progress(pct, txt)
 
     def _done():
         return bool(cancel_event and cancel_event.is_set())
@@ -1018,19 +1007,19 @@ async def run_scraper(
     output_folder.mkdir(parents=True, exist_ok=True)
     images_root = output_folder / "images"
 
-    qname  = " ".join(p for p in (first_names, last_names) if p)
-    qlines = [ln for ln in [
-        f"First Names: {first_names}",
-        f"Last Names: {last_names}",
-        f"Place Lived: {place_lived}",
-        f"Birth Year: {birth_year}",
+    qname     = " ".join(p for p in (first_names, last_names) if p)
+    qlines    = [ln for ln in [
+        f"First Names: {first_names}", f"Last Names: {last_names}",
+        f"Place Lived: {place_lived}", f"Birth Year: {birth_year}",
     ] if not ln.endswith(": ")]
-    summary = {"ok": False}
-
-    # Output file base name: "FirstNames LastNames" (not "familysearch_...")
+    summary   = {"ok": False}
     file_base = safe_fn(qname) if qname else "familysearch_results"
 
-    _prog(0, "Launching browser...")
+    # logged_in_ref[0] == True после первого успешного входа
+    # Передаём как список чтобы _scrape_page мог изменить флаг
+    logged_in_ref = [False]
+
+    _prog(0, "Запускаю браузер...")
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
@@ -1042,148 +1031,123 @@ async def run_scraper(
         page = await ctx.new_page()
 
         try:
-            # 1. Search from home page
-            _prog(5, "Searching on home page...")
-            await _search_from_home(page, first_names, last_names,
-                                    place_lived, birth_year, log)
+            # ── 1. ПОИСК ──────────────────────────────────────────────── #
+            _prog(5, "Поиск...")
+            await _search(page, first_names, last_names,
+                          place_lived, birth_year, log)
             if _done(): return summary
 
-            # 2. Click Historical Records tab
-            _prog(10, "Selecting Historical Records tab...")
-            await _click_historical_tab(page, log)
-            await asyncio.sleep(2)
+            # ── 2. ТАБ HISTORICAL RECORDS ─────────────────────────────── #
+            # HR tab работает без логина (ограниченные результаты).
+            # Логин произойдёт автоматически при открытии первой записи.
+            _prog(12, "Historical Records tab...")
+            await _click_hr(page, log)
             if _done(): return summary
 
-            # 3. Set 60 results per page
-            _prog(13, "Setting 60 results per page...")
+            # ── 4. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
+            _prog(20, "Сбор результатов...")
             await _set_60(page, log)
-
-            # 4. Collect preliminary results
-            _prog(17, "Collecting results...")
             raw       = await _collect(page, qname, log)
             qualified = [r for r in raw if r["score"] >= MIN_MATCH]
-            log(f"  Qualified (>= {MIN_MATCH}%): {len(qualified)}")
+            log(f"  Подходящих (≥{MIN_MATCH}%): {len(qualified)}")
 
             if not qualified:
-                _prog(100, "No results above match threshold.")
+                _prog(100, f"Нет записей с совпадением ≥{MIN_MATCH}%.")
                 summary.update({"ok": True, "n_records": 0,
-                                "message": f"No records >= {MIN_MATCH}%."})
+                                "message": f"Нет записей ≥{MIN_MATCH}%."})
                 return summary
 
-            # 5. Click first result — may redirect to sign-in
-            _prog(22, "Opening first result...")
-            first_url  = qualified[0]["url"]
-            first_name = qualified[0]["name"]
-            await page.goto(first_url, wait_until="domcontentloaded", timeout=25000)
-            await asyncio.sleep(2)
-
-            cur = page.url
-            if "/identity/login" in cur or "/auth/familysearch/login" in cur:
-                _prog(26, "Signing in...")
-                if not email or not password:
-                    summary.update({"error":   "no_credentials",
-                                    "message": "Login required but no credentials provided."})
-                    return summary
-                if not await _do_login(page, email, password, log):
-                    summary.update({"error":   "login_failed",
-                                    "message": "Sign-in failed — check credentials."})
-                    return summary
-                await asyncio.sleep(2)
-                # After login FamilySearch may redirect to home; go back to first record
-                if first_url not in page.url:
-                    _prog(28, "Navigating to first record after login...")
-                    await page.goto(first_url, wait_until="domcontentloaded", timeout=25000)
-                    await asyncio.sleep(2)
-            else:
-                log(f"  Already signed in. URL: {cur}")
-
-            if _done(): return summary
-
-            # 6. Scrape first record
-            _prog(30, f"[1] Scraping: {first_name[:60]}...")
+            # ── 4-5. СКРАПИНГ ЗАПИСЕЙ на ОДНОЙ главной странице ──────── #
+            # Все записи открываются на page — сессия гарантированно одна.
+            results_url = page.url
             records: list = []
-            det = await _scrape_record(ctx, first_url, first_name, images_root, log)
-            det["score"]         = qualified[0]["score"]
-            det["collection"]    = qualified[0].get("coll", "")
-            det["events"]        = qualified[0].get("evts", "")
-            det["relationships"] = qualified[0].get("rels", "")
-            records.append(det)
-            log(f"    OK  {det['title'][:70]}  {det['score']}%")
-            await asyncio.sleep(0.8)
 
-            # 7. Return to results page
-            _prog(35, "Returning to results page...")
-            await page.go_back()
-            await asyncio.sleep(2)
+            def _all_to_scrape():
+                return qualified  # будет переопределено после advanced
 
-            if has_adv:
-                # ── Advanced search branch ── #
-                # MANDATORY: refresh page before opening Advanced Search
-                _prog(38, "Refreshing page (required before Advanced Search)...")
-                await page.reload(wait_until="domcontentloaded", timeout=20000)
-                await asyncio.sleep(3)
+            to_scrape = list(qualified)
 
-                # Re-click Historical Records tab after refresh
-                await _click_historical_tab(page, log)
-                await asyncio.sleep(2)
-
-                # Open Advanced Search and fill fields
-                _prog(40, "Opening Advanced Search...")
-                await _advanced_search(page, adv, log)
-                await asyncio.sleep(2)
-
-                _prog(44, "Setting 60 results after advanced search...")
-                await _set_60(page, log)
-
-                _prog(47, "Re-collecting results...")
-                raw_adv   = await _collect(page, qname, log)
-                qualified = [r for r in raw_adv if r["score"] >= MIN_MATCH]
-                log(f"  Qualified after advanced search: {len(qualified)}")
-
-                # Scrape ALL results from scratch (first record included again)
-                records = []
-                remaining = qualified
-            else:
-                # ── Simple branch: continue from result #2 ── #
-                remaining = qualified[1:]
-                log(f"  Remaining results to scrape: {len(remaining)}")
-
-            if not remaining and not records:
-                _prog(100, "No qualifying results.")
-                summary.update({"ok": True, "n_records": 0,
-                                "message": "No qualifying results."})
-                return summary
-
-            n_total = len(remaining) + (0 if has_adv else 1)
-            for i, r in enumerate(remaining, 2 if not has_adv else 1):
+            for i, r in enumerate(to_scrape, 1):
                 if _done(): break
-                pct = 47 + int(38 * i / max(n_total, 1))
-                _prog(pct, f"[{i}/{n_total}] {r['name'][:60]}...")
-                det = await _scrape_record(ctx, r["url"], r["name"],
-                                           images_root, log)
+                _prog(20 + int(55 * i / len(to_scrape)),
+                      f"[{i}/{len(to_scrape)}] {r['name'][:60]}...")
+
+                det = await _scrape_page(ctx, page, r["url"], r["name"],
+                                         images_root, logged_in_ref,
+                                         email or "", password or "", log)
                 det["score"]         = r["score"]
                 det["collection"]    = r.get("coll", "")
                 det["events"]        = r.get("evts", "")
                 det["relationships"] = r.get("rels", "")
                 records.append(det)
-                log(f"    OK  {det['title'][:70]}  {det['score']}%")
-                await asyncio.sleep(0.8)
+                log(f"  ✓  {det['title'][:70]}  ({r['score']}%)")
 
-            # 8. Save output files named by person's name
-            _prog(88, "Saving output files...")
+                # Вернуться на results_url напрямую (go_back ненадёжен после login redirect chain)
+                await page.goto(results_url,
+                                wait_until="domcontentloaded", timeout=20000)
+                try:
+                    await page.wait_for_selector("tbody tr", timeout=8000)
+                except Exception:
+                    await asyncio.sleep(3)
+
+                # После первой записи: если есть advanced search
+                if i == 1 and has_adv:
+                    _prog(78, "Advanced Search: обязательный reload...")
+                    await page.reload(wait_until="domcontentloaded", timeout=20000)
+                    await asyncio.sleep(3)
+                    await _click_hr(page, log)
+                    await asyncio.sleep(1)
+                    _prog(82, "Advanced Search...")
+                    await _advanced(page, adv, log)
+                    await asyncio.sleep(2)
+                    await _set_60(page, log)
+                    _prog(85, "Сбор результатов после Advanced Search...")
+                    raw_adv   = await _collect(page, qname, log)
+                    qualified = [r for r in raw_adv if r["score"] >= MIN_MATCH]
+                    log(f"  После Advanced: {len(qualified)}")
+                    results_url = page.url
+                    # Перезапустить цикл по всем результатам
+                    to_scrape = list(qualified)
+                    records   = []
+                    break  # выйти из первого цикла, войти во второй
+
+            # Если был advanced — второй проход по всем результатам
+            if has_adv and to_scrape:
+                for i, r in enumerate(to_scrape, 1):
+                    if _done(): break
+                    _prog(85 + int(10 * i / len(to_scrape)),
+                          f"[{i}/{len(to_scrape)}] {r['name'][:60]}...")
+                    det = await _scrape_page(ctx, page, r["url"], r["name"],
+                                             images_root, logged_in_ref,
+                                             email or "", password or "", log)
+                    det["score"]         = r["score"]
+                    det["collection"]    = r.get("coll", "")
+                    det["events"]        = r.get("evts", "")
+                    det["relationships"] = r.get("rels", "")
+                    records.append(det)
+                    log(f"  ✓  {det['title'][:70]}  ({r['score']}%)")
+                    await page.goto(results_url,
+                                    wait_until="domcontentloaded", timeout=20000)
+                    try:
+                        await page.wait_for_selector("tbody tr", timeout=8000)
+                    except Exception:
+                        await asyncio.sleep(3)
+
+
+            # ── 6. СОХРАНЕНИЕ ──────────────────────────────────────── #
+            _prog(96, "Сохранение файлов...")
             docx_p = output_folder / f"{file_base}.docx"
             xlsx_p = output_folder / f"{file_base}.xlsx"
             sd = sx = False
             if want_docx and records:
                 write_docx(docx_p, records, qlines)
                 sd = True
-                log(f"  Word saved: {docx_p.name}")
+                log(f"  Word: {docx_p}")
             if want_xlsx and records:
                 write_xlsx(xlsx_p, records, qlines)
                 sx = True
-                log(f"  Excel saved: {xlsx_p.name}")
-
-            _prog(100, f"Done — {len(records)} record(s).")
+                log(f"  Excel: {xlsx_p}")
+            _prog(100, f"Готово — {len(records)} записей.")
             summary.update({
                 "ok":            True,
                 "docx_count":    1 if sd else 0,
@@ -1193,7 +1157,7 @@ async def run_scraper(
             })
 
         except Exception as exc:
-            summary.update({"error":   "exception",
+            summary.update({"error": "exception",
                             "message": f"{type(exc).__name__}: {exc}"})
             log(f"  !! {exc}")
         finally:
