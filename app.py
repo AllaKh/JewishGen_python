@@ -2,15 +2,12 @@
 app.py — entry point
 
 Opens the Launcher window, which lists all genealogy databases.
-JewishGen is the first and only fully integrated scraper so far;
-all other sites open in the default browser until their own
-scrapers are implemented.
+Integrated scrapers: JewishGen, MyHeritage, FamilySearch.
+All other sites open in the default browser.
 """
 import sys
 from pathlib import Path
 
-# Make sure the project root is on sys.path so both  gui.*  and  scraper
-# can be imported regardless of which directory the user runs from.
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))

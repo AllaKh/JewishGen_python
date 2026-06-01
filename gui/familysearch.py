@@ -1,24 +1,12 @@
 """
-gui/familysearch.py
--------------------
-FamilySearch Search window.
+gui/familysearch.py  —  v5
+===========================
+FamilySearch search window.
+All annotations in English.
 
-Layout
-------
-• Logo + credentials (email / password)
-• Basic search: First Names, Last Names, Place Lived, Birth Year
-• Tab selector: All / Historical Records / Family Tree Profiles / Memories
-• Advanced Search section (collapsible) — fields match the modal seen
-  in the screenshots, organised into groups:
-    Ancestor Info: Alternate Name (first+last), Sex
-    Life Events:   Birth / Marriage / Residence / Death / Any
-                   → each has Place, Year, Exact+/- checkbox
-    Family Members: Father, Mother, Spouse, Other Person (first+last)
-    Record Options: Country, State
-    Keywords, Show Exact Search toggle
-• Output: docx / xlsx checkboxes + folder picker
-• Progress bar + Start button
-• Autosave all fields to .fs_autosave.json
+Window resizes correctly when Advanced Search collapses/expands.
+Logo: FSlogo.png
+Autosave: .fs_autosave.json
 """
 
 import json, sys
@@ -28,7 +16,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QFileDialog, QProgressBar, QMessageBox,
-    QApplication, QGroupBox, QComboBox, QSpinBox,
+    QApplication, QGroupBox, QComboBox,
     QFrame, QGridLayout,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
@@ -45,7 +33,8 @@ _EYE_SHUT = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
            c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
   <line x1="1" y1="1" x2="23" y2="23"/></svg>"""
 
-def _svg_icon(svg, size=20):
+
+def _svg_icon(svg: bytes, size: int = 20) -> QIcon:
     from PySide6.QtSvg import QSvgRenderer
     from PySide6.QtGui import QPixmap, QPainter
     r = QSvgRenderer(QByteArray(svg))
@@ -53,6 +42,8 @@ def _svg_icon(svg, size=20):
     p = QPainter(pix); r.render(p); p.end()
     return QIcon(pix)
 
+
+# ── Paths ─────────────────────────────────────────────────────────────────── #
 _HERE    = Path(__file__).resolve().parent
 _ROOT    = _HERE.parent
 _CONFIG  = _ROOT / "config"
@@ -76,9 +67,9 @@ QGroupBox{font-weight:bold;font-size:11px;border:1px solid #b0ccc8;
   border-radius:6px;margin-top:10px;padding-top:6px;background:#f5fafa;}
 QGroupBox::title{subcontrol-origin:margin;subcontrol-position:top left;
   left:10px;padding:0 4px;color:#006B6B;background:#f5fafa;}
-QLineEdit,QComboBox,QSpinBox{padding:4px 6px;border:1px solid #b0ccc8;
+QLineEdit,QComboBox{padding:4px 6px;border:1px solid #b0ccc8;
   border-radius:4px;background:white;min-height:22px;}
-QLineEdit:focus,QComboBox:focus,QSpinBox:focus{border:1px solid #006B6B;}
+QLineEdit:focus,QComboBox:focus{border:1px solid #006B6B;}
 QPushButton{padding:5px 14px;border-radius:4px;
   border:1px solid #b0ccc8;background:#eef6f5;}
 QPushButton:hover{background:#d5eeec;}
@@ -95,12 +86,12 @@ QPushButton#advBtn:hover{color:#008080;}
 QProgressBar{border:1px solid #b0ccc8;border-radius:4px;
   text-align:center;min-height:18px;}
 QProgressBar::chunk{background:#006B6B;border-radius:3px;}
-QLabel#sechead{font-weight:bold;color:#006B6B;font-size:10px;
-  margin-top:4px;margin-bottom:2px;}
-QFrame#divider{background:#c8dede;}
+QLabel#sechead{font-weight:bold;color:#006B6B;font-size:10px;margin-top:4px;}
+QFrame#div{background:#c8dede;}
 """
 
-# ── Password field ────────────────────────────────────────────────────────── #
+
+# ── Password field with eye toggle ────────────────────────────────────────── #
 class PwdEdit(QLineEdit):
     def __init__(self):
         super().__init__()
@@ -117,35 +108,43 @@ class PwdEdit(QLineEdit):
             self.setEchoMode(QLineEdit.Normal if v else QLineEdit.Password),
             self._btn.setIcon(self._io if v else self._is),
         ))
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._btn.move(self.width()-30, (self.height()-28)//2)
         self.setTextMargins(0, 0, 32, 0)
 
-# ── Worker ────────────────────────────────────────────────────────────────── #
+
+# ── Background worker thread ──────────────────────────────────────────────── #
 class Worker(QThread):
     progress = Signal(int, str)
     finished = Signal(dict)
-    def __init__(self, payload):
-        super().__init__(); self.payload = payload
+
+    def __init__(self, payload: dict):
+        super().__init__()
+        self.payload = payload
+
     def run(self):
         import asyncio
-        self.payload["progress"] = lambda v,t: self.progress.emit(int(v), str(t))
+        self.payload["progress"] = lambda v, t: self.progress.emit(int(v), str(t))
         try:
             result = asyncio.run(_scraper.run_scraper(**self.payload))
         except Exception as exc:
-            result = {"ok":False,"error":"exception",
-                      "message":f"{type(exc).__name__}: {exc}"}
+            result = {"ok": False, "error": "exception",
+                      "message": f"{type(exc).__name__}: {exc}"}
         self.finished.emit(result)
 
-# ── Small helpers ─────────────────────────────────────────────────────────── #
-def _divider():
-    f = QFrame(); f.setObjectName("divider")
+
+# ── Small UI helpers ──────────────────────────────────────────────────────── #
+def _divider() -> QFrame:
+    f = QFrame(); f.setObjectName("div")
     f.setFrameShape(QFrame.HLine); f.setFixedHeight(1)
     return f
 
-def _section_label(text):
+
+def _sechead(text: str) -> QLabel:
     l = QLabel(text); l.setObjectName("sechead"); return l
+
 
 # ── Main window ───────────────────────────────────────────────────────────── #
 class FamilySearchApp(QMainWindow):
@@ -157,39 +156,46 @@ class FamilySearchApp(QMainWindow):
         self._build_ui()
         self._load()
 
+    # ── Build UI ──────────────────────────────────────────────────────────── #
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
         self._outer = QVBoxLayout(root)
         self._outer.setContentsMargins(18, 12, 18, 12)
         self._outer.setSpacing(8)
 
-        # ── Logo ─────────────────────────────────────────────────────────── #
+        # Logo
         lbl = QLabel()
-        pix = QPixmap(str(_CONFIG / "familysearch.png"))
+        pix = QPixmap(str(_CONFIG / "FSlogo.png"))
         if not pix.isNull():
             lbl.setPixmap(pix.scaledToWidth(220, Qt.SmoothTransformation))
         else:
-            lbl.setText("🌳  FamilySearch")
+            lbl.setText("FamilySearch")
             lbl.setStyleSheet("font-size:22px;font-weight:bold;color:#006B6B;")
         lbl.setAlignment(Qt.AlignLeft)
         self._outer.addWidget(lbl)
 
-        # ── Credentials ──────────────────────────────────────────────────── #
+        # Credentials
         cg = QGroupBox("Account credentials")
         cl = QHBoxLayout(cg); cl.setSpacing(8)
-        self.f_email = QLineEdit(); self.f_email.setPlaceholderText("Email / Username")
-        self.f_pass  = PwdEdit();   self.f_pass.setPlaceholderText("Password")
-        cl.addWidget(QLabel("Email:")); cl.addWidget(self.f_email, 2)
+        self.f_user = QLineEdit()
+        self.f_user.setPlaceholderText("FamilySearch username")
+        self.f_pass = PwdEdit()
+        self.f_pass.setPlaceholderText("Password")
+        cl.addWidget(QLabel("Username:")); cl.addWidget(self.f_user, 2)
         cl.addWidget(QLabel("Password:")); cl.addWidget(self.f_pass, 2)
         self._outer.addWidget(cg)
 
-        # ── Basic search ─────────────────────────────────────────────────── #
+        # Basic Search
         bg = QGroupBox("Basic Search")
         bf = QGridLayout(bg); bf.setSpacing(8)
-        self.f_first  = QLineEdit(); self.f_first.setPlaceholderText("Ancestor's First and Middle Names")
-        self.f_last   = QLineEdit(); self.f_last.setPlaceholderText("Ancestor's Last or Maiden Names")
-        self.f_place  = QLineEdit(); self.f_place.setPlaceholderText("City, County, State, Country")
-        self.f_byear  = QLineEdit(); self.f_byear.setPlaceholderText("e.g. 1897")
+        self.f_first = QLineEdit()
+        self.f_first.setPlaceholderText("Ancestor's First and Middle Names")
+        self.f_last  = QLineEdit()
+        self.f_last.setPlaceholderText("Ancestor's Last or Maiden Names")
+        self.f_place = QLineEdit()
+        self.f_place.setPlaceholderText("City, County, State, Country")
+        self.f_byear = QLineEdit()
+        self.f_byear.setPlaceholderText("e.g. 1897")
         self.f_byear.setFixedWidth(120)
         bf.addWidget(QLabel("First Names:"), 0, 0)
         bf.addWidget(self.f_first,           0, 1)
@@ -202,132 +208,143 @@ class FamilySearchApp(QMainWindow):
         bf.setColumnStretch(1, 2); bf.setColumnStretch(3, 1)
         self._outer.addWidget(bg)
 
-        # ── Tab selector ─────────────────────────────────────────────────── #
+        # Tab selector
         tg = QGroupBox("Search tab")
         tl = QHBoxLayout(tg); tl.setSpacing(10)
         self.f_tab = QComboBox(); self.f_tab.addItems(TAB_OPTIONS)
         tl.addWidget(QLabel("Tab:")); tl.addWidget(self.f_tab); tl.addStretch()
         self._outer.addWidget(tg)
 
-        # ── Advanced Search (collapsible) ─────────────────────────────────── #
+        # Advanced Search toggle button
         self._adv_btn = QPushButton("▶   Advanced Search")
         self._adv_btn.setObjectName("advBtn")
         self._adv_btn.setCheckable(True)
         self._adv_btn.toggled.connect(self._toggle_adv)
         self._outer.addWidget(self._adv_btn)
 
+        # Advanced Search panel (hidden by default)
         self._adv = QGroupBox()
         av = QVBoxLayout(self._adv); av.setSpacing(6)
 
-        # — Ancestor Info —
-        av.addWidget(_section_label("ANCESTOR INFORMATION"))
-        ai_row = QHBoxLayout()
-        self.f_alt_first = QLineEdit(); self.f_alt_first.setPlaceholderText("Alternate First Name")
-        self.f_alt_last  = QLineEdit(); self.f_alt_last.setPlaceholderText("Alternate Last Name")
-        self.f_sex       = QComboBox(); self.f_sex.addItems(GENDER_OPTIONS)
-        ai_row.addWidget(QLabel("Alt Name:")); ai_row.addWidget(self.f_alt_first)
-        ai_row.addWidget(self.f_alt_last)
-        ai_row.addWidget(QLabel("Sex:")); ai_row.addWidget(self.f_sex)
-        av.addLayout(ai_row)
+        # Ancestor Info
+        av.addWidget(_sechead("ANCESTOR INFORMATION"))
+        ai = QHBoxLayout()
+        self.f_alt_first = QLineEdit()
+        self.f_alt_first.setPlaceholderText("Alternate First Name")
+        self.f_alt_last  = QLineEdit()
+        self.f_alt_last.setPlaceholderText("Alternate Last Name")
+        self.f_sex = QComboBox(); self.f_sex.addItems(GENDER_OPTIONS)
+        ai.addWidget(QLabel("Alt Name:"))
+        ai.addWidget(self.f_alt_first)
+        ai.addWidget(self.f_alt_last)
+        ai.addWidget(QLabel("Sex:"))
+        ai.addWidget(self.f_sex)
+        av.addLayout(ai)
         av.addWidget(_divider())
 
-        # — Life Events —
-        av.addWidget(_section_label("LIFE EVENTS"))
-        events_grid = QGridLayout(); events_grid.setSpacing(6)
-        self._event_fields = {}
-        event_labels = [
+        # Life Events grid
+        av.addWidget(_sechead("LIFE EVENTS"))
+        eg = QGridLayout(); eg.setSpacing(6)
+        self._event_fields: dict = {}
+        events_list = [
             ("Birth",     "birth"),
             ("Marriage",  "marriage"),
             ("Residence", "residence"),
             ("Death",     "death"),
             ("Any",       "any"),
         ]
-        events_grid.addWidget(QLabel("Event"),    0, 0)
-        events_grid.addWidget(QLabel("Place"),    0, 1)
-        events_grid.addWidget(QLabel("Year"),     0, 2)
-        events_grid.addWidget(QLabel("Exact+/-"), 0, 3)
-        for row_i, (label, key) in enumerate(event_labels, 1):
-            events_grid.addWidget(QLabel(label + ":"), row_i, 0)
-            place_f = QLineEdit(); place_f.setPlaceholderText("City, County, State, Province, or Country")
-            year_f  = QLineEdit(); year_f.setPlaceholderText("Year"); year_f.setFixedWidth(80)
-            exact_cb = QCheckBox()
-            self._event_fields[key] = (place_f, year_f, exact_cb)
-            events_grid.addWidget(place_f,   row_i, 1)
-            events_grid.addWidget(year_f,    row_i, 2)
-            events_grid.addWidget(exact_cb,  row_i, 3)
-        events_grid.setColumnStretch(1, 3)
-        av.addLayout(events_grid)
+        eg.addWidget(QLabel("Event"),    0, 0)
+        eg.addWidget(QLabel("Place"),    0, 1)
+        eg.addWidget(QLabel("Year"),     0, 2)
+        eg.addWidget(QLabel("Exact+/-"), 0, 3)
+        for ri, (label, key) in enumerate(events_list, 1):
+            eg.addWidget(QLabel(label+":"), ri, 0)
+            pf = QLineEdit()
+            pf.setPlaceholderText("City, County, State, Province, or Country")
+            yf = QLineEdit(); yf.setPlaceholderText("Year"); yf.setFixedWidth(80)
+            cb = QCheckBox()
+            self._event_fields[key] = (pf, yf, cb)
+            eg.addWidget(pf, ri, 1)
+            eg.addWidget(yf, ri, 2)
+            eg.addWidget(cb, ri, 3)
+        eg.setColumnStretch(1, 3)
+        av.addLayout(eg)
         av.addWidget(_divider())
 
-        # — Family Members —
-        av.addWidget(_section_label("FAMILY MEMBERS"))
-        fam_grid = QGridLayout(); fam_grid.setSpacing(6)
-        self._fam_fields = {}
-        fam_labels = [
-            ("Father",      "father"),
-            ("Mother",      "mother"),
-            ("Spouse",      "spouse"),
-            ("Other Person","other"),
+        # Family Members grid
+        av.addWidget(_sechead("FAMILY MEMBERS"))
+        fg = QGridLayout(); fg.setSpacing(6)
+        self._fam_fields: dict = {}
+        fams_list = [
+            ("Father",       "father"),
+            ("Mother",       "mother"),
+            ("Spouse",       "spouse"),
+            ("Other Person", "other"),
         ]
-        fam_grid.addWidget(QLabel("Member"), 0, 0)
-        fam_grid.addWidget(QLabel("First Names"), 0, 1)
-        fam_grid.addWidget(QLabel("Last Names"), 0, 2)
-        for row_i, (label, key) in enumerate(fam_labels, 1):
-            fam_grid.addWidget(QLabel(label + ":"), row_i, 0)
-            first_f = QLineEdit()
-            last_f  = QLineEdit()
-            self._fam_fields[key] = (first_f, last_f)
-            fam_grid.addWidget(first_f, row_i, 1)
-            fam_grid.addWidget(last_f,  row_i, 2)
-        fam_grid.setColumnStretch(1, 2); fam_grid.setColumnStretch(2, 2)
-        av.addLayout(fam_grid)
+        fg.addWidget(QLabel("Member"),     0, 0)
+        fg.addWidget(QLabel("First Names"),0, 1)
+        fg.addWidget(QLabel("Last Names"), 0, 2)
+        for ri, (label, key) in enumerate(fams_list, 1):
+            fg.addWidget(QLabel(label+":"), ri, 0)
+            ff = QLineEdit(); lf = QLineEdit()
+            self._fam_fields[key] = (ff, lf)
+            fg.addWidget(ff, ri, 1)
+            fg.addWidget(lf, ri, 2)
+        fg.setColumnStretch(1, 2); fg.setColumnStretch(2, 2)
+        av.addLayout(fg)
         av.addWidget(_divider())
 
-        # — Record Options —
-        av.addWidget(_section_label("RECORD OPTIONS (LOCATION)"))
-        rec_row = QHBoxLayout(); rec_row.setSpacing(8)
-        self.f_country = QLineEdit(); self.f_country.setPlaceholderText("Country or Location")
-        self.f_state   = QLineEdit(); self.f_state.setPlaceholderText("State or Province")
-        rec_row.addWidget(QLabel("Country:")); rec_row.addWidget(self.f_country)
-        rec_row.addWidget(QLabel("State:"));   rec_row.addWidget(self.f_state)
-        av.addLayout(rec_row)
+        # Record Options
+        av.addWidget(_sechead("RECORD OPTIONS (LOCATION)"))
+        rr = QHBoxLayout(); rr.setSpacing(8)
+        self.f_country = QLineEdit()
+        self.f_country.setPlaceholderText("Country or Location")
+        self.f_state   = QLineEdit()
+        self.f_state.setPlaceholderText("State or Province")
+        rr.addWidget(QLabel("Country:")); rr.addWidget(self.f_country)
+        rr.addWidget(QLabel("State:"));   rr.addWidget(self.f_state)
+        av.addLayout(rr)
         av.addWidget(_divider())
 
-        # — Keywords + Exact Search —
-        kw_row = QHBoxLayout(); kw_row.setSpacing(8)
-        self.f_keywords   = QLineEdit(); self.f_keywords.setPlaceholderText("Keywords")
+        # Keywords + Exact Search toggle
+        kr = QHBoxLayout(); kr.setSpacing(8)
+        self.f_keywords   = QLineEdit()
+        self.f_keywords.setPlaceholderText("Keywords")
         self.f_show_exact = QCheckBox("Show Exact Search")
-        kw_row.addWidget(QLabel("Keywords:")); kw_row.addWidget(self.f_keywords, 2)
-        kw_row.addWidget(self.f_show_exact)
-        av.addLayout(kw_row)
+        kr.addWidget(QLabel("Keywords:"))
+        kr.addWidget(self.f_keywords, 2)
+        kr.addWidget(self.f_show_exact)
+        av.addLayout(kr)
 
         self._adv.setVisible(False)
         self._outer.addWidget(self._adv)
 
-        # ── Output ───────────────────────────────────────────────────────── #
+        # Output
         og = QGroupBox("Output")
         ol = QVBoxLayout(og); ol.setSpacing(6)
         fr = QHBoxLayout()
         self.f_docx = QCheckBox("Word (.docx)"); self.f_docx.setChecked(True)
         self.f_xlsx = QCheckBox("Excel (.xlsx)"); self.f_xlsx.setChecked(True)
         fr.addWidget(self.f_docx); fr.addWidget(self.f_xlsx); fr.addStretch()
-        fr.addWidget(QLabel("(Document images saved in sub-folder 'images')"))
+        fr.addWidget(QLabel("(Images saved in sub-folder 'images')"))
         ol.addLayout(fr)
         dr = QHBoxLayout(); dr.setSpacing(6)
         self.f_folder = QLineEdit(); self.f_folder.setText(_DEF_DIR)
         bb = QPushButton("Browse…"); bb.setFixedWidth(80)
         bb.clicked.connect(self._browse)
-        dr.addWidget(QLabel("Save to:")); dr.addWidget(self.f_folder, 1); dr.addWidget(bb)
+        dr.addWidget(QLabel("Save to:"))
+        dr.addWidget(self.f_folder, 1)
+        dr.addWidget(bb)
         ol.addLayout(dr)
         self._outer.addWidget(og)
 
-        # ── Progress ─────────────────────────────────────────────────────── #
+        # Progress bar + status label
         self.pbar  = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
         self._outer.addWidget(self.pbar)
         self._outer.addWidget(self.stlbl)
 
-        # ── Start ─────────────────────────────────────────────────────────── #
+        # Start button
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
@@ -337,71 +354,89 @@ class FamilySearchApp(QMainWindow):
         self._outer.addWidget(
             QLabel("© Alla Khananashvili", alignment=Qt.AlignRight))
 
-        # Autosave wiring
-        for w in self._autosave_widgets():
+        # Wire autosave to every interactive widget
+        for w in self._all_widgets():
             if   isinstance(w, QLineEdit): w.textChanged.connect(self._save)
             elif isinstance(w, QComboBox): w.currentTextChanged.connect(self._save)
             elif isinstance(w, QCheckBox): w.stateChanged.connect(self._save)
 
         self._fit()
 
-    # ── Advanced toggle ───────────────────────────────────────────────────── #
-    def _toggle_adv(self, on):
+    # ── Advanced Search toggle ────────────────────────────────────────────── #
+    def _toggle_adv(self, on: bool):
         self._adv.setVisible(on)
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
 
     def _fit(self):
-        self.adjustSize()
-        self.setFixedHeight(self.sizeHint().height())
+        """Resize window height to exactly fit visible content."""
+        QApplication.processEvents()
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)   # remove any fixed-height constraint
+        hint = self.centralWidget().sizeHint()
+        self.resize(self.width(), hint.height() + 42)  # +42 for title bar
 
-    # ── Widget list for autosave ──────────────────────────────────────────── #
-    def _autosave_widgets(self):
-        ws = [self.f_email, self.f_pass, self.f_first, self.f_last,
-              self.f_place, self.f_byear, self.f_tab,
+    # ── All autosave-able widgets ─────────────────────────────────────────── #
+    def _all_widgets(self) -> list:
+        ws = [self.f_user, self.f_pass,
+              self.f_first, self.f_last, self.f_place, self.f_byear,
+              self.f_tab,
               self.f_alt_first, self.f_alt_last, self.f_sex,
-              self.f_country, self.f_state, self.f_keywords,
-              self.f_show_exact, self.f_folder, self.f_docx, self.f_xlsx]
-        for place_f, year_f, exact_cb in self._event_fields.values():
-            ws += [place_f, year_f, exact_cb]
-        for first_f, last_f in self._fam_fields.values():
-            ws += [first_f, last_f]
+              self.f_country, self.f_state,
+              self.f_keywords, self.f_show_exact,
+              self.f_folder, self.f_docx, self.f_xlsx]
+        for pf, yf, cb in self._event_fields.values():
+            ws += [pf, yf, cb]
+        for ff, lf in self._fam_fields.values():
+            ws += [ff, lf]
         return ws
 
-    # ── Autosave ──────────────────────────────────────────────────────────── #
+    # ── Autosave / load ───────────────────────────────────────────────────── #
     def _save(self, *_):
+        """Save all field values to .fs_autosave.json."""
         d = {
-            "email": self.f_email.text(), "password": self.f_pass.text(),
-            "first_names": self.f_first.text(), "last_names": self.f_last.text(),
-            "place_lived": self.f_place.text(), "birth_year": self.f_byear.text(),
-            "tab": self.f_tab.currentText(),
-            "alt_first": self.f_alt_first.text(), "alt_last": self.f_alt_last.text(),
-            "sex": self.f_sex.currentText(),
-            "country": self.f_country.text(), "state": self.f_state.text(),
-            "keywords": self.f_keywords.text(),
-            "show_exact": self.f_show_exact.isChecked(),
+            "username":      self.f_user.text(),
+            "password":      self.f_pass.text(),
+            "first_names":   self.f_first.text(),
+            "last_names":    self.f_last.text(),
+            "place_lived":   self.f_place.text(),
+            "birth_year":    self.f_byear.text(),
+            "tab":           self.f_tab.currentText(),
+            "alt_first":     self.f_alt_first.text(),
+            "alt_last":      self.f_alt_last.text(),
+            "sex":           self.f_sex.currentText(),
+            "country":       self.f_country.text(),
+            "state":         self.f_state.text(),
+            "keywords":      self.f_keywords.text(),
+            "show_exact":    self.f_show_exact.isChecked(),
             "output_folder": self.f_folder.text(),
-            "fmt_docx": self.f_docx.isChecked(), "fmt_xlsx": self.f_xlsx.isChecked(),
-            "adv_open": self._adv_btn.isChecked(),
+            "fmt_docx":      self.f_docx.isChecked(),
+            "fmt_xlsx":      self.f_xlsx.isChecked(),
+            "adv_open":      self._adv_btn.isChecked(),
         }
-        for key, (place_f, year_f, exact_cb) in self._event_fields.items():
-            d[f"{key}_place"] = place_f.text()
-            d[f"{key}_year"]  = year_f.text()
-            d[f"{key}_exact"] = exact_cb.isChecked()
-        for key, (first_f, last_f) in self._fam_fields.items():
-            d[f"{key}_first"] = first_f.text()
-            d[f"{key}_last"]  = last_f.text()
+        for key, (pf, yf, cb) in self._event_fields.items():
+            d[f"{key}_place"] = pf.text()
+            d[f"{key}_year"]  = yf.text()
+            d[f"{key}_exact"] = cb.isChecked()
+        for key, (ff, lf) in self._fam_fields.items():
+            d[f"{key}_first"] = ff.text()
+            d[f"{key}_last"]  = lf.text()
         try:
-            _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2),
-                             encoding="utf-8")
+            _SAVE.write_text(
+                json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
 
     def _load(self):
-        if not _SAVE.exists(): return
-        try: d = json.loads(_SAVE.read_text(encoding="utf-8"))
-        except Exception: return
-        def s(w, k):
+        """Restore field values from .fs_autosave.json on startup."""
+        if not _SAVE.exists():
+            return
+        try:
+            d = json.loads(_SAVE.read_text(encoding="utf-8"))
+        except Exception:
+            return
+
+        def _s(w, k):
             if k not in d: return
             v = d[k]
             if   isinstance(w, QLineEdit): w.setText(str(v))
@@ -409,61 +444,65 @@ class FamilySearchApp(QMainWindow):
                 i = w.findText(str(v))
                 if i >= 0: w.setCurrentIndex(i)
             elif isinstance(w, QCheckBox): w.setChecked(bool(v))
-        s(self.f_email,"email"); s(self.f_pass,"password")
-        s(self.f_first,"first_names"); s(self.f_last,"last_names")
-        s(self.f_place,"place_lived"); s(self.f_byear,"birth_year")
-        s(self.f_tab,"tab")
-        s(self.f_alt_first,"alt_first"); s(self.f_alt_last,"alt_last")
-        s(self.f_sex,"sex")
-        s(self.f_country,"country"); s(self.f_state,"state")
-        s(self.f_keywords,"keywords"); s(self.f_show_exact,"show_exact")
-        s(self.f_folder,"output_folder")
-        s(self.f_docx,"fmt_docx"); s(self.f_xlsx,"fmt_xlsx")
-        for key, (place_f, year_f, exact_cb) in self._event_fields.items():
-            s(place_f, f"{key}_place"); s(year_f, f"{key}_year")
-            s(exact_cb, f"{key}_exact")
-        for key, (first_f, last_f) in self._fam_fields.items():
-            s(first_f, f"{key}_first"); s(last_f, f"{key}_last")
+
+        _s(self.f_user,  "username"); _s(self.f_pass,  "password")
+        _s(self.f_first, "first_names"); _s(self.f_last,  "last_names")
+        _s(self.f_place, "place_lived"); _s(self.f_byear, "birth_year")
+        _s(self.f_tab,   "tab")
+        _s(self.f_alt_first, "alt_first"); _s(self.f_alt_last, "alt_last")
+        _s(self.f_sex,   "sex")
+        _s(self.f_country, "country"); _s(self.f_state,   "state")
+        _s(self.f_keywords, "keywords"); _s(self.f_show_exact, "show_exact")
+        _s(self.f_folder, "output_folder")
+        _s(self.f_docx,  "fmt_docx"); _s(self.f_xlsx, "fmt_xlsx")
+        for key, (pf, yf, cb) in self._event_fields.items():
+            _s(pf, f"{key}_place"); _s(yf, f"{key}_year"); _s(cb, f"{key}_exact")
+        for key, (ff, lf) in self._fam_fields.items():
+            _s(ff, f"{key}_first"); _s(lf, f"{key}_last")
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
 
     # ── Helpers ───────────────────────────────────────────────────────────── #
     def _browse(self):
-        p = QFileDialog.getExistingDirectory(self, "Select output folder",
-                                              self.f_folder.text() or _DEF_DIR)
+        p = QFileDialog.getExistingDirectory(
+            self, "Select output folder",
+            self.f_folder.text() or _DEF_DIR)
         if p: self.f_folder.setText(p)
 
-    def _fmt(self):
+    def _fmt(self) -> str:
         d, x = self.f_docx.isChecked(), self.f_xlsx.isChecked()
         return "both" if d and x else ("docx" if d else "xlsx" if x else "both")
 
-    def _build_advanced(self):
-        adv = {}
-        adv["sex"]          = self.f_sex.currentText()
-        adv["alt_first"]    = self.f_alt_first.text().strip()
-        adv["alt_last"]     = self.f_alt_last.text().strip()
-        adv["country"]      = self.f_country.text().strip()
-        adv["state"]        = self.f_state.text().strip()
-        adv["keywords"]     = self.f_keywords.text().strip()
-        adv["show_exact"]   = self.f_show_exact.isChecked()
-        for key, (place_f, year_f, exact_cb) in self._event_fields.items():
-            adv[f"{key}_place"] = place_f.text().strip()
-            adv[f"{key}_year"]  = year_f.text().strip()
-            adv[f"{key}_exact"] = exact_cb.isChecked()
-        for key, (first_f, last_f) in self._fam_fields.items():
-            adv[f"{key}_first"] = first_f.text().strip()
-            adv[f"{key}_last"]  = last_f.text().strip()
-        # Only return if anything non-default was set
-        has_data = any([
+    def _build_advanced(self) -> dict:
+        """Collect all advanced search field values into a dict."""
+        adv = {
+            "sex":        self.f_sex.currentText(),
+            "alt_first":  self.f_alt_first.text().strip(),
+            "alt_last":   self.f_alt_last.text().strip(),
+            "country":    self.f_country.text().strip(),
+            "state":      self.f_state.text().strip(),
+            "keywords":   self.f_keywords.text().strip(),
+            "show_exact": self.f_show_exact.isChecked(),
+        }
+        for key, (pf, yf, cb) in self._event_fields.items():
+            adv[f"{key}_place"] = pf.text().strip()
+            adv[f"{key}_year"]  = yf.text().strip()
+            adv[f"{key}_exact"] = cb.isChecked()
+        for key, (ff, lf) in self._fam_fields.items():
+            adv[f"{key}_first"] = ff.text().strip()
+            adv[f"{key}_last"]  = lf.text().strip()
+        # Return only if something non-default was set
+        has = any([
             adv["sex"] != "Unspecified",
             adv["alt_first"], adv["alt_last"],
             adv["country"], adv["state"], adv["keywords"],
-        ] + [v for k,v in adv.items()
-               if k.endswith("_place") or k.endswith("_year") or
-                  (k.endswith("_first") or k.endswith("_last"))])
-        return adv if has_data else {}
+        ] + [v for k, v in adv.items()
+               if isinstance(v, str) and v and
+                  any(k.endswith(s)
+                      for s in ["_place","_year","_first","_last"])])
+        return adv if has else {}
 
-    def _payload(self):
+    def _payload(self) -> dict:
         return {
             "first_names":   self.f_first.text().strip(),
             "last_names":    self.f_last.text().strip(),
@@ -473,13 +512,13 @@ class FamilySearchApp(QMainWindow):
             "advanced":      self._build_advanced(),
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
-            "email":         self.f_email.text().strip() or None,
+            "email":         self.f_user.text().strip() or None,
             "password":      self.f_pass.text() or None,
             "log":           print,
             "cancel_event":  None,
         }
 
-    def _validate(self):
+    def _validate(self) -> bool:
         if not self.f_first.text().strip() and not self.f_last.text().strip():
             QMessageBox.warning(self, "Nothing to search",
                                 "Enter at least a first or last name.")
@@ -494,22 +533,24 @@ class FamilySearchApp(QMainWindow):
             return False
         return True
 
+    # ── Start / finish ────────────────────────────────────────────────────── #
     def _start(self):
         if not self._validate(): return
         self.start_btn.setEnabled(False)
-        self.pbar.setValue(0); self.stlbl.setText("Starting…")
+        self.pbar.setValue(0)
+        self.stlbl.setText("Starting...")
         self.worker = Worker(self._payload())
         self.worker.progress.connect(
-            lambda v,t: (self.pbar.setValue(v), self.stlbl.setText(t)))
+            lambda v, t: (self.pbar.setValue(v), self.stlbl.setText(t)))
         self.worker.finished.connect(self._done)
         self.worker.start()
 
-    def _done(self, r):
+    def _done(self, r: dict):
         self.start_btn.setEnabled(True)
         if r.get("ok"):
             n = r.get("n_records", 0)
-            parts = (["Word"] if r.get("docx_count") else []) + \
-                    (["Excel"] if r.get("xlsx_path") else [])
+            parts = (["Word"]  if r.get("docx_count") else []) + \
+                    (["Excel"] if r.get("xlsx_path")  else [])
             msg = f"{n} record(s) saved"
             if parts: msg += " → " + " + ".join(parts)
             if r.get("output_folder"):
@@ -517,9 +558,11 @@ class FamilySearchApp(QMainWindow):
             QMessageBox.information(self, "Done", msg)
             self.stlbl.setText("Done.")
         else:
-            QMessageBox.critical(self, "Error",
+            QMessageBox.critical(
+                self, "Error",
                 f"Search failed.\n\n{r.get('message','')}\n\nCheck terminal.")
             self.stlbl.setText("Error — see terminal.")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

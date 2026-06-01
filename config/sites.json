@@ -7,18 +7,18 @@
     "window_cls": "gui.jewishgen.JewishGenApp"
   },
   {
-    "key": "myheritage",
+    "key": "MHlogo",
     "name": "MyHeritage",
     "subtitle": "Family trees, DNA matching, historical records",
-    "action": "open_url",
-    "url": "https://www.myheritage.com"
+    "action": "open_window",
+    "window_cls": "gui.myheritage.MyHeritageApp"
   },
   {
-    "key": "familysearch",
+    "key": "FSlogo",
     "name": "FamilySearch",
     "subtitle": "Free genealogy records from The Church of Jesus Christ",
-    "action": "open_url",
-    "url": "https://www.familysearch.org"
+    "action": "open_window",
+    "window_cls": "gui.familysearch.FamilySearchApp"
   },
   {
     "key": "ancestry",

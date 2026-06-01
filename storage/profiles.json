@@ -4,13 +4,18 @@
     "password": "Rogin5496172",
     "country": "Ukraine",
     "keywords": [
-      "1911"
+      "Alexandrov"
     ],
     "rows": [
       {
         "data_type": "Surname",
         "search_type": "Phonetically Like",
-        "text": "Tanskii"
+        "text": "Faerman"
+      },
+      {
+        "data_type": "Given Name",
+        "search_type": "Phonetically Like",
+        "text": "Leyb"
       }
     ],
     "output_folder": "I:/Python Projects/JewishGen_python/results",
