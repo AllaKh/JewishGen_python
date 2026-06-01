@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QFileDialog, QProgressBar, QMessageBox,
     QApplication, QGroupBox, QComboBox,
-    QFrame, QGridLayout,
+    QFrame, QGridLayout, QScrollArea,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
@@ -281,16 +281,23 @@ class FamilySearchApp(QMainWindow):
             ("Spouse",       "spouse"),
             ("Other Person", "other"),
         ]
-        fg.addWidget(QLabel("Member"),     0, 0)
-        fg.addWidget(QLabel("First Names"),0, 1)
-        fg.addWidget(QLabel("Last Names"), 0, 2)
+        fg.addWidget(QLabel("Member"),        0, 0)
+        fg.addWidget(QLabel("First Names"),   0, 1)
+        fg.addWidget(QLabel("Exact"),         0, 2)
+        fg.addWidget(QLabel("Last Names"),    0, 3)
+        fg.addWidget(QLabel("Exact"),         0, 4)
         for ri, (label, key) in enumerate(fams_list, 1):
             fg.addWidget(QLabel(label+":"), ri, 0)
-            ff = QLineEdit(); lf = QLineEdit()
-            self._fam_fields[key] = (ff, lf)
-            fg.addWidget(ff, ri, 1)
-            fg.addWidget(lf, ri, 2)
-        fg.setColumnStretch(1, 2); fg.setColumnStretch(2, 2)
+            ff = QLineEdit(); cb_f = QCheckBox()
+            lf = QLineEdit(); cb_l = QCheckBox()
+            cb_f.setToolTip("Exact match for First Name")
+            cb_l.setToolTip("Exact match for Last Name")
+            self._fam_fields[key] = (ff, cb_f, lf, cb_l)
+            fg.addWidget(ff,   ri, 1)
+            fg.addWidget(cb_f, ri, 2)
+            fg.addWidget(lf,   ri, 3)
+            fg.addWidget(cb_l, ri, 4)
+        fg.setColumnStretch(1, 2); fg.setColumnStretch(3, 2)
         av.addLayout(fg)
         av.addWidget(_divider())
 
@@ -316,8 +323,13 @@ class FamilySearchApp(QMainWindow):
         kr.addWidget(self.f_show_exact)
         av.addLayout(kr)
 
-        self._adv.setVisible(False)
-        self._outer.addWidget(self._adv)
+        self._adv_scroll = QScrollArea()
+        self._adv_scroll.setWidget(self._adv)
+        self._adv_scroll.setWidgetResizable(True)
+        self._adv_scroll.setFrameShape(QFrame.NoFrame)
+        self._adv_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._adv_scroll.setVisible(False)
+        self._outer.addWidget(self._adv_scroll)
 
         # Output
         og = QGroupBox("Output")
@@ -364,7 +376,10 @@ class FamilySearchApp(QMainWindow):
 
     # ── Advanced Search toggle ────────────────────────────────────────────── #
     def _toggle_adv(self, on: bool):
-        self._adv.setVisible(on)
+        self._adv_scroll.setVisible(on)
+        if on:
+            screen_h = QApplication.primaryScreen().availableGeometry().height()
+            self._adv_scroll.setMaximumHeight(int(screen_h * 0.55))
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
 
@@ -387,8 +402,8 @@ class FamilySearchApp(QMainWindow):
               self.f_folder, self.f_docx, self.f_xlsx]
         for pf, yf, cb in self._event_fields.values():
             ws += [pf, yf, cb]
-        for ff, lf in self._fam_fields.values():
-            ws += [ff, lf]
+        for ff, cb_f, lf, cb_l in self._fam_fields.values():
+            ws += [ff, cb_f, lf, cb_l]
         return ws
 
     # ── Autosave / load ───────────────────────────────────────────────────── #
@@ -418,9 +433,11 @@ class FamilySearchApp(QMainWindow):
             d[f"{key}_place"] = pf.text()
             d[f"{key}_year"]  = yf.text()
             d[f"{key}_exact"] = cb.isChecked()
-        for key, (ff, lf) in self._fam_fields.items():
-            d[f"{key}_first"] = ff.text()
-            d[f"{key}_last"]  = lf.text()
+        for key, (ff, cb_f, lf, cb_l) in self._fam_fields.items():
+            d[f"{key}_first"]       = ff.text()
+            d[f"{key}_first_exact"] = cb_f.isChecked()
+            d[f"{key}_last"]        = lf.text()
+            d[f"{key}_last_exact"]  = cb_l.isChecked()
         try:
             _SAVE.write_text(
                 json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -457,8 +474,11 @@ class FamilySearchApp(QMainWindow):
         _s(self.f_docx,  "fmt_docx"); _s(self.f_xlsx, "fmt_xlsx")
         for key, (pf, yf, cb) in self._event_fields.items():
             _s(pf, f"{key}_place"); _s(yf, f"{key}_year"); _s(cb, f"{key}_exact")
-        for key, (ff, lf) in self._fam_fields.items():
-            _s(ff, f"{key}_first"); _s(lf, f"{key}_last")
+        for key, (ff, cb_f, lf, cb_l) in self._fam_fields.items():
+            _s(ff,   f"{key}_first")
+            _s(cb_f, f"{key}_first_exact")
+            _s(lf,   f"{key}_last")
+            _s(cb_l, f"{key}_last_exact")
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
 
@@ -488,9 +508,11 @@ class FamilySearchApp(QMainWindow):
             adv[f"{key}_place"] = pf.text().strip()
             adv[f"{key}_year"]  = yf.text().strip()
             adv[f"{key}_exact"] = cb.isChecked()
-        for key, (ff, lf) in self._fam_fields.items():
-            adv[f"{key}_first"] = ff.text().strip()
-            adv[f"{key}_last"]  = lf.text().strip()
+        for key, (ff, cb_f, lf, cb_l) in self._fam_fields.items():
+            adv[f"{key}_first"]       = ff.text().strip()
+            adv[f"{key}_first_exact"] = cb_f.isChecked()
+            adv[f"{key}_last"]        = lf.text().strip()
+            adv[f"{key}_last_exact"]  = cb_l.isChecked()
         # Return only if something non-default was set
         has = any([
             adv["sex"] != "Unspecified",

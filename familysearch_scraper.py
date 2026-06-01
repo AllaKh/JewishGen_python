@@ -495,66 +495,66 @@ async def _advanced(page, adv: dict, log):
                 pass
         await _type_field(page, sel, val, key, log)
 
-    fam_tabs = {
-        "spouse": "SPOUSE",
-        "father": "FATHER",
-        "mother": "MOTHER",
-        "other":  "OTHER PERSON",
+    # Семейные члены — через data-testid (точные имена из HTML FamilySearch)
+    fam_testids = {
+        "spouse": ("spouse-fieldGroupButton",
+                   "spouseGivenName0-field",  "spouseSurname0-field"),
+        "father": ("father-fieldGroupButton",
+                   "fatherGivenName0-field",  "fatherSurname0-field"),
+        "mother": ("mother-fieldGroupButton",
+                   "motherGivenName0-field",  "motherSurname0-field"),
+        "other":  ("otherPerson-fieldGroupButton",
+                   "otherGivenName0-field",   "otherSurname0-field"),
     }
-    for key, tab in fam_tabs.items():
-        fv = adv.get(f"{key}_first", "")
-        lv = adv.get(f"{key}_last",  "")
+    for key, (btn_tid, fn_tid, ln_tid) in fam_testids.items():
+        fv          = adv.get(f"{key}_first", "")
+        lv          = adv.get(f"{key}_last",  "")
+        fv_exact    = adv.get(f"{key}_first_exact", False)
+        lv_exact    = adv.get(f"{key}_last_exact",  False)
         if not fv and not lv:
             continue
 
-        # Кликнуть таб (SPOUSE / FATHER / MOTHER / OTHER PERSON)
+        # Нажать кнопку раскрытия секции (Spouse / Father / Mother / Other Person)
         try:
-            t = page.get_by_text(re.compile(rf"^{re.escape(tab)}$", re.I)).first
-            if await t.count():
-                await t.click(timeout=3000)
+            btn = page.locator(f'[data-testid="{btn_tid}"]').first
+            if await btn.count():
+                await btn.click(timeout=3000)
                 await asyncio.sleep(1)
-        except Exception:
-            pass
+                log(f"  {key} section expanded")
+            else:
+                log(f"  !! {key}: кнопка {btn_tid} не найдена")
+        except Exception as e:
+            log(f"  !! {key} expand: {e}")
 
-        # После клика таб добавляет новые поля в конец формы.
-        # Поля называются "First Names" / "Last Names" — такие же как у предка.
-        # Берём ПОСЛЕДНИЙ по счёту input с таким плейсхолдером (.last).
-        if fv:
+        for tid, val, exact, label in [
+            (fn_tid, fv, fv_exact, f"{key}_first"),
+            (ln_tid, lv, lv_exact, f"{key}_last"),
+        ]:
+            if not val:
+                continue
             try:
-                el = page.locator(
-                    'input[placeholder*="First" i], input[placeholder*="Given" i]'
-                ).last
-                if await el.count() and await el.is_visible():
-                    await el.scroll_into_view_if_needed(timeout=3000)
-                    await el.click(timeout=3000)
-                    await page.keyboard.press("Control+a")
-                    await page.keyboard.press("Delete")
-                    await page.keyboard.type(fv, delay=40)
-                    await asyncio.sleep(0.3)
-                    log(f"  OK  {key}_first = {fv!r}")
-                else:
-                    log(f"  !! {key}_first: поле не найдено")
+                el = page.locator(f'[data-testid="{tid}"]').first
+                if not await el.count():
+                    log(f"  !! {label}: поле {tid} не найдено")
+                    continue
+                await el.scroll_into_view_if_needed(timeout=3000)
+                await el.click(timeout=3000)
+                await page.keyboard.press("Control+a")
+                await page.keyboard.press("Delete")
+                await page.keyboard.type(val, delay=40)
+                await asyncio.sleep(0.2)
+                log(f"  OK  {label} = {val!r}")
+                if exact:
+                    exact_tid = tid.replace("-field", "-exact")
+                    try:
+                        cb = page.locator(f'[data-testid="{exact_tid}"]').first
+                        if await cb.count():
+                            await cb.click(timeout=2000)
+                            log(f"  OK  {label} exact ✓")
+                    except Exception:
+                        pass
             except Exception as e:
-                log(f"  !! {key}_first: {e}")
-
-        if lv:
-            try:
-                el = page.locator(
-                    'input[placeholder*="Last" i], input[placeholder*="Surname" i], '
-                    'input[placeholder*="Maiden" i]'
-                ).last
-                if await el.count() and await el.is_visible():
-                    await el.scroll_into_view_if_needed(timeout=3000)
-                    await el.click(timeout=3000)
-                    await page.keyboard.press("Control+a")
-                    await page.keyboard.press("Delete")
-                    await page.keyboard.type(lv, delay=40)
-                    await asyncio.sleep(0.3)
-                    log(f"  OK  {key}_last = {lv!r}")
-                else:
-                    log(f"  !! {key}_last: поле не найдено")
-            except Exception as e:
-                log(f"  !! {key}_last: {e}")
+                log(f"  !! {label}: {e}")
 
     if adv.get("country"):
         try:
