@@ -545,14 +545,25 @@ async def _advanced(page, adv: dict, log):
                 await asyncio.sleep(0.2)
                 log(f"  OK  {label} = {val!r}")
                 if exact:
-                    exact_tid = tid.replace("-field", "-exact")
-                    try:
-                        cb = page.locator(f'[data-testid="{exact_tid}"]').first
-                        if await cb.count():
-                            await cb.click(timeout=2000)
-                            log(f"  OK  {label} exact ✓")
-                    except Exception:
-                        pass
+                    # Ищем чекбокс рядом с полем — поднимаемся по DOM до 4 уровней вверх
+                    clicked_exact = await page.evaluate(f"""
+                        () => {{
+                            const inp = document.querySelector('[data-testid="{tid}"]');
+                            if (!inp) return false;
+                            let node = inp.parentElement;
+                            for (let i = 0; i < 4; i++) {{
+                                if (!node) break;
+                                const cb = node.querySelector('input[type="checkbox"]');
+                                if (cb && !cb.checked) {{ cb.click(); return true; }}
+                                node = node.parentElement;
+                            }}
+                            return false;
+                        }}
+                    """)
+                    if clicked_exact:
+                        log(f"  OK  {label} exact ✓")
+                    else:
+                        log(f"  !! {label} exact: чекбокс не найден")
             except Exception as e:
                 log(f"  !! {label}: {e}")
 
