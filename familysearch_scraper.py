@@ -496,12 +496,12 @@ async def _advanced(page, adv: dict, log):
         await _type_field(page, sel, val, key, log)
 
     fam_map = {
-        "spouse": ("SPOUSE",       "Spouse's First Names",       "Spouse's Last Names"),
-        "father": ("FATHER",       "Father's First Names",       "Father's Last Names"),
-        "mother": ("MOTHER",       "Mother's First Names",       "Mother's Last Names"),
-        "other":  ("OTHER PERSON", "Other Person's First Names", "Other Person's Last Names"),
+        "spouse": ("SPOUSE",       "Spouse",       "Spouse"),
+        "father": ("FATHER",       "Father",       "Father"),
+        "mother": ("MOTHER",       "Mother",       "Mother"),
+        "other":  ("OTHER PERSON", "Other Person", "Other Person"),
     }
-    for key, (tab, fp, lp) in fam_map.items():
+    for key, (tab, fp_kw, lp_kw) in fam_map.items():
         fv = adv.get(f"{key}_first", "")
         lv = adv.get(f"{key}_last",  "")
         if not fv and not lv:
@@ -514,9 +514,17 @@ async def _advanced(page, adv: dict, log):
         except Exception:
             pass
         if fv:
-            await _type_field(page, f'input[placeholder="{fp}"]', fv, f"{key}_first", log)
+            # Ищем поле First/Given Names для этого родственника
+            sel_fn = (f'input[placeholder*="{fp_kw}" i][placeholder*="First" i], '
+                      f'input[placeholder*="{fp_kw}" i][placeholder*="Given" i], '
+                      f'input[placeholder*="{fp_kw}" i]')
+            await _type_field(page, sel_fn, fv, f"{key}_first", log)
         if lv:
-            await _type_field(page, f'input[placeholder="{lp}"]', lv, f"{key}_last", log)
+            # Ищем поле Last/Surname для этого родственника
+            sel_ln = (f'input[placeholder*="{lp_kw}" i][placeholder*="Last" i], '
+                      f'input[placeholder*="{lp_kw}" i][placeholder*="Surname" i], '
+                      f'input[placeholder*="{lp_kw}" i][placeholder*="Maiden" i]')
+            await _type_field(page, sel_ln, lv, f"{key}_last", log)
 
     if adv.get("country"):
         try:
@@ -654,6 +662,13 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
             pass
         await asyncio.sleep(2)
         log("    Вьюер в новой вкладке")
+
+    # Ждём появления основной кнопки Download (после логина viewer грузится дольше)
+    try:
+        await viewer.wait_for_selector(
+            'button[aria-label*="Download" i]', timeout=8000)
+    except Exception:
+        pass  # если не появилась — пробуем всё равно
 
     # Весь блок download обёрнут в expect_download чтобы не пропустить событие
     downloaded = None
