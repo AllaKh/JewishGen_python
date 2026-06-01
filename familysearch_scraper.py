@@ -256,7 +256,7 @@ async def _click_hr(page, log):
 
     # Ждём СТРОКИ ТАБЛИЦЫ (таблица грузится через XHR после смены URL)
     try:
-        await page.wait_for_selector("tbody tr", timeout=10000)
+        await page.wait_for_selector("tbody tr", timeout=20000)
     except Exception:
         await asyncio.sleep(5)  # если не дождались — всё равно идём дальше
 
@@ -346,6 +346,13 @@ async def _collect(page, qname: str, log) -> list:
     await asyncio.sleep(2)
     results, seen = [], set()
     rows = await page.query_selector_all("tbody tr")
+    # Если таблица ещё не загрузилась — ждём ещё
+    if not rows:
+        await asyncio.sleep(5)
+        rows = await page.query_selector_all("tbody tr")
+    if not rows:
+        await asyncio.sleep(5)
+        rows = await page.query_selector_all("tbody tr")
     log(f"  Строк: {len(rows)}")
 
     for row in rows:
@@ -1038,16 +1045,11 @@ async def run_scraper(
             if _done(): return summary
 
             # ── 2. ТАБ HISTORICAL RECORDS ─────────────────────────────── #
+            # HR tab работает без логина (ограниченные результаты).
+            # Логин произойдёт автоматически при открытии первой записи.
             _prog(12, "Historical Records tab...")
             await _click_hr(page, log)
             if _done(): return summary
-
-            # ── 3. ЛОГИН ДО СБОРА РЕЗУЛЬТАТОВ ────────────────────────── #
-            # FamilySearch требует логин чтобы показать строки таблицы.
-            if email and password:
-                ok = await _sign_in_if_needed(page, email, password, log)
-                logged_in_ref[0] = ok
-                if _done(): return summary
 
             # ── 4. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(20, "Сбор результатов...")
