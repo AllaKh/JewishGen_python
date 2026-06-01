@@ -573,11 +573,13 @@ async def _advanced(page, adv: dict, log):
         await _type_field(page, 'input[placeholder*="keyword" i]',
                          adv["keywords"], "keywords", log)
 
-    for sel in ['button:has-text("SEARCH")', 'button:has-text("Search")']:
+    for sel in ['[data-testid="search-button"]',
+                'button:has-text("SEARCH")', 'button:has-text("Search")']:
         try:
             el = page.locator(sel).last
             if await el.count() and await el.is_visible():
                 await el.click(timeout=5000)
+                log(f"  Search нажат ({sel})")
                 break
         except Exception:
             continue
@@ -823,7 +825,10 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
     await asyncio.sleep(3)
 
     # Если редирект на логин — залогиниться ОДИН РАЗ
-    if "login" in page.url:
+    # Проверяем и по URL и по заголовку страницы (JS-редирект может ещё не завершиться)
+    page_title = (await page.title()).lower()
+    is_login = "login" in page.url or "sign in" in page_title or "sign-in" in page_title
+    if is_login:
         if logged_in_ref[0]:
             log(f"  !! Повторный логин-редирект (уже был вход). URL: {page.url[:60]}")
             return rec
