@@ -1897,8 +1897,9 @@ async def _do_fhl_download(fs_url, img_num, dest, fs_email, fs_password, log):
     Open FamilySearch microfilm viewer in a DEDICATED browser (same flags as
     familysearch_scraper.py → avoids "Access Denied / Error 15" from FS).
 
-    Flow: navigate → login if needed → enter Снимок number → click
-    highlighted thumbnail → download full-size JPG via the toolbar.
+    Flow: navigate → wait up to 30s for login OR viewer to load →
+    login if needed → wait for viewer input → enter img_num →
+    wait for thumbnail highlight → click it → download JPG.
     """
     from playwright.async_api import async_playwright as _apw
 
@@ -1917,27 +1918,43 @@ async def _do_fhl_download(fs_url, img_num, dest, fs_email, fs_password, log):
         downloaded = None
 
         try:
-            await page.goto(fs_url, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(3)
+            log(f"    FHL: открываю {fs_url[:70]}")
+            await page.goto(fs_url, wait_until="domcontentloaded", timeout=45000)
 
-            # ── Login to FamilySearch if redirected ──────────────── #
+            # ── Wait up to 30s for EITHER login form OR viewer input ── #
+            # (redirects and JS rendering take time)
+            log("    FHL: жду загрузки страницы (до 30 сек)...")
+            for _t in range(30):
+                await asyncio.sleep(1)
+                if await page.locator("#userName").count():
+                    log(f"    FHL: форма логина обнаружена ({_t+1}с)")
+                    break
+                if await page.locator('input[type="number"][min]').count():
+                    log(f"    FHL: вьюер загружен ({_t+1}с)")
+                    break
+            else:
+                log("    FHL: страница не загрузилась за 30с — продолжаю попытку")
+
+            # ── Login to FamilySearch if needed ──────────────────── #
             pt = (await page.title()).lower()
-            if "login" in page.url or "sign in" in pt:
+            is_login = ("login" in page.url or "sign in" in pt
+                        or await page.locator("#userName").count() > 0)
+            if is_login:
                 if not fs_email or not fs_password:
                     log("    !! FHL: FamilySearch credentials не заданы — пропуск")
                     return None
                 log("    FHL: логин в FamilySearch...")
                 try:
-                    await page.locator("#userName").wait_for(state="visible", timeout=15000)
+                    await page.locator("#userName").wait_for(state="visible", timeout=20000)
                     await asyncio.sleep(2)
                     for _ in range(3):
                         await page.fill("#userName", fs_email)
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.5)
                         if (await page.locator("#userName").input_value()).strip():
                             break
                     for _ in range(3):
                         await page.fill("#password", fs_password)
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.5)
                         if (await page.locator("#password").input_value()).strip():
                             break
                     u_ok = (await page.locator("#userName").input_value()).strip()
@@ -1948,36 +1965,59 @@ async def _do_fhl_download(fs_url, img_num, dest, fs_email, fs_password, log):
                     await page.wait_for_url(
                         lambda u: "familysearch.org" in u and "login" not in u,
                         timeout=30000)
-                    await asyncio.sleep(2)
-                    await page.goto(fs_url, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(3)
-                    log("    FHL: логин OK ✓")
+                    log("    FHL: логин OK ✓ — жду вьюер...")
+                    # After login, navigate to film URL and wait for viewer
+                    await page.goto(fs_url, wait_until="domcontentloaded", timeout=45000)
+                    for _t in range(30):
+                        await asyncio.sleep(1)
+                        if await page.locator('input[type="number"][min]').count():
+                            log(f"    FHL: вьюер загружен после логина ({_t+1}с)")
+                            break
+                    else:
+                        log("    FHL: вьюер не появился за 30с — продолжаю")
                 except Exception as e:
                     log(f"    !! FHL логин провалился: {e}")
                     return None
 
             # ── Enter image/frame number ─────────────────────────── #
             if img_num:
+                log(f"    FHL: вношу номер снимка {img_num}...")
+                inp_found = False
+                # Try exact aria-label first (Russian and English), then fallback
                 for sel in [
-                    'input[aria-label*="Снимок" i]',
-                    'input[aria-label*="Image" i]',
-                    'input[aria-label*="Frame" i]',
-                    'input[aria-label*="Shot" i]',
+                    'input[aria-label*="Снимок"]',
+                    'input[aria-label*="Image"]',
+                    'input[aria-label*="Frame"]',
                     'input[type="number"][min]',
                 ]:
                     try:
                         inp = page.locator(sel).first
-                        if await inp.count() and await inp.is_visible():
-                            await inp.triple_click(timeout=3000)
-                            await inp.fill(str(img_num))
+                        # Wait up to 10s for this selector to appear
+                        try:
+                            await inp.wait_for(state="visible", timeout=10000)
+                        except Exception:
+                            continue
+                        await inp.triple_click(timeout=5000)
+                        await asyncio.sleep(0.3)
+                        await inp.fill(str(img_num))
+                        await asyncio.sleep(0.5)
+                        val = await inp.input_value()
+                        if val.strip() == str(img_num):
                             await page.keyboard.press("Enter")
-                            await asyncio.sleep(2.5)
-                            log(f"    Снимок {img_num} введён")
+                            log(f"    Снимок {img_num} введён (подождаю подсветки...)")
+                            await asyncio.sleep(5)  # Wait for grid to scroll & highlight
+                            inp_found = True
                             break
-                    except Exception:
+                        else:
+                            log(f"    !! поле сбросило значение, пробую ещё раз")
+                    except Exception as e:
+                        log(f"    !! {sel}: {e}")
                         continue
+                if not inp_found:
+                    log(f"    !! FHL: поле номера снимка не найдено")
 
             # ── Click selected/highlighted thumbnail ─────────────── #
+            # After pressing Enter the thumbnail with img_num gets a blue border
             clicked = False
             for sel in [
                 '[class*="selected"]',
@@ -1988,20 +2028,26 @@ async def _do_fhl_download(fs_url, img_num, dest, fs_email, fs_password, log):
             ]:
                 try:
                     els = page.locator(sel)
-                    for idx in range(min(await els.count(), 10)):
+                    n = await els.count()
+                    for idx in range(min(n, 15)):
                         el = els.nth(idx)
                         try:
                             tag = await el.evaluate("e => e.tagName.toLowerCase()")
                         except Exception:
                             continue
-                        if tag in ("input", "button", "select", "textarea"):
+                        if tag in ("input", "button", "select", "textarea",
+                                   "nav", "header", "footer"):
                             continue
-                        if await el.is_visible():
-                            await el.click(timeout=5000)
-                            await asyncio.sleep(3)
-                            clicked = True
-                            log("    Миниатюра кликнута")
-                            break
+                        try:
+                            if await el.is_visible():
+                                await el.scroll_into_view_if_needed(timeout=3000)
+                                await el.click(timeout=5000)
+                                await asyncio.sleep(5)  # Wait for full-size view to open
+                                clicked = True
+                                log("    Миниатюра кликнута")
+                                break
+                        except Exception:
+                            continue
                     if clicked:
                         break
                 except Exception:
@@ -2012,11 +2058,12 @@ async def _do_fhl_download(fs_url, img_num, dest, fs_email, fs_password, log):
                 return None
 
             # ── Download from the full-size viewer ───────────────── #
+            log("    FHL: жду кнопку Download (до 15с)...")
             try:
                 await page.wait_for_selector(
-                    'button[aria-label*="Download" i]', timeout=8000)
+                    'button[aria-label*="Download" i]', timeout=15000)
             except Exception:
-                pass
+                await asyncio.sleep(5)
 
             dl_dir = Path.home() / "Downloads"
             before = set(dl_dir.glob("*.jpg")) | set(dl_dir.glob("*.jpeg"))
