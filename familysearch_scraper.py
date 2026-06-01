@@ -280,28 +280,48 @@ async def _login(page, username: str, password: str, log) -> bool:
         log("  !! #userName не появился")
         return False
 
-    await asyncio.sleep(1)  # дать форме полностью отрисоваться
+    await asyncio.sleep(2)  # дать форме полностью отрисоваться
 
-    # page.fill() — официальный метод Playwright для React-инпутов
-    try:
-        await page.fill("#userName", username)
-        log(f"  #userName заполнен")
-    except Exception as e:
-        log(f"  !! fill #userName: {e}")
+    # Заполняем с retry: иногда React-форма сбрасывает значение после fill
+    for attempt in range(3):
+        try:
+            await page.fill("#userName", username)
+            await asyncio.sleep(0.5)
+            u_val = (await page.locator("#userName").input_value()).strip()
+            if u_val:
+                log(f"  #userName заполнен")
+                break
+            log(f"  !! #userName пусто после fill (попытка {attempt+1})")
+            await asyncio.sleep(1)
+        except Exception as e:
+            log(f"  !! fill #userName: {e}")
+            if attempt == 2:
+                return False
+            await asyncio.sleep(1)
+    else:
+        log("  !! #userName не удалось заполнить")
         return False
 
-    await asyncio.sleep(0.3)
-
-    try:
-        await page.fill("#password", password)
-        log(f"  #password заполнен")
-    except Exception as e:
-        log(f"  !! fill #password: {e}")
+    for attempt in range(3):
+        try:
+            await page.fill("#password", password)
+            await asyncio.sleep(0.5)
+            p_val = (await page.locator("#password").input_value()).strip()
+            if p_val:
+                log(f"  #password заполнен")
+                break
+            log(f"  !! #password пусто после fill (попытка {attempt+1})")
+            await asyncio.sleep(1)
+        except Exception as e:
+            log(f"  !! fill #password: {e}")
+            if attempt == 2:
+                return False
+            await asyncio.sleep(1)
+    else:
+        log("  !! #password не удалось заполнить")
         return False
 
-    await asyncio.sleep(0.3)
-
-    # Проверить что поля НЕ пусты
+    # Финальная проверка
     u_val = await page.locator("#userName").input_value()
     p_val = await page.locator("#password").input_value()
     log(f"  Проверка: user={'OK' if u_val else '!ПУСТО'}, "
@@ -839,9 +859,18 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
         log("    На странице нет картинки документа")
 
     # Полноформатная JPG
-    if img_src:
+    # view=index — индексная запись без изображения документа, скачивать нечего
+    is_index = "view=index" in url
+    if img_src and not is_index:
         jp = await _download_jpg(ctx, page, img_dir, img_label, log)
         rec["images"] = [jp] if jp else []
+    elif is_index and img_src:
+        log("    view=index — сохраняю только превьюшку")
+        if rec["thumb_bytes"]:
+            fp = img_dir / (safe_fn(img_label) + "_preview.jpg")
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_bytes(rec["thumb_bytes"])
+            rec["images"] = [str(fp)]
     else:
         rec["images"] = []
 
