@@ -495,36 +495,66 @@ async def _advanced(page, adv: dict, log):
                 pass
         await _type_field(page, sel, val, key, log)
 
-    fam_map = {
-        "spouse": ("SPOUSE",       "Spouse",       "Spouse"),
-        "father": ("FATHER",       "Father",       "Father"),
-        "mother": ("MOTHER",       "Mother",       "Mother"),
-        "other":  ("OTHER PERSON", "Other Person", "Other Person"),
+    fam_tabs = {
+        "spouse": "SPOUSE",
+        "father": "FATHER",
+        "mother": "MOTHER",
+        "other":  "OTHER PERSON",
     }
-    for key, (tab, fp_kw, lp_kw) in fam_map.items():
+    for key, tab in fam_tabs.items():
         fv = adv.get(f"{key}_first", "")
         lv = adv.get(f"{key}_last",  "")
         if not fv and not lv:
             continue
+
+        # Кликнуть таб (SPOUSE / FATHER / MOTHER / OTHER PERSON)
         try:
             t = page.get_by_text(re.compile(rf"^{re.escape(tab)}$", re.I)).first
             if await t.count():
                 await t.click(timeout=3000)
-                await asyncio.sleep(0.7)
+                await asyncio.sleep(1)
         except Exception:
             pass
+
+        # После клика таб добавляет новые поля в конец формы.
+        # Поля называются "First Names" / "Last Names" — такие же как у предка.
+        # Берём ПОСЛЕДНИЙ по счёту input с таким плейсхолдером (.last).
         if fv:
-            # Ищем поле First/Given Names для этого родственника
-            sel_fn = (f'input[placeholder*="{fp_kw}" i][placeholder*="First" i], '
-                      f'input[placeholder*="{fp_kw}" i][placeholder*="Given" i], '
-                      f'input[placeholder*="{fp_kw}" i]')
-            await _type_field(page, sel_fn, fv, f"{key}_first", log)
+            try:
+                el = page.locator(
+                    'input[placeholder*="First" i], input[placeholder*="Given" i]'
+                ).last
+                if await el.count() and await el.is_visible():
+                    await el.scroll_into_view_if_needed(timeout=3000)
+                    await el.click(timeout=3000)
+                    await page.keyboard.press("Control+a")
+                    await page.keyboard.press("Delete")
+                    await page.keyboard.type(fv, delay=40)
+                    await asyncio.sleep(0.3)
+                    log(f"  OK  {key}_first = {fv!r}")
+                else:
+                    log(f"  !! {key}_first: поле не найдено")
+            except Exception as e:
+                log(f"  !! {key}_first: {e}")
+
         if lv:
-            # Ищем поле Last/Surname для этого родственника
-            sel_ln = (f'input[placeholder*="{lp_kw}" i][placeholder*="Last" i], '
-                      f'input[placeholder*="{lp_kw}" i][placeholder*="Surname" i], '
-                      f'input[placeholder*="{lp_kw}" i][placeholder*="Maiden" i]')
-            await _type_field(page, sel_ln, lv, f"{key}_last", log)
+            try:
+                el = page.locator(
+                    'input[placeholder*="Last" i], input[placeholder*="Surname" i], '
+                    'input[placeholder*="Maiden" i]'
+                ).last
+                if await el.count() and await el.is_visible():
+                    await el.scroll_into_view_if_needed(timeout=3000)
+                    await el.click(timeout=3000)
+                    await page.keyboard.press("Control+a")
+                    await page.keyboard.press("Delete")
+                    await page.keyboard.type(lv, delay=40)
+                    await asyncio.sleep(0.3)
+                    log(f"  OK  {key}_last = {lv!r}")
+                else:
+                    log(f"  !! {key}_last: поле не найдено")
+            except Exception as e:
+                log(f"  !! {key}_last: {e}")
 
     if adv.get("country"):
         try:
