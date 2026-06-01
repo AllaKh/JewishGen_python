@@ -1,0 +1,10 @@
+{
+  "home_url":      "https://www.familysearch.org/en/global",
+  "min_match":     80,
+  "downloads_dir": "",
+  "bad_paths": [
+    "/records/images", "/search/linker", "/linker",
+    "/en/tree/", "/tree/person/", "/tree/",
+    "/catalog", "/wiki", "/books", "/films"
+  ]
+}
