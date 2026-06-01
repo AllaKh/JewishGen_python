@@ -1038,11 +1038,16 @@ async def run_scraper(
             if _done(): return summary
 
             # ── 2. ТАБ HISTORICAL RECORDS ─────────────────────────────── #
-            # HR tab работает без логина (ограниченные результаты).
-            # Логин произойдёт автоматически при открытии первой записи.
             _prog(12, "Historical Records tab...")
             await _click_hr(page, log)
             if _done(): return summary
+
+            # ── 3. ЛОГИН ДО СБОРА РЕЗУЛЬТАТОВ ────────────────────────── #
+            # FamilySearch требует логин чтобы показать строки таблицы.
+            if email and password:
+                ok = await _sign_in_if_needed(page, email, password, log)
+                logged_in_ref[0] = ok
+                if _done(): return summary
 
             # ── 4. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(20, "Сбор результатов...")
