@@ -496,17 +496,22 @@ async def _advanced(page, adv: dict, log):
         await _type_field(page, sel, val, key, log)
 
     # Семейные члены — через data-testid (точные имена из HTML FamilySearch)
+    # (btn_testid, given_field_testid, given_exact_testid, surname_field_testid, surname_exact_testid)
     fam_testids = {
         "spouse": ("spouse-fieldGroupButton",
-                   "spouseGivenName0-field",  "spouseSurname0-field"),
+                   "spouseGivenName0-field",  "q_spouseGivenName_exact",
+                   "spouseSurname0-field",    "q_spouseSurname_exact"),
         "father": ("father-fieldGroupButton",
-                   "fatherGivenName0-field",  "fatherSurname0-field"),
+                   "fatherGivenName0-field",  "q_fatherGivenName_exact",
+                   "fatherSurname0-field",    "q_fatherSurname_exact"),
         "mother": ("mother-fieldGroupButton",
-                   "motherGivenName0-field",  "motherSurname0-field"),
+                   "motherGivenName0-field",  "q_motherGivenName_exact",
+                   "motherSurname0-field",    "q_motherSurname_exact"),
         "other":  ("otherPerson-fieldGroupButton",
-                   "otherGivenName0-field",   "otherSurname0-field"),
+                   "otherGivenName0-field",   "q_otherGivenName_exact",
+                   "otherSurname0-field",     "q_otherSurname_exact"),
     }
-    for key, (btn_tid, fn_tid, ln_tid) in fam_testids.items():
+    for key, (btn_tid, fn_tid, fn_exact_tid, ln_tid, ln_exact_tid) in fam_testids.items():
         fv          = adv.get(f"{key}_first", "")
         lv          = adv.get(f"{key}_last",  "")
         fv_exact    = adv.get(f"{key}_first_exact", False)
@@ -526,9 +531,9 @@ async def _advanced(page, adv: dict, log):
         except Exception as e:
             log(f"  !! {key} expand: {e}")
 
-        for tid, val, exact, label in [
-            (fn_tid, fv, fv_exact, f"{key}_first"),
-            (ln_tid, lv, lv_exact, f"{key}_last"),
+        for tid, exact_tid, val, exact, label in [
+            (fn_tid, fn_exact_tid, fv, fv_exact, f"{key}_first"),
+            (ln_tid, ln_exact_tid, lv, lv_exact, f"{key}_last"),
         ]:
             if not val:
                 continue
@@ -545,25 +550,16 @@ async def _advanced(page, adv: dict, log):
                 await asyncio.sleep(0.2)
                 log(f"  OK  {label} = {val!r}")
                 if exact:
-                    # Ищем чекбокс рядом с полем — поднимаемся по DOM до 4 уровней вверх
-                    clicked_exact = await page.evaluate(f"""
-                        () => {{
-                            const inp = document.querySelector('[data-testid="{tid}"]');
-                            if (!inp) return false;
-                            let node = inp.parentElement;
-                            for (let i = 0; i < 4; i++) {{
-                                if (!node) break;
-                                const cb = node.querySelector('input[type="checkbox"]');
-                                if (cb && !cb.checked) {{ cb.click(); return true; }}
-                                node = node.parentElement;
-                            }}
-                            return false;
-                        }}
-                    """)
-                    if clicked_exact:
-                        log(f"  OK  {label} exact ✓")
-                    else:
-                        log(f"  !! {label} exact: чекбокс не найден")
+                    try:
+                        cb = page.locator(f'[data-testid="{exact_tid}"]').first
+                        if await cb.count():
+                            if not await cb.is_checked():
+                                await cb.click(timeout=2000)
+                            log(f"  OK  {label} exact ✓")
+                        else:
+                            log(f"  !! {label} exact: {exact_tid} не найден")
+                    except Exception as e:
+                        log(f"  !! {label} exact: {e}")
             except Exception as e:
                 log(f"  !! {label}: {e}")
 
