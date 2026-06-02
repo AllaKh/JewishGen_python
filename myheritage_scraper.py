@@ -545,6 +545,16 @@ async def _login(page, login_url, has_cookies,
         await _accept_cookies(page, log)
         await asyncio.sleep(0.5)
 
+    # Step 0: ALREADY logged in? With the persistent profile MyHeritage
+    # redirects away from /login (e.g. to the family-site home). If we are not
+    # on a login/signin page, there's nothing to do — skip the whole form.
+    cur = page.url.lower()
+    if "login" not in cur and "signin" not in cur:
+        log("  ✓ Уже авторизован (сессия из профиля) — логин не нужен")
+        # Close any social popup tab that may have opened
+        await _close_social_tabs(page.context, page, log)
+        return True
+
     # Step 2: open login form (click nav link if needed)
     await _open_login_form(page, log)
 
@@ -844,11 +854,24 @@ async def _login(page, login_url, has_cookies,
 # ── SELECT FAMILY SITE (FP/select-site.php) ───────────────────────────────── #
 async def _handle_select_site(page, family_site, log):
     """
-    After login MyHeritage may show FP/select-site.php asking which family
-    site to enter. Click the chosen site (by name, default = first / admin).
-    Returns the research base URL (with the site id) if known.
+    Determine the research search URL for the chosen family site.
+      - On FP/select-site.php → click the chosen site (by name, else first).
+      - Already on a family-sites/<slug>/<ID> page → extract <ID> from the URL.
+    Returns the research URL (research?s=<id>) or None.
     """
-    if "select-site" not in page.url.lower():
+    cur = page.url
+    # Case B: we're already inside a family site → derive id from the URL
+    m = re.search(r"/family-sites/[^/]+/([A-Z0-9]+)", cur)
+    if m and "select-site" not in cur.lower():
+        sid = m.group(1)
+        lang = "RU"
+        lm = re.search(r"[?&]lang=([A-Za-z]+)", cur)
+        if lm:
+            lang = lm.group(1)
+        log(f"  → Уже на семейном сайте (id {sid}) — иду в поиск")
+        return f"https://www.myheritage.com/research?s={sid}&lang={lang}"
+
+    if "select-site" not in cur.lower():
         return None
     log("  → Страница выбора семейного сайта")
     await asyncio.sleep(1.5)
