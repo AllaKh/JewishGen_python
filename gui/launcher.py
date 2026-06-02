@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QApplication,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap
 
 from gui._app_icon import app_icon
@@ -152,11 +152,15 @@ class LauncherWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Genealogy Search — Choose a Database")
-        self.setMinimumWidth(700)
+        self.setMinimumWidth(900)        # wide enough for logo + big title
         self.setStyleSheet(STYLES["launcher"])
         self.setWindowIcon(app_icon())
         self._build_ui()
-        self._fit_to_cards()
+        # Give the window a sensible starting size right away so it never opens
+        # half-collapsed, then snap to the exact fit AFTER the layout/show pass
+        # (calling fit before the first layout leaves a wrong size until moved).
+        self.resize(920, 760)
+        QTimer.singleShot(0, self._fit_to_cards)
 
     # ------------------------------------------------------------------
     def _build_ui(self):
@@ -256,10 +260,13 @@ class LauncherWindow(QMainWindow):
         )
         # Let Qt do one pass so sizeHint() is accurate, then snap to it.
         self._card_container.adjustSize()
+        self.centralWidget().adjustSize()
         hint = self.sizeHint()
         # Use the larger of our calculated height and Qt's own hint.
         final_h = max(total_h, hint.height())
-        self.resize(760, final_h)
+        # Width: at least 920, or whatever the (wide) header needs.
+        final_w = max(920, hint.width())
+        self.resize(final_w, final_h)
         self.setFixedHeight(final_h)   # prevent vertical resizing
 
 
