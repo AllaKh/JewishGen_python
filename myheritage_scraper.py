@@ -406,89 +406,76 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
                 timeout=25000)
         except Exception:
             await asyncio.sleep(5)
-        log("  2FA: вошёл в почту, ищу письмо с кодом …")
+        log("  2FA: вошёл в почту, ищу письма с кодами …")
 
-        # Give the freshly-sent email a moment to arrive, then reload so the
-        # TOPMOST MyHeritage email is the current attempt's (not a stale one).
-        await asyncio.sleep(6)
-        try:
-            await page.reload(wait_until="domcontentloaded", timeout=15000)
-            await asyncio.sleep(3)
-        except Exception:
-            pass
+        # MyHeritage sends TWO emails with DIFFERENT codes:
+        #   B) "Ваш код подтверждения для входа в MyHeritage" / "verification
+        #      code" — this is the code the «Введите верификационный код» field
+        #      actually wants (priority).
+        #   A) "Confirm a login attempt on MyHeritage" — the anti-fraud
+        #      challenge ("flagged as suspicious"); its code is the fallback.
+        # We read BOTH from the inbox snippets and return them in priority
+        # order so the caller can try B first, then A.
+        async def _scan_codes():
+            return await page.evaluate(r"""() => {
+                const rows = Array.from(document.querySelectorAll(
+                    'a, li, div[role="listitem"], [class*="MessageSnippet"], '
+                    + '[class*="messageSnippet" i]'));
+                let verify = '', attempt = '';
+                for (const el of rows) {
+                    const t = (el.textContent || '');
+                    if (!/myheritage/i.test(t)) continue;
+                    const m = t.match(/\b(\d{6})\b/);
+                    if (!m) continue;
+                    const code = m[1];
+                    if (!verify && /(код подтверждения для входа|верификацион|verification code)/i.test(t))
+                        verify = code;
+                    else if (!attempt && /(confirm a login attempt|confirmation code in the login screen|login attempt|попытк)/i.test(t))
+                        attempt = code;
+                }
+                return {verify, attempt};
+            }""")
 
-        # 7) Find the MyHeritage email (NOT the ad at the very top!) and
-        #    read the 6-digit code. The code is visible right in the snippet
-        #    preview: "...confirmation code in the login screen: 284383 ...".
         deadline = asyncio.get_event_loop().time() + timeout
+        last = {"verify": "", "attempt": ""}
         while asyncio.get_event_loop().time() < deadline:
-            # (a) Scan the whole inbox text for the MyHeritage code phrase.
-            #     This skips the ad row entirely and needs no clicking.
+            # Let the freshly-sent emails arrive, then reload to get them on top
+            await asyncio.sleep(5)
             try:
-                code = await page.evaluate(r"""() => {
-                    const body = document.body.innerText || '';
-                    const pats = [
-                        /confirmation code in the login screen[:\s]*?(\d{6})/i,
-                        /confirmation code[^\d]{0,40}(\d{6})/i,
-                        /code in the login screen[:\s]*?(\d{6})/i,
-                        /код[^\d]{0,40}(\d{6})/i,
-                    ];
-                    for (const p of pats) {
-                        const m = body.match(p);
-                        if (m) return m[1];
-                    }
-                    return '';
-                }""")
-                if code:
-                    log(f"  2FA: код найден в превью письма MyHeritage: {code}")
-                    return code
+                await page.reload(wait_until="domcontentloaded", timeout=15000)
+                await asyncio.sleep(2)
             except Exception:
                 pass
-
-            # (b) Snippet truncated before the code → click the MyHeritage row
-            #     (the one whose text mentions MyHeritage + login attempt),
-            #     never the topmost ad row.
             try:
-                clicked = await page.evaluate(r"""() => {
-                    const rows = Array.from(document.querySelectorAll(
-                        'a, li, div[role="listitem"], [class*="messageSnippet" i], '
-                        + '[class*="MessageSnippet"]'));
-                    // smallest element that mentions MyHeritage + login/confirm
-                    const cands = rows.filter(el => {
-                        const t = (el.textContent || '');
-                        return /myheritage/i.test(t) &&
-                               /(login attempt|confirm a login|confirmation code|подтвержд|код)/i.test(t) &&
-                               t.length < 600;
-                    });
-                    cands.sort((a, b) => a.textContent.length - b.textContent.length);
-                    if (cands.length) {
-                        const el = cands[0].closest('a') || cands[0];
-                        el.scrollIntoView();
-                        el.click();
-                        return true;
-                    }
-                    return false;
-                }""")
-                if clicked:
-                    log("  2FA: открыл письмо MyHeritage")
-                    await asyncio.sleep(2.5)
-                    body = await page.evaluate("() => document.body.innerText")
-                    m = (re.search(r"login screen[:\s]*?(\d{6})", body or "", re.I)
-                         or re.search(r"\b(\d{6})\b", body or ""))
-                    if m:
-                        log(f"  2FA: код из открытого письма: {m.group(1)}")
-                        return m.group(1)
+                last = await _scan_codes()
             except Exception:
-                pass
+                last = {"verify": "", "attempt": ""}
+            # We have at least the verification code (B) — good to go
+            if last.get("verify") or last.get("attempt"):
+                codes = []
+                if last.get("verify"):
+                    codes.append(last["verify"])
+                    log(f"  2FA: код «подтверждения для входа» (B): {last['verify']}")
+                if last.get("attempt") and last["attempt"] not in codes:
+                    codes.append(last["attempt"])
+                    log(f"  2FA: код «login attempt» (A): {last['attempt']}")
+                # Give the second email a couple seconds in case only one is in yet
+                if not last.get("verify"):
+                    await asyncio.sleep(4)
+                    try:
+                        again = await _scan_codes()
+                        if again.get("verify") and again["verify"] not in codes:
+                            codes.insert(0, again["verify"])
+                            log(f"  2FA: код «подтверждения для входа» (B): {again['verify']}")
+                    except Exception:
+                        pass
+                return codes
 
-            # Wait a bit for the email to arrive, then re-check (no full reload)
-            await asyncio.sleep(3)
-
-        log("  2FA: код в почте не найден за отведённое время")
-        return None
+        log("  2FA: коды в почте не найдены за отведённое время")
+        return []
     except Exception as e:
         log(f"  2FA browser error: {e}")
-        return None
+        return []
     finally:
         # Close the mail tab regardless of outcome
         try:
@@ -497,33 +484,32 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
             pass
 
 
-async def _get_2fa_code(ctx, mail_email: str, mail_password: str,
-                        log, ask_2fa_code=None) -> str | None:
+async def _get_2fa_codes(ctx, mail_email: str, mail_password: str,
+                         log, ask_2fa_code=None) -> list:
     """
-    Get the MyHeritage 2FA code:
-      1. Browser: open a new tab to Yandex mail, log in, read the code.
-      2. IMAP fallback (if browser fails) for non-Yandex providers.
+    Return a PRIORITY LIST of candidate 2FA codes (MyHeritage sends two
+    different emails). The caller tries them in order.
+      1. Browser: open a new tab to Yandex mail, read both codes.
+      2. IMAP fallback for non-Yandex providers.
       3. GUI dialog as a last resort.
     `mail_email` is the SAME email used for MyHeritage login.
     """
     if mail_email and mail_password:
-        # Primary: browser-based Yandex reading (exact flow Alla described)
-        code = await _browser_read_yandex_code(ctx, mail_email, mail_password, log)
-        if code:
-            return code
-        # Secondary: IMAP (works for non-Yandex providers with IMAP enabled)
+        codes = await _browser_read_yandex_code(ctx, mail_email, mail_password, log)
+        if codes:
+            return codes
         log("  2FA: пробую IMAP как запасной вариант …")
         code = await asyncio.to_thread(
             _imap_read_mh_code, mail_email, mail_password, 60)
         if code:
             log("  2FA: код получен по IMAP ✓")
-            return code
+            return [code]
 
-    # Last resort: ask the user
     if ask_2fa_code:
         log("  2FA: запрашиваю код у пользователя …")
-        return ask_2fa_code()
-    return None
+        c = ask_2fa_code()
+        return [c] if c else []
+    return []
 
 
 # ── LOGIN ─────────────────────────────────────────────────────────────────── #
@@ -694,25 +680,16 @@ async def _login(page, login_url, has_cookies,
             return True
 
     if tfa_sel:
-        # Get the code: open a new tab to the mail, read it (same email as MH)
-        code = await _get_2fa_code(page.context, email, imap_password,
-                                   log, ask_2fa_code)
-        if not code:
+        # MyHeritage sends two emails with two different codes — get both.
+        codes = await _get_2fa_codes(page.context, email, imap_password,
+                                     log, ask_2fa_code)
+        if not codes:
             log("  !! 2FA: код не получен — прерываю.")
             return False
-        log(f"  → Ввожу 2FA код: {code}")
-        # CRITICAL: the mail tab was brought to front; bring the MH tab back
-        # so keyboard input actually lands on this page.
-        try:
-            await page.bring_to_front()
-            await asyncio.sleep(0.4)
-        except Exception:
-            pass
 
-        async def _code_entered() -> bool:
-            """True if the visible numeric inputs together hold the full code."""
+        async def _digits_in_field() -> str:
             try:
-                digits = await page.evaluate("""() => {
+                return await page.evaluate("""() => {
                     const els = document.querySelectorAll(
                         'input[inputmode="numeric"], input[autocomplete="one-time-code"], '
                         + 'input[maxlength="6"], input[name*="code"], input[type="number"]');
@@ -720,99 +697,118 @@ async def _login(page, login_url, has_cookies,
                     els.forEach(e => { if (e.offsetParent !== null) s += (e.value || ''); });
                     return s.replace(/\\D/g, '');
                 }""")
-                return code in (digits or "")
             except Exception:
-                return False
+                return ""
 
-        # Strategy 1: focus the single field and type the whole code
-        for attempt in range(3):
-            try:
-                fld = page.locator(tfa_sel).first
-                await fld.click(timeout=4000)
-                await page.keyboard.press("Control+a")
-                await page.keyboard.press("Delete")
-                await page.keyboard.type(code, delay=140)
-                await asyncio.sleep(0.6)
-            except Exception:
-                pass
-            if await _code_entered():
-                break
-            # Strategy 2: segmented field — type one digit per visible box
+        async def _clear_code():
+            """Clear all visible code boxes before entering a new code."""
             try:
                 boxes = page.locator(
-                    'input[inputmode="numeric"], input[autocomplete="one-time-code"]')
-                nboxes = await boxes.count()
-                if nboxes >= len(code):
-                    for i, ch in enumerate(code):
-                        b = boxes.nth(i)
-                        await b.click(timeout=2000)
-                        await b.fill(ch)
-                        await asyncio.sleep(0.1)
-                    await asyncio.sleep(0.5)
+                    'input[inputmode="numeric"], input[autocomplete="one-time-code"], '
+                    'input[maxlength="6"], input[name*="code"]')
+                n = await boxes.count()
+                for i in range(max(n, 1)):
+                    b = boxes.nth(i) if n else page.locator(tfa_sel).first
+                    try:
+                        await b.click(timeout=1500)
+                        await page.keyboard.press("Control+a")
+                        await page.keyboard.press("Delete")
+                    except Exception:
+                        pass
             except Exception:
                 pass
-            if await _code_entered():
-                break
-            await asyncio.sleep(0.5)
 
-        if await _code_entered():
-            log("  ✓ 2FA: код введён в поле")
-        else:
-            log("  !! 2FA: код не подтверждён в поле — всё равно пробую отправить")
-        await asyncio.sleep(0.5)
+        async def _enter_code(code: str) -> bool:
+            for _ in range(3):
+                try:
+                    fld = page.locator(tfa_sel).first
+                    await fld.click(timeout=4000)
+                    await page.keyboard.press("Control+a")
+                    await page.keyboard.press("Delete")
+                    await page.keyboard.type(code, delay=140)
+                    await asyncio.sleep(0.6)
+                except Exception:
+                    pass
+                if code in (await _digits_in_field()):
+                    return True
+                # segmented field — one digit per box
+                try:
+                    boxes = page.locator(
+                        'input[inputmode="numeric"], input[autocomplete="one-time-code"]')
+                    if await boxes.count() >= len(code):
+                        for i, ch in enumerate(code):
+                            b = boxes.nth(i)
+                            await b.click(timeout=2000); await b.fill(ch)
+                            await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.5)
+                except Exception:
+                    pass
+                if code in (await _digits_in_field()):
+                    return True
+                await asyncio.sleep(0.4)
+            return False
 
-        # Submit ONCE. Doing both Enter AND a click double-submits and makes
-        # MyHeritage RE-SEND a new code (resend countdown + empty boxes).
-        # So: click the real "Отправить" <button> a single time, then wait.
-        clicked_submit = False
-        for getter in (
-            lambda: page.get_by_role("button", name=re.compile(
-                r"^\s*Отправить\s*$", re.I)).first,
-            lambda: page.locator(
-                'button:has(span.button_content:has-text("Отправить"))').first,
-            lambda: page.locator('button:has-text("Отправить")').last,
-        ):
-            try:
-                el = getter()
-                if await el.count() and await el.is_visible():
-                    await el.click(timeout=5000)
-                    clicked_submit = True
-                    log("  ✓ 2FA: клик по кнопке «Отправить»")
-                    break
-            except Exception:
-                continue
-        if not clicked_submit:
-            # Button not found → JS click the exact "Отправить" button
-            try:
-                clicked_submit = await page.evaluate(r"""() => {
-                    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                    let span = Array.from(document.querySelectorAll('span.button_content, span'))
-                        .find(s => /^Отправить$/i.test(norm(s.textContent)));
-                    let btn = span ? (span.closest('button') || span.parentElement) : null;
-                    if (!btn) btn = Array.from(document.querySelectorAll('button,[role=button]'))
-                        .find(b => /^Отправить$/i.test(norm(b.textContent)));
-                    if (btn) { btn.scrollIntoView(); btn.click(); return true; }
-                    return false;
-                }""")
-                if clicked_submit:
-                    log("  ✓ 2FA: клик по «Отправить» (JS)")
-            except Exception:
-                pass
-        if not clicked_submit:
-            # Truly no button → single Enter as last resort
-            await page.keyboard.press("Enter")
-            log("  2FA: Enter в поле кода")
+        async def _submit_once() -> bool:
+            clicked = False
+            for getter in (
+                lambda: page.get_by_role("button", name=re.compile(
+                    r"^\s*Отправить\s*$", re.I)).first,
+                lambda: page.locator(
+                    'button:has(span.button_content:has-text("Отправить"))').first,
+                lambda: page.locator('button:has-text("Отправить")').last,
+            ):
+                try:
+                    el = getter()
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=5000)
+                        clicked = True
+                        break
+                except Exception:
+                    continue
+            if not clicked:
+                try:
+                    clicked = await page.evaluate(r"""() => {
+                        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                        let span = Array.from(document.querySelectorAll('span.button_content, span'))
+                            .find(s => /^Отправить$/i.test(norm(s.textContent)));
+                        let btn = span ? (span.closest('button') || span.parentElement) : null;
+                        if (!btn) btn = Array.from(document.querySelectorAll('button,[role=button]'))
+                            .find(b => /^Отправить$/i.test(norm(b.textContent)));
+                        if (btn) { btn.scrollIntoView(); btn.click(); return true; }
+                        return false;
+                    }""")
+                except Exception:
+                    pass
+            if not clicked:
+                await page.keyboard.press("Enter")
+            return clicked
 
-        # Wait for the result of the SINGLE submit (do NOT submit again)
-        for _ in range(25):
+        # Bring MH tab back to front (mail tab was focused) so input lands here
+        try:
+            await page.bring_to_front()
+            await asyncio.sleep(0.4)
+        except Exception:
+            pass
+
+        # Try each candidate code: enter → submit ONCE → wait for success.
+        for ci, code in enumerate(codes, 1):
+            log(f"  → Пробую код {ci}/{len(codes)}: {code}")
+            await _clear_code()
+            ok = await _enter_code(code)
+            log("  ✓ 2FA: код введён" if ok
+                else "  !! 2FA: код не подтвердился в поле — всё равно отправляю")
+            await asyncio.sleep(0.4)
+            await _submit_once()
+            log("  2FA: отправил, жду результат…")
+            for _ in range(18):
+                await asyncio.sleep(1)
+                if await _logged_in():
+                    log(f"  ✓ Logged in after 2FA. URL: {page.url}")
+                    return True
+            log(f"  !! 2FA: код {code} не подошёл, пробую следующий…")
             await asyncio.sleep(1)
-            if await _logged_in():
-                log(f"  ✓ Logged in after 2FA. URL: {page.url}")
-                return True
-        # If still on the code screen, the code was likely stale/invalid
-        if await _find_tfa():
-            log("  !! 2FA: код отклонён или истёк (поле кода снова пустое). "
-                "Возможно, прочитан старый код из почты.")
+
+        log("  !! 2FA: ни один код не подошёл.")
 
     # Neither success nor 2FA → report any error message
     cur = page.url
