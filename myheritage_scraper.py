@@ -704,36 +704,42 @@ async def _login(page, login_url, has_cookies,
             await _fill(page, [tfa_sel] + TFA_SELS, code, "2FA code", log)
         await asyncio.sleep(0.8)
 
-        # Submit — try several strategies; the button text sits inside a span
-        # and may briefly show a spinner, so force-click and JS-click too.
+        # Submit — the CODE-confirm button is labelled "Отправить" (Send),
+        # NOT "Авторизация" (that's the leftover login button). Prefer
+        # "Отправить"/"Send"/"Continue" and click via the span's parent button.
         submitted2 = False
         for getter in (
-            lambda: page.get_by_role("button", name=re.compile("Авторизация|Verify|Подтвердить|Continue|Submit", re.I)).first,
-            lambda: page.locator('button:has-text("Авторизация")').first,
-            lambda: page.locator('button[type="submit"]').first,
-            lambda: page.locator('span.button_content:has-text("Авторизация")').first,
+            lambda: page.get_by_role("button", name=re.compile(
+                r"Отправить|Send|Continue|Продолжить|Verify|Подтвердить", re.I)).first,
+            lambda: page.locator(
+                'button:has(span.button_content:has-text("Отправить"))').first,
+            lambda: page.locator('span.button_content:has-text("Отправить")').first,
+            lambda: page.locator('button:has-text("Отправить")').first,
         ):
             try:
                 el = getter()
-                if await el.count():
+                if await el.count() and await el.is_visible():
                     await el.click(timeout=5000, force=True)
                     submitted2 = True
-                    log("  ✓ 2FA: нажал кнопку подтверждения")
+                    log("  ✓ 2FA: нажал «Отправить»")
                     break
             except Exception:
                 continue
         if not submitted2:
-            # JS click on any button whose text contains the submit label
+            # JS: click the button whose text is exactly the code-submit label
             try:
                 submitted2 = await page.evaluate(r"""() => {
-                    const re = /Авторизация|Verify|Подтвердить|Continue|Submit/i;
-                    for (const b of document.querySelectorAll('button, [role=button]')) {
-                        if (re.test(b.textContent || '')) { b.click(); return true; }
+                    const re = /^(Отправить|Send|Continue|Продолжить|Verify|Подтвердить)$/i;
+                    const btns = Array.from(document.querySelectorAll('button, [role=button]'));
+                    // exact-text match first (avoids the 'Авторизация' login button)
+                    for (const b of btns) {
+                        const t = (b.textContent || '').trim();
+                        if (re.test(t)) { b.click(); return true; }
                     }
                     return false;
                 }""")
                 if submitted2:
-                    log("  ✓ 2FA: нажал кнопку (JS)")
+                    log("  ✓ 2FA: нажал «Отправить» (JS)")
             except Exception:
                 pass
         if not submitted2:
