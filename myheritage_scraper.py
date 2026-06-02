@@ -408,6 +408,15 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
             await asyncio.sleep(5)
         log("  2FA: вошёл в почту, ищу письмо с кодом …")
 
+        # Give the freshly-sent email a moment to arrive, then reload so the
+        # TOPMOST MyHeritage email is the current attempt's (not a stale one).
+        await asyncio.sleep(6)
+        try:
+            await page.reload(wait_until="domcontentloaded", timeout=15000)
+            await asyncio.sleep(3)
+        except Exception:
+            pass
+
         # 7) Find the MyHeritage email (NOT the ad at the very top!) and
         #    read the 6-digit code. The code is visible right in the snippet
         #    preview: "...confirmation code in the login screen: 284383 ...".
@@ -752,30 +761,13 @@ async def _login(page, login_url, has_cookies,
             log("  !! 2FA: код не подтверждён в поле — всё равно пробую отправить")
         await asyncio.sleep(0.5)
 
-        # Submit. The confirm button is "Отправить". Try MANY ways and after
-        # each one check whether we left the code screen — keep going until
-        # one of them actually submits.
-        async def _submit_done() -> bool:
-            await asyncio.sleep(2)
-            if await _logged_in():
-                return True
-            # also "done" if the code field disappeared (moved to next step)
-            return (await _find_tfa()) is None
-
-        # 1) Enter key in the focused code field (most reliable for OTP forms)
-        try:
-            await page.keyboard.press("Enter")
-            log("  2FA: Enter в поле кода")
-            if await _submit_done():
-                log(f"  ✓ Logged in after 2FA. URL: {page.url}")
-                return True
-        except Exception:
-            pass
-
-        # 2) Click the real <button> ancestor of the "Отправить" span
+        # Submit ONCE. Doing both Enter AND a click double-submits and makes
+        # MyHeritage RE-SEND a new code (resend countdown + empty boxes).
+        # So: click the real "Отправить" <button> a single time, then wait.
+        clicked_submit = False
         for getter in (
             lambda: page.get_by_role("button", name=re.compile(
-                r"^\s*Отправить\s*$|^\s*Send\s*$|^\s*Continue\s*$", re.I)).first,
+                r"^\s*Отправить\s*$", re.I)).first,
             lambda: page.locator(
                 'button:has(span.button_content:has-text("Отправить"))').first,
             lambda: page.locator('button:has-text("Отправить")').last,
@@ -784,46 +776,43 @@ async def _login(page, login_url, has_cookies,
                 el = getter()
                 if await el.count() and await el.is_visible():
                     await el.click(timeout=5000)
+                    clicked_submit = True
                     log("  ✓ 2FA: клик по кнопке «Отправить»")
-                    if await _submit_done():
-                        log(f"  ✓ Logged in after 2FA. URL: {page.url}")
-                        return True
+                    break
             except Exception:
                 continue
-
-        # 3) JS: locate the exact "Отправить" button, climb to <button>, click
-        try:
-            ok = await page.evaluate(r"""() => {
-                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                // prefer a span.button_content whose text is exactly Отправить
-                let span = Array.from(document.querySelectorAll('span.button_content, span'))
-                    .find(s => /^Отправить$/i.test(norm(s.textContent)));
-                let btn = span ? (span.closest('button') || span.parentElement) : null;
-                if (!btn) {
-                    btn = Array.from(document.querySelectorAll('button,[role=button]'))
+        if not clicked_submit:
+            # Button not found → JS click the exact "Отправить" button
+            try:
+                clicked_submit = await page.evaluate(r"""() => {
+                    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                    let span = Array.from(document.querySelectorAll('span.button_content, span'))
+                        .find(s => /^Отправить$/i.test(norm(s.textContent)));
+                    let btn = span ? (span.closest('button') || span.parentElement) : null;
+                    if (!btn) btn = Array.from(document.querySelectorAll('button,[role=button]'))
                         .find(b => /^Отправить$/i.test(norm(b.textContent)));
-                }
-                if (btn) {
-                    btn.scrollIntoView();
-                    btn.click();
-                    return true;
-                }
-                return false;
-            }""")
-            if ok:
-                log("  ✓ 2FA: клик по «Отправить» (JS)")
-                if await _submit_done():
-                    log(f"  ✓ Logged in after 2FA. URL: {page.url}")
-                    return True
-        except Exception:
-            pass
+                    if (btn) { btn.scrollIntoView(); btn.click(); return true; }
+                    return false;
+                }""")
+                if clicked_submit:
+                    log("  ✓ 2FA: клик по «Отправить» (JS)")
+            except Exception:
+                pass
+        if not clicked_submit:
+            # Truly no button → single Enter as last resort
+            await page.keyboard.press("Enter")
+            log("  2FA: Enter в поле кода")
 
-        # Final wait for login to complete
-        for _ in range(20):
+        # Wait for the result of the SINGLE submit (do NOT submit again)
+        for _ in range(25):
             await asyncio.sleep(1)
             if await _logged_in():
                 log(f"  ✓ Logged in after 2FA. URL: {page.url}")
                 return True
+        # If still on the code screen, the code was likely stale/invalid
+        if await _find_tfa():
+            log("  !! 2FA: код отклонён или истёк (поле кода снова пустое). "
+                "Возможно, прочитан старый код из почты.")
 
     # Neither success nor 2FA → report any error message
     cur = page.url
