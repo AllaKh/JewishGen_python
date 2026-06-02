@@ -755,18 +755,19 @@ async def _login(page, login_url, has_cookies,
 
         async def _submit_once() -> bool:
             clicked = False
-            for getter in (
-                lambda: page.get_by_role("button", name=re.compile(
-                    r"^\s*Отправить\s*$", re.I)).first,
-                lambda: page.locator(
-                    'button:has(span.button_content:has-text("Отправить"))').first,
-                lambda: page.locator('button:has-text("Отправить")').last,
+            for name, getter in (
+                ("role", lambda: page.get_by_role("button", name=re.compile(
+                    r"^\s*Отправить\s*$", re.I)).first),
+                ("span-parent", lambda: page.locator(
+                    'button:has(span.button_content:has-text("Отправить"))').first),
+                ("has-text", lambda: page.locator('button:has-text("Отправить")').last),
             ):
                 try:
                     el = getter()
                     if await el.count() and await el.is_visible():
                         await el.click(timeout=5000)
                         clicked = True
+                        log(f"  ✓ 2FA: нажал «Отправить» ({name})")
                         break
                 except Exception:
                     continue
@@ -872,7 +873,33 @@ async def _handle_select_site(page, family_site, log):
     return f"https://www.myheritage.com/research?s={target['id']}&lang={lang}"
 
 
+# ── close stray social popup tabs (Facebook/Google) ───────────────────────── #
+async def _close_social_tabs(ctx, keep, log):
+    for p in list(ctx.pages):
+        if p is keep:
+            continue
+        try:
+            u = (p.url or "").lower()
+            if any(s in u for s in ("facebook.com", "accounts.google", "apple.com")):
+                await p.close()
+                log("  ✓ Закрыл лишнюю вкладку соцсети")
+        except Exception:
+            pass
+
+
 # ── SEARCH FORM ───────────────────────────────────────────────────────────── #
+FIRST_NAME_SELS = [
+    'input[data-automations="research-family_first_name"]',
+    'input[placeholder="Имя и отчество"]',
+    'input[placeholder*="Имя" i]', 'input[placeholder*="first" i]',
+]
+LAST_NAME_SELS = [
+    'input[data-automations="research-family_last_name"]',
+    'input[placeholder="Фамилия"]',
+    'input[placeholder*="Фамилия" i]', 'input[placeholder*="last" i]',
+]
+
+
 async def _search(page, search_url, params, has_cookies, log):
     log(f"  → Navigating to search: {search_url}")
     try:
@@ -882,17 +909,45 @@ async def _search(page, search_url, params, has_cookies, log):
         return False
     if has_cookies:
         await _accept_cookies(page, log)
-    await asyncio.sleep(1.5)
+
+    # Close any Facebook/social popup tab that MyHeritage may have spawned
+    await _close_social_tabs(page.context, page, log)
+
+    # Wait for the research form to actually render (React) — poll up to 25s
+    log("  → Жду форму поиска…")
+    found_form = False
+    for _t in range(25):
+        await asyncio.sleep(1)
+        try:
+            for sel in FIRST_NAME_SELS:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    found_form = True
+                    break
+        except Exception:
+            pass
+        if found_form:
+            log(f"  ✓ Форма поиска готова ({_t+1}с)")
+            break
+        # If we somehow landed on the family-site home, click "Исследование"
+        if _t == 5:
+            for sel in ['a:has-text("Исследование")', 'a:has-text("Research")',
+                        'a[href*="research"]']:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=4000)
+                        log("  → Кликнул «Исследование»")
+                        await asyncio.sleep(2)
+                        break
+                except Exception:
+                    pass
+    if not found_form:
+        log("  !! Форма поиска не появилась — пробую заполнять как есть")
 
     # Exact field selectors from the live research form (data-automations)
-    await _fill(page, [
-        'input[data-automations="research-family_first_name"]',
-        'input[placeholder*="Имя" i]', 'input[placeholder*="first" i]',
-    ], params.get("first_name", ""), "First name", log)
-    await _fill(page, [
-        'input[data-automations="research-family_last_name"]',
-        'input[placeholder*="Фамилия" i]', 'input[placeholder*="last" i]',
-    ], params.get("surname", ""), "Surname", log)
+    await _fill(page, FIRST_NAME_SELS, params.get("first_name", ""), "First name", log)
+    await _fill(page, LAST_NAME_SELS,  params.get("surname", ""),    "Surname",    log)
 
     # Birth year
     await _fill(page, [
