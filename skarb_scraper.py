@@ -429,12 +429,13 @@ async def run_scraper(
         return summary
 
     # Build search query: "Фамилия1 или Фамилия2 или ..."
+    # АИС Скарб search form: <input type="text" name="q" ...>
     query = " или ".join(surnames)
     q_prefix = safe_fn("_".join(surnames[:3]), 50)
 
     query_info = {
         "Фамилии":  query,
-        "Ключевые слова": " " + keyword_mode + " ".join(keywords) if keywords else "(нет)",
+        "Ключевые слова": (" " + keyword_mode + " ").join(keywords) if keywords else "(нет)",
     }
 
     _prog(0, "Запускаю браузер...")
@@ -450,8 +451,8 @@ async def run_scraper(
 
         try:
             # ── 1. Search ──────────────────────────────────────────── #
-            # Build URL: GET parameter ФИО
-            search_url = BASE_URL + "?" + urlencode({"ФИО": query})
+            # АИС Скарб: GET param name="q" (from HTML: <input type="text" name="q">)
+            search_url = BASE_URL + "?" + urlencode({"q": query})
             _prog(5, f"Поиск: {query}")
             await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(2)

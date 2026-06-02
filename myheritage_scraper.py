@@ -17,7 +17,8 @@ IMPORTANT: NO persistent browser profile is used — fresh context every run
 so there are zero stale cookies from any previous session.
 """
 
-import asyncio, difflib, os, re, sys
+import asyncio, difflib, imaplib, email as _email_lib
+import os, re, sys, time
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
@@ -223,10 +224,202 @@ async def _open_login_form(page, log):
     log("  (login form link not found — form may already be visible)")
     return True
 
+# ── YANDEX 2FA CODE READER ────────────────────────────────────────────────── #
+
+def _imap_read_mh_code(yandex_email: str, yandex_password: str,
+                       timeout: int = 90) -> str | None:
+    """
+    Read MyHeritage verification code from Yandex mail via IMAP.
+    Polls inbox for up to `timeout` seconds.
+    Runs synchronously — call via asyncio.to_thread().
+    """
+    try:
+        mail = imaplib.IMAP4_SSL("imap.yandex.ru", 993)
+        mail.login(yandex_email, yandex_password)
+        mail.select("INBOX")
+        deadline = time.time() + timeout
+        seen_uids: set = set()
+
+        while time.time() < deadline:
+            # Search for emails from MyHeritage
+            for search in ('FROM "myheritage"', 'FROM "noreply"', 'UNSEEN'):
+                try:
+                    _, data = mail.search(None, search)
+                    uids = data[0].split() if data[0] else []
+                    for uid in reversed(uids[-10:]):  # check 10 most recent
+                        if uid in seen_uids:
+                            continue
+                        seen_uids.add(uid)
+                        _, msg_data = mail.fetch(uid, "(RFC822)")
+                        raw = msg_data[0][1] if msg_data and msg_data[0] else b""
+                        msg = _email_lib.message_from_bytes(raw)
+                        body = ""
+                        if msg.is_multipart():
+                            for part in msg.walk():
+                                ct = part.get_content_type()
+                                if ct in ("text/plain", "text/html"):
+                                    try:
+                                        body += part.get_payload(
+                                            decode=True).decode("utf-8", errors="ignore")
+                                    except Exception:
+                                        pass
+                        else:
+                            try:
+                                body = msg.get_payload(
+                                    decode=True).decode("utf-8", errors="ignore")
+                            except Exception:
+                                pass
+                        # Find 6-digit verification code
+                        m = re.search(r'\b(\d{6})\b', body)
+                        if m:
+                            try:
+                                mail.close(); mail.logout()
+                            except Exception:
+                                pass
+                            return m.group(1)
+                except Exception:
+                    continue
+            time.sleep(5)
+
+        try:
+            mail.close(); mail.logout()
+        except Exception:
+            pass
+    except Exception as exc:
+        pass  # IMAP failed — caller uses browser fallback
+    return None
+
+
+async def _browser_read_mh_code(ctx, yandex_email: str, yandex_password: str,
+                                  log, timeout: int = 120) -> str | None:
+    """
+    Fallback: open Yandex webmail in a new browser page, login with password,
+    find the MyHeritage email and extract the 6-digit code.
+    """
+    page = await ctx.new_page()
+    try:
+        log("  2FA: открываю Яндекс.Почту в браузере...")
+        await page.goto("https://mail.yandex.com", wait_until="domcontentloaded",
+                        timeout=30000)
+        await asyncio.sleep(3)
+
+        # Fill login (Yandex sometimes shows just email first)
+        for sel in ['input[name="login"]', '#passp-field-login',
+                    'input[autocomplete="username"]']:
+            try:
+                inp = page.locator(sel).first
+                if await inp.count() and await inp.is_visible():
+                    await inp.fill(yandex_email)
+                    await asyncio.sleep(0.5)
+                    await page.keyboard.press("Enter")
+                    await asyncio.sleep(2)
+                    break
+            except Exception:
+                continue
+
+        # Choose "Войти с паролем" if multiple options appear
+        for sel in ['button:has-text("Войти с паролем")',
+                    'a:has-text("Войти с паролем")',
+                    '[data-type="login-password"]',
+                    'button:has-text("Password")']:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    await el.click(timeout=3000)
+                    await asyncio.sleep(1.5)
+                    log("  2FA: выбрана опция «пароль»")
+                    break
+            except Exception:
+                continue
+
+        # Fill password
+        for sel in ['input[name="passwd"]', '#passp-field-passwd',
+                    'input[type="password"]']:
+            try:
+                inp = page.locator(sel).first
+                if await inp.count() and await inp.is_visible():
+                    await inp.fill(yandex_password)
+                    await asyncio.sleep(0.5)
+                    await page.keyboard.press("Enter")
+                    await asyncio.sleep(3)
+                    break
+            except Exception:
+                continue
+
+        # Wait for inbox
+        try:
+            await page.wait_for_url(
+                lambda u: "mail.yandex" in u and "passport" not in u,
+                timeout=20000)
+        except Exception:
+            await asyncio.sleep(5)
+        log("  2FA: вошёл в Яндекс.Почту, ищу письмо...")
+
+        # Poll inbox for MH email
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                await page.reload(wait_until="domcontentloaded", timeout=15000)
+                await asyncio.sleep(2)
+            except Exception:
+                pass
+
+            # Look for email from MyHeritage in the message list
+            for el in await page.query_selector_all(
+                    '[class*="MessageSnippet"], [class*="message"], '
+                    '[data-cid], .js-message, .b-messages__item'):
+                txt = (await el.text_content() or "").lower()
+                if "myheritage" in txt or "heritage" in txt:
+                    await el.click()
+                    await asyncio.sleep(2)
+                    body = await page.content()
+                    m = re.search(r'\b(\d{6})\b', body)
+                    if m:
+                        log(f"  2FA: код получен из Яндекса: {m.group(1)}")
+                        return m.group(1)
+
+            await asyncio.sleep(5)
+
+        log("  2FA: код не найден в Яндекс.Почте")
+        return None
+    except Exception as e:
+        log(f"  2FA browser error: {e}")
+        return None
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
+async def _get_2fa_code(ctx, yandex_email: str, yandex_password: str,
+                        log, ask_2fa_code=None) -> str | None:
+    """
+    Get 2FA code: try Yandex IMAP first, then browser, then GUI dialog.
+    """
+    if yandex_email and yandex_password:
+        log("  2FA: читаю код из Яндекс.Почты (IMAP)...")
+        code = await asyncio.to_thread(
+            _imap_read_mh_code, yandex_email, yandex_password, 60)
+        if code:
+            return code
+        log("  2FA: IMAP не сработал — пробую браузер...")
+        code = await _browser_read_mh_code(ctx, yandex_email, yandex_password, log)
+        if code:
+            return code
+
+    # Last resort: ask user via GUI dialog
+    if ask_2fa_code:
+        log("  2FA: запрашиваю код у пользователя...")
+        return ask_2fa_code()
+    return None
+
+
 # ── LOGIN ─────────────────────────────────────────────────────────────────── #
 async def _login(page, login_url, has_cookies,
                  email, password, log,
-                 ask_2fa_code=None) -> bool:
+                 ask_2fa_code=None,
+                 yandex_email=None, yandex_password=None) -> bool:
     """
     Full login flow:
     1. Navigate to login_url
@@ -356,15 +549,13 @@ async def _login(page, login_url, has_cookies,
             pass
 
     if tfa_visible:
-        if ask_2fa_code is None:
-            log("  !! 2FA required but no callback provided — cannot continue.")
-            return False
-        # Ask the GUI for the code (blocking call in thread → runs in main thread)
-        code = ask_2fa_code()
+        # Auto-read from Yandex mail, or fall back to GUI dialog
+        code = await _get_2fa_code(page.context, yandex_email, yandex_password,
+                                    log, ask_2fa_code)
         if not code:
-            log("  !! 2FA: no code entered — aborting.")
+            log("  !! 2FA: код не получен — прерываю.")
             return False
-        log(f"  → Entering 2FA code: {code}")
+        log(f"  → Вводю 2FA код: {code}")
         await _fill(page, TFA_SELS, code, "2FA code", log)
         # Click "Авторизация" / submit
         for sel in ['button:has-text("Авторизация")',
@@ -757,7 +948,9 @@ async def run_scraper(*,
     log            = print,
     progress       = None,
     cancel_event   = None,
-    ask_2fa_code   = None,   # callable() → str, called in main thread via Qt signal
+    ask_2fa_code   = None,   # callable() → str, fallback if Yandex auto-read fails
+    yandex_email   = None,   # Yandex address to auto-read 2FA code
+    yandex_password= None,   # Yandex password
 ) -> dict:
 
     def _prog(pct, txt):
@@ -829,6 +1022,8 @@ async def run_scraper(*,
                     page, login_url, has_cookies,
                     email, password, log,
                     ask_2fa_code=ask_2fa_code,
+                    yandex_email=yandex_email,
+                    yandex_password=yandex_password,
                 )
                 if not logged_in:
                     summary["error"]   = "login_failed"
