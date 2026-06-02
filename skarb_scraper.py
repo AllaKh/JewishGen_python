@@ -152,35 +152,72 @@ async def _scrape_record(page, url: str, images_dir: Path, log) -> dict:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(1.5)
 
-        # ── Extract all label: value pairs ──────────────────────── #
-        content = await page.content()
+        # ── Extract ALL "Label: value" pairs from the record page ──── #
+        # JS-based — robust across the various Bitrix markup variants.
+        # Returns an ordered list of [label, value] pairs.
+        pairs = await page.evaluate(r"""() => {
+            const out = [];
+            const seen = new Set();
+            const push = (k, v) => {
+                k = (k || '').replace(/\s+/g, ' ').replace(/:$/, '').trim();
+                v = (v || '').replace(/\s+/g, ' ').trim();
+                if (!k || !v || k.length > 80) return;
+                const key = k.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                out.push([k, v]);
+            };
 
-        # Strategy 1: look for dl dt/dd
-        dts = await page.query_selector_all("dl dt, .field-label, td.label")
-        dds = await page.query_selector_all("dl dd, .field-value, td.value")
-        for dt, dd in zip(dts, dds):
-            k = (await dt.text_content() or "").strip().rstrip(":")
-            v = (await dd.text_content() or "").strip()
-            if k and v:
-                rec["fields"][k] = v
+            // 1) Property tables / definition lists
+            document.querySelectorAll('dl').forEach(dl => {
+                const dts = dl.querySelectorAll('dt');
+                const dds = dl.querySelectorAll('dd');
+                for (let i = 0; i < Math.min(dts.length, dds.length); i++)
+                    push(dts[i].textContent, dds[i].textContent);
+            });
+            document.querySelectorAll('table tr').forEach(tr => {
+                const c = tr.querySelectorAll('td, th');
+                if (c.length === 2) push(c[0].textContent, c[1].textContent);
+            });
 
-        # Strategy 2: table rows with 2 cells (label | value)
-        if not rec["fields"]:
-            for tr in await page.query_selector_all("table tr"):
-                tds = await tr.query_selector_all("td")
-                if len(tds) == 2:
-                    k = (await tds[0].text_content() or "").strip().rstrip(":")
-                    v = (await tds[1].text_content() or "").strip()
-                    if k and v and len(k) < 80:
-                        rec["fields"][k] = v
+            // 2) "<b>/<strong> Label:</b> value" inside any block
+            document.querySelectorAll('b, strong').forEach(b => {
+                const lab = (b.textContent || '').trim();
+                if (!lab.includes(':')) return;
+                // value = text right after the bold element within its parent
+                let val = '';
+                let n = b.nextSibling;
+                while (n) {
+                    if (n.nodeType === 3) val += n.textContent;      // text node
+                    else if (n.nodeType === 1) {
+                        if (/^(B|STRONG|BR)$/.test(n.tagName)) break;
+                        val += n.textContent;
+                    }
+                    n = n.nextSibling;
+                }
+                push(lab, val);
+            });
 
-        # Strategy 3: text pattern "Label: Value" from paragraphs
-        if not rec["fields"]:
-            for el in await page.query_selector_all("p, li, div.item"):
-                txt = (await el.text_content() or "").strip()
-                m = re.match(r"^([^:]{1,50}):\s*(.+)$", txt, re.DOTALL)
-                if m:
-                    rec["fields"][m.group(1).strip()] = m.group(2).strip()
+            // 3) Plain "Label: value" lines in content blocks
+            document.querySelectorAll('p, li, div').forEach(el => {
+                // only leaf-ish elements (avoid huge containers)
+                if (el.children.length > 2) return;
+                const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                const m = t.match(/^([^:]{2,60}):\s*(.+)$/);
+                if (m) push(m[1], m[2]);
+            });
+
+            return out;
+        }""")
+
+        # Preserve order, drop site-noise labels
+        NOISE = ("каталог", "поиск", "меню", "вход", "контакт",
+                 "анкета", "©", "all rights", "cookie")
+        for k, v in pairs:
+            kl = k.lower()
+            if any(nz in kl for nz in NOISE):
+                continue
+            rec["fields"][k] = v
 
         log(f"      Полей: {len(rec['fields'])}")
 
@@ -313,13 +350,7 @@ def write_docx(path: Path, records: list, query_info: dict):
             "") or f"Запись {i}"
         doc.add_heading(f"{i}. {name}", level=2)
 
-        # URL
-        if rec.get("url"):
-            pp = doc.add_paragraph()
-            pp.add_run("Источник: ").bold = True
-            _add_hyperlink(pp, rec["url"], rec["url"])
-
-        # Fields table
+        # Full record info — all fields from the opened page (link goes LAST)
         fields = rec.get("fields", {})
         if fields:
             tbl = doc.add_table(rows=1, cols=2)
@@ -348,6 +379,12 @@ def write_docx(path: Path, records: list, query_info: dict):
                 doc.add_picture(io.BytesIO(thumb), width=Inches(3.5))
             except Exception:
                 pass
+
+        # Source link — at the very end
+        if rec.get("url"):
+            pp = doc.add_paragraph()
+            pp.add_run("Источник: ").bold = True
+            _add_hyperlink(pp, rec["url"], rec["url"])
 
         doc.add_paragraph("")
 

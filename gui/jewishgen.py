@@ -24,7 +24,7 @@ Fixes vs original main_window.py
 import sys
 import asyncio
 from pathlib import Path
-from gui._app_icon import app_icon
+from gui._app_icon import app_icon, make_header
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -260,13 +260,8 @@ class JewishGenApp(QMainWindow):
         outer.setContentsMargins(14, 10, 14, 10)
         outer.setSpacing(10)
 
-        # Logo
-        logo = QLabel()
-        pix = QPixmap(str(_ROOT / "config" / "JGlogo.png"))
-        if not pix.isNull():
-            logo.setPixmap(pix.scaledToWidth(180, Qt.SmoothTransformation))
-        logo.setAlignment(Qt.AlignLeft)
-        outer.addWidget(logo)
+        # Logo + name
+        outer.addLayout(make_header("JGlogo.png", "JewishGen", color="#2a4a7f"))
 
         # ── Credentials ──────────────────────────────────────────────────── #
         creds = QGroupBox("Account credentials  (optional — used for auto-login)")

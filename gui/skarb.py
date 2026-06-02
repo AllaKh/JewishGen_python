@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
+from gui._app_icon import app_icon, make_header
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -29,7 +30,6 @@ try:
 except ImportError:
     _SCRAPER_OK = False
 
-from gui._app_icon import app_icon
 
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
@@ -87,16 +87,8 @@ class SkarbApp(QMainWindow):
         outer.setContentsMargins(16, 12, 16, 12)
         outer.setSpacing(10)
 
-        # Logo
-        lbl = QLabel()
-        pix = QPixmap(str(_CONFIG / "Skarblogo.png"))
-        if not pix.isNull():
-            lbl.setPixmap(pix.scaledToWidth(200, Qt.SmoothTransformation))
-        else:
-            lbl.setText("АИС Скарб")
-            lbl.setStyleSheet("font-size:20px;font-weight:bold;color:#2a4a7f;")
-        lbl.setAlignment(Qt.AlignLeft)
-        outer.addWidget(lbl)
+        # Logo + name (big letters next to the logo)
+        outer.addLayout(make_header("Skarblogo.png", "АИС Скарб", color="#2a4a7f"))
         outer.addWidget(QLabel(
             "Автоматизированная информационная система архивов Беларуси"))
 

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
-from gui._app_icon import app_icon
+from gui._app_icon import app_icon, make_header
 
 _EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
   fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -173,16 +173,9 @@ class MyHeritageApp(QMainWindow):
         self._outer.setContentsMargins(18, 12, 18, 12)
         self._outer.setSpacing(8)
 
-        # Logo
-        lbl = QLabel()
-        pix = QPixmap(str(_CONFIG / "myheritage.png"))
-        if not pix.isNull():
-            lbl.setPixmap(pix.scaledToWidth(200, Qt.SmoothTransformation))
-        else:
-            lbl.setText("MyHeritage")
-            lbl.setStyleSheet("font-size:22px;font-weight:bold;color:#2a4a7f;")
-        lbl.setAlignment(Qt.AlignLeft)
-        self._outer.addWidget(lbl)
+        # Logo + name
+        self._outer.addLayout(
+            make_header("MHlogo.png", "MyHeritage", color="#2a4a7f"))
 
         # ── Site / language selector ─────────────────────────────────────── #
         sg = QGroupBox("Site / Language")

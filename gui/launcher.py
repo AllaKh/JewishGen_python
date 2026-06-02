@@ -168,8 +168,8 @@ class LauncherWindow(QMainWindow):
         self._outer.setContentsMargins(24, 18, 24, 18)
         self._outer.setSpacing(10)
 
-        # Header: logo (190px) centred between itself and the window edge,
-        # with bilingual title sitting to its right, vertically centred.
+        # Header: logo flush to the LEFT edge; bilingual title centred in the
+        # space between the logo and the right edge (stretch on both sides).
         hdr_row = QHBoxLayout()
         hdr_row.setSpacing(20)
         hdr_row.setContentsMargins(0, 4, 0, 4)
@@ -179,38 +179,39 @@ class LauncherWindow(QMainWindow):
             logo_lbl = QLabel()
             logo_lbl.setPixmap(
                 _logo_pix.scaledToWidth(190, Qt.SmoothTransformation))
-            logo_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
-            hdr_row.addStretch(1)          # left spring
-            hdr_row.addWidget(logo_lbl)
-        else:
-            hdr_row.addStretch(1)
+            logo_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            hdr_row.addWidget(logo_lbl)     # flush left, no spring before it
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(4)
-        title_col.setAlignment(Qt.AlignVCenter)
+        title_col.setSpacing(6)
+        title_col.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
 
         en_lbl = QLabel("Genealogy Search")
+        en_lbl.setAlignment(Qt.AlignHCenter)
         en_lbl.setStyleSheet(
-            "font-size:30px;font-weight:bold;color:#2a4a2a;"
+            "font-size:40px;font-weight:bold;color:#2a4a2a;"
             "font-family:'Palatino Linotype',Palatino,Georgia,serif;"
             "letter-spacing:1px;")
 
         ru_lbl = QLabel("Генеалогический поиск")
+        ru_lbl.setAlignment(Qt.AlignHCenter)
         ru_lbl.setStyleSheet(
-            "font-size:18px;font-weight:600;color:#5a7a4a;"
+            "font-size:24px;font-weight:600;color:#5a7a4a;"
             "font-family:'Segoe UI',Arial,sans-serif;letter-spacing:0.5px;")
 
         sub_lbl = QLabel("Select a database  ·  Выберите базу данных")
+        sub_lbl.setAlignment(Qt.AlignHCenter)
         sub_lbl.setStyleSheet(
-            "font-size:13px;color:#777;font-style:italic;"
+            "font-size:16px;color:#777;font-style:italic;"
             "font-family:'Segoe UI',Arial,sans-serif;margin-top:2px;")
 
         title_col.addWidget(en_lbl)
         title_col.addWidget(ru_lbl)
         title_col.addWidget(sub_lbl)
 
+        hdr_row.addStretch(1)              # spring between logo and title
         hdr_row.addLayout(title_col)
-        hdr_row.addStretch(1)              # right spring (mirrors left)
+        hdr_row.addStretch(1)              # spring between title and right edge
         self._outer.addLayout(hdr_row)
 
         # Divider

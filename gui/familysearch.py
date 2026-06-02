@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QApplication, QGroupBox, QComboBox,
     QFrame, QGridLayout, QScrollArea,
 )
-from gui._app_icon import app_icon
+from gui._app_icon import app_icon, make_header
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
 
@@ -165,16 +165,9 @@ class FamilySearchApp(QMainWindow):
         self._outer.setContentsMargins(18, 12, 18, 12)
         self._outer.setSpacing(8)
 
-        # Logo
-        lbl = QLabel()
-        pix = QPixmap(str(_CONFIG / "FSlogo.png"))
-        if not pix.isNull():
-            lbl.setPixmap(pix.scaledToWidth(220, Qt.SmoothTransformation))
-        else:
-            lbl.setText("FamilySearch")
-            lbl.setStyleSheet("font-size:22px;font-weight:bold;color:#006B6B;")
-        lbl.setAlignment(Qt.AlignLeft)
-        self._outer.addWidget(lbl)
+        # Logo + name
+        self._outer.addLayout(
+            make_header("FSlogo.png", "FamilySearch", color="#006B6B"))
 
         # Credentials
         cg = QGroupBox("Account credentials")
