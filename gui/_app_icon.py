@@ -18,7 +18,8 @@ def app_icon() -> QIcon:
 def make_header(logo_file: str, title: str,
                 color: str = "#2a4a7f", logo_w: int = 110) -> QHBoxLayout:
     """
-    Build a header row: logo flush-left + big title name next to it.
+    Build a header row: logo flush-left + big title name CENTERED in the
+    space between the logo and the right edge.
     `logo_file` is a filename inside config/ (e.g. 'MHlogo.png').
     Returns a QHBoxLayout ready to add to the window's outer layout.
     """
@@ -34,10 +35,13 @@ def make_header(logo_file: str, title: str,
         row.addWidget(logo)
 
     name = QLabel(title)
-    name.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+    name.setAlignment(Qt.AlignCenter)
     name.setStyleSheet(
-        f"font-size:34px;font-weight:bold;color:{color};"
-        "font-family:'Segoe UI',Arial,sans-serif;letter-spacing:1px;")
+        f"font-size:36px;font-weight:bold;color:{color};"
+        "font-family:'Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;"
+        "letter-spacing:2px;")
+
+    row.addStretch(1)        # spring between logo and name
     row.addWidget(name)
-    row.addStretch(1)
+    row.addStretch(1)        # spring between name and right edge → name centered
     return row
