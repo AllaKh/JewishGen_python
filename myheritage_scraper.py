@@ -692,17 +692,65 @@ async def _login(page, login_url, has_cookies,
             log("  !! 2FA: код не получен — прерываю.")
             return False
         log(f"  → Ввожу 2FA код: {code}")
-        # Type the code via keyboard so it distributes across segmented inputs
+        # CRITICAL: the mail tab was brought to front; bring the MH tab back
+        # so keyboard input actually lands on this page.
         try:
-            fld = page.locator(tfa_sel).first
-            await fld.click(timeout=4000)
-            await page.keyboard.press("Control+a")
-            await page.keyboard.press("Delete")
-            await page.keyboard.type(code, delay=120)
-            await asyncio.sleep(0.8)
+            await page.bring_to_front()
+            await asyncio.sleep(0.4)
         except Exception:
-            await _fill(page, [tfa_sel] + TFA_SELS, code, "2FA code", log)
-        await asyncio.sleep(0.8)
+            pass
+
+        async def _code_entered() -> bool:
+            """True if the visible numeric inputs together hold the full code."""
+            try:
+                digits = await page.evaluate("""() => {
+                    const els = document.querySelectorAll(
+                        'input[inputmode="numeric"], input[autocomplete="one-time-code"], '
+                        + 'input[maxlength="6"], input[name*="code"], input[type="number"]');
+                    let s = '';
+                    els.forEach(e => { if (e.offsetParent !== null) s += (e.value || ''); });
+                    return s.replace(/\\D/g, '');
+                }""")
+                return code in (digits or "")
+            except Exception:
+                return False
+
+        # Strategy 1: focus the single field and type the whole code
+        for attempt in range(3):
+            try:
+                fld = page.locator(tfa_sel).first
+                await fld.click(timeout=4000)
+                await page.keyboard.press("Control+a")
+                await page.keyboard.press("Delete")
+                await page.keyboard.type(code, delay=140)
+                await asyncio.sleep(0.6)
+            except Exception:
+                pass
+            if await _code_entered():
+                break
+            # Strategy 2: segmented field — type one digit per visible box
+            try:
+                boxes = page.locator(
+                    'input[inputmode="numeric"], input[autocomplete="one-time-code"]')
+                nboxes = await boxes.count()
+                if nboxes >= len(code):
+                    for i, ch in enumerate(code):
+                        b = boxes.nth(i)
+                        await b.click(timeout=2000)
+                        await b.fill(ch)
+                        await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.5)
+            except Exception:
+                pass
+            if await _code_entered():
+                break
+            await asyncio.sleep(0.5)
+
+        if await _code_entered():
+            log("  ✓ 2FA: код введён в поле")
+        else:
+            log("  !! 2FA: код не подтверждён в поле — всё равно пробую отправить")
+        await asyncio.sleep(0.5)
 
         # Submit — the CODE-confirm button is labelled "Отправить" (Send),
         # NOT "Авторизация" (that's the leftover login button). Prefer
