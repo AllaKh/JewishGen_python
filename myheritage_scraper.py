@@ -19,7 +19,7 @@ later runs reuse the session and MyHeritage stops flagging logins as suspicious.
 """
 
 import asyncio, difflib, imaplib, email as _email_lib
-import os, re, sys, time
+import io, os, re, sys, time
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
@@ -35,7 +35,7 @@ except ImportError:
 
 try:
     from docx import Document
-    from docx.shared import Mm
+    from docx.shared import Mm, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
@@ -1235,103 +1235,187 @@ async def _search(page, search_url, params, has_cookies, log):
     log(f"  ✓ Страница результатов: {results_page.url[:80]}")
     return results_page
 
-# ── COLLECT RESULTS ───────────────────────────────────────────────────────── #
-async def _collect(page, log):
-    # Wait for result cards to render (poll up to 25s). MyHeritage results are
-    # cards each linking to a record (href contains /research/record- or
-    # record-matches / similar) plus a match-percent badge.
-    links = []
+async def _collect_one_page(page):
+    """Extract record cards from the CURRENT results page."""
+    return await page.evaluate(r"""() => {
+        const out = [];
+        const seen = new Set();
+        // Real record links contain action=showRecord (and recordTitle).
+        const anchors = Array.from(document.querySelectorAll(
+            'a[href*="showRecord"], a[href*="recordTitle"]'));
+        for (const a of anchors) {
+            const href = a.href || '';
+            if (!href || seen.has(href)) continue;
+            seen.add(href);
+            const card = a.closest('[class*="result" i], li, article, div') || a;
+            // name: prefer the card's heading / record-title, else the recordTitle param
+            let name = '';
+            const h = card.querySelector('h1,h2,h3,[class*="recordTitle" i],[class*="name" i]');
+            if (h) name = (h.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!name) {
+                const m = href.match(/recordTitle=([^&]+)/);
+                if (m) { try { name = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch(e){} }
+            }
+            let score = -1;
+            const sm = (card.textContent || '').match(/(\d{1,3})\s*%/);
+            if (sm) score = parseInt(sm[1], 10);
+            out.push({url: href, name_text: (name || '').slice(0, 200), score});
+        }
+        return out;
+    }""")
+
+
+async def _goto_next_results(page):
+    """Click the results-page «Далее»/Next link. Returns True if it advanced."""
+    return await page.evaluate(r"""() => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        const cands = Array.from(document.querySelectorAll('a, button, [role=button]'));
+        for (const el of cands) {
+            const t = norm(el.textContent);
+            if (/^(Далее|Next|הבא)\s*>?$/i.test(t) || /^>+$/.test(t)) {
+                if (el.getAttribute('aria-disabled') === 'true') return false;
+                el.scrollIntoView(); el.click(); return true;
+            }
+        }
+        return false;
+    }""")
+
+
+# ── COLLECT RESULTS (all pages) ───────────────────────────────────────────── #
+async def _collect(page, log, max_pages=30):
+    # Wait for result cards to render
+    results, seen_urls = [], set()
     for _t in range(25):
         await asyncio.sleep(1)
         try:
-            data = await page.evaluate(r"""() => {
-                const out = [];
-                const seen = new Set();
-                const anchors = Array.from(document.querySelectorAll('a[href]'));
-                for (const a of anchors) {
-                    const href = a.href || '';
-                    // record links on the research results page
-                    if (!/\/research\/(record|collection)|record-matches|recordId=|\/records\//i.test(href))
-                        continue;
-                    if (seen.has(href)) continue;
-                    seen.add(href);
-                    // name = the anchor's own text, else nearest heading
-                    let name = (a.textContent || '').replace(/\s+/g, ' ').trim();
-                    const card = a.closest('[class*="result" i], li, article, div');
-                    if ((!name || name.length < 2) && card) {
-                        const h = card.querySelector('h1,h2,h3,[class*="name" i],[class*="title" i]');
-                        if (h) name = (h.textContent || '').replace(/\s+/g, ' ').trim();
-                    }
-                    // match percent from the card text
-                    let score = -1;
-                    if (card) {
-                        const m = (card.textContent || '').match(/(\d{1,3})\s*%/);
-                        if (m) score = parseInt(m[1], 10);
-                    }
-                    out.push({url: href, name_text: name.slice(0, 200), score});
-                }
-                return out;
-            }""")
-            if data:
-                links = data
-                break
+            first = await _collect_one_page(page)
         except Exception:
-            pass
-    log(f"  → Найдено карточек-результатов: {len(links)}")
-    return links
+            first = []
+        if first:
+            break
+    else:
+        first = []
+
+    page_no = 1
+    while page_no <= max_pages:
+        try:
+            rows = await _collect_one_page(page)
+        except Exception:
+            rows = []
+        new = 0
+        for r in rows:
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
+                results.append(r)
+                new += 1
+        log(f"  → Страница {page_no}: записей {len(rows)} (новых {new}), всего {len(results)}")
+        # next page
+        try:
+            advanced = await _goto_next_results(page)
+        except Exception:
+            advanced = False
+        if not advanced:
+            break
+        page_no += 1
+        await asyncio.sleep(2.5)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            await asyncio.sleep(2)
+    log(f"  → Всего записей со всех страниц: {len(results)}")
+    return results
 
 # ── DETAIL PAGE ───────────────────────────────────────────────────────────── #
 async def _detail(page, url, has_cookies, log):
-    d = {"url": url, "full_name": "", "category": "", "table_data": {}}
+    d = {"url": url, "full_name": "", "category": "", "table_data": {},
+         "profile_url": "", "thumb_bytes": None, "is_historical": False}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=35000)
         if has_cookies:
             await _accept_cookies(page, log)
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2)
     except Exception as exc:
         log(f"    !! {exc}")
         return d
-    for sel in ["h1.person-name", "h1", ".record-title", ".full-name",
-                '[class*="name" i]', '[class*="title" i]']:
-        try:
-            name = (await page.locator(sel).first.text_content(timeout=3000) or "").strip()
-            if name and len(name) < 200:
-                d["full_name"] = name
-                break
-        except Exception:
-            pass
-    for sel in [".record-type", ".category", ".collection-name",
-                '[class*="category" i]', '[class*="collection" i]']:
-        try:
-            cat = (await page.locator(sel).first.text_content(timeout=3000) or "").strip()
-            if cat and len(cat) < 300:
-                d["category"] = cat
-                break
-        except Exception:
-            pass
+
+    # Extract the record card ONLY (never the account-menu / nav name).
+    info = await page.evaluate(r"""() => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        const res = {name: '', category: '', fields: [], profile: '', photo: ''};
+        // Anchor the record card on the "В категории / In category" line
+        let catEl = Array.from(document.querySelectorAll('*')).find(e => {
+            if (e.children.length) return false;
+            return /^(В категории|In category|Dans la catégorie)/i.test(norm(e.textContent));
+        });
+        let card = catEl ? catEl.closest('div, section, article, main') : null;
+        // climb so the card includes the title h1 above the category line
+        for (let i = 0; i < 4 && card && card.parentElement; i++) {
+            if (card.querySelector('h1, h2')) break;
+            card = card.parentElement;
+        }
+        if (!card) card = document.querySelector('main') || document.body;
+
+        const h = card.querySelector('h1, h2');
+        if (h) res.name = norm(h.textContent);
+        if (catEl) res.category = norm(catEl.textContent).replace(/^В категории:?\s*/i, '')
+                                     .replace(/^In category:?\s*/i, '');
+
+        // label/value rows: a short label cell followed by a value cell
+        const rows = card.querySelectorAll('tr, li, div');
+        const seen = new Set();
+        rows.forEach(r => {
+            if (r.querySelector('tr, li')) return;          // skip big containers
+            const kids = Array.from(r.children).filter(c => norm(c.textContent));
+            if (kids.length === 2) {
+                const k = norm(kids[0].textContent).replace(/:$/, '');
+                const v = norm(kids[1].textContent);
+                if (k && v && k.length < 40 && !seen.has(k) && k !== v) {
+                    seen.add(k); res.fields.push([k, v]);
+                }
+            }
+        });
+
+        // "Посмотреть полный профиль на этом сайте" link
+        const prof = Array.from(card.querySelectorAll('a[href]')).find(a =>
+            /полный профиль|full profile|profil complet/i.test(norm(a.textContent)));
+        if (prof) res.profile = prof.href;
+
+        // record photo (skip avatars/icons)
+        const img = Array.from(card.querySelectorAll('img[src]')).find(i =>
+            (i.naturalWidth || i.width) > 60 &&
+            !/avatar|icon|sprite|placeholder/i.test(i.src));
+        if (img) res.photo = img.src;
+
+        // historical vs tree (full image needs Omni for historical records)
+        res.historical = /историческ|historical/i.test(card.textContent || '');
+        return res;
+    }""")
+
+    d["full_name"]  = (info.get("name") or "").strip()
+    d["category"]   = (info.get("category") or "").strip()
+    d["profile_url"] = info.get("profile") or ""
+    d["is_historical"] = bool(info.get("historical"))
     td = {}
-    try:
-        for row in await page.query_selector_all("table tr"):
-            cells = await row.query_selector_all("td,th")
-            if len(cells) >= 2:
-                k = (await cells[0].text_content() or "").strip().rstrip(":")
-                v = (await cells[1].text_content() or "").strip()
-                if k and v:
-                    td[k] = v
-    except Exception:
-        pass
-    if not td:
+    for pair in info.get("fields", []):
+        if isinstance(pair, list) and len(pair) == 2:
+            td[str(pair[0])] = str(pair[1])
+    d["table_data"] = td
+
+    # Photo thumbnail for Word (download the preview image bytes)
+    photo = info.get("photo") or ""
+    if photo:
         try:
-            dts = await page.query_selector_all("dt")
-            dds = await page.query_selector_all("dd")
-            for dt, dd in zip(dts, dds):
-                k = (await dt.text_content() or "").strip().rstrip(":")
-                v = (await dd.text_content() or "").strip()
-                if k and v:
-                    td[k] = v
+            ip = await page.context.new_page()
+            try:
+                r = await ip.goto(photo, timeout=15000)
+                if r and r.ok:
+                    body = await r.body()
+                    if len(body) > 1000:
+                        d["thumb_bytes"] = body
+            finally:
+                await ip.close()
         except Exception:
             pass
-    d["table_data"] = td
     return d
 
 # ── OUTPUT ───────────────────────────────────────────────────────────────── #
@@ -1386,6 +1470,19 @@ def write_docx(path, records, qlines):
             for f, v in td.items():
                 row = tbl.add_row().cells
                 row[0].text = str(f); row[1].text = str(v)
+        # Photo thumbnail (historical records: preview only — full needs Omni)
+        tb = rec.get("thumb_bytes")
+        if tb:
+            try:
+                doc.add_picture(io.BytesIO(tb), width=Inches(2.2))
+            except Exception:
+                pass
+        # "View full profile on this site" link
+        if rec.get("profile_url"):
+            pp = doc.add_paragraph()
+            pp.add_run("Полный профиль: ").bold = True
+            _hyperlink(pp, "Посмотреть полный профиль на этом сайте",
+                       rec["profile_url"])
         doc.add_paragraph("")
     doc.save(path)
 
@@ -1529,11 +1626,14 @@ async def run_scraper(*,
                 return _open ? _open.call(window, u, ...rest) : null;
             };
         """)
-        # Also abort any facebook plugin requests at the network level
-        try:
-            await ctx.route("**/*facebook.com/**", lambda r: r.abort())
-        except Exception:
-            pass
+        # Abort the Facebook SDK + plugin requests at the network level so the
+        # social widget never loads and never spawns popup tabs.
+        for _pat in ("**/*facebook.com/**", "**/*facebook.net/**",
+                     "**/connect.facebook.net/**", "**/*fbcdn.net/**"):
+            try:
+                await ctx.route(_pat, lambda r: r.abort())
+            except Exception:
+                pass
 
         # Auto-close any JUNK tab the instant it opens (Facebook/Google/blank)
         # so it never steals focus. MyHeritage result tabs (myheritage.com) are
