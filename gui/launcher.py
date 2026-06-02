@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QPixmap
 
+from gui._app_icon import app_icon
+
 # ---------------------------------------------------------------------------
 _HERE   = Path(__file__).resolve().parent   # …/gui/
 _ROOT   = _HERE.parent                      # project root
@@ -152,6 +154,7 @@ class LauncherWindow(QMainWindow):
         self.setWindowTitle("Genealogy Search — Choose a Database")
         self.setMinimumWidth(700)
         self.setStyleSheet(STYLES["launcher"])
+        self.setWindowIcon(app_icon())
         self._build_ui()
         self._fit_to_cards()
 
@@ -165,10 +168,19 @@ class LauncherWindow(QMainWindow):
         self._outer.setContentsMargins(24, 18, 24, 18)
         self._outer.setSpacing(10)
 
-        # Header
-        hdr = QLabel("Genealogy Search")
-        hdr.setStyleSheet(STYLES["header"])
-        self._outer.addWidget(hdr)
+        # Logo image (replaces text header)
+        _logo_pix = QPixmap(str(_CONFIG / "app_logo.png"))
+        if not _logo_pix.isNull():
+            logo_lbl = QLabel()
+            logo_lbl.setPixmap(
+                _logo_pix.scaledToWidth(380, Qt.SmoothTransformation))
+            logo_lbl.setAlignment(Qt.AlignHCenter)
+            self._outer.addWidget(logo_lbl)
+        else:
+            # Fallback to text if image not found
+            hdr = QLabel("Genealogy Search")
+            hdr.setStyleSheet(STYLES["header"])
+            self._outer.addWidget(hdr)
 
         sub = QLabel("Select a database to search")
         sub.setStyleSheet(STYLES["subheader"])
@@ -193,7 +205,7 @@ class LauncherWindow(QMainWindow):
         self._outer.addWidget(self._card_container)
 
         # Footer
-        footer = QLabel("© Alla Khananashvili")
+        footer = QLabel("© 2026 Alla Khananashvili")
         footer.setAlignment(Qt.AlignRight)
         footer.setStyleSheet(STYLES["footer"])
         self._outer.addWidget(footer)

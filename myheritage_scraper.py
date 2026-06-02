@@ -799,9 +799,27 @@ async def run_scraper(*,
         browser = await pw.chromium.launch(
             headless=False,
             args=["--start-maximized",
-                  "--disable-blink-features=AutomationControlled"],
+                  "--disable-blink-features=AutomationControlled",
+                  "--disable-infobars",
+                  "--disable-dev-shm-usage"],
         )
-        ctx  = await browser.new_context(no_viewport=True)
+        ctx = await browser.new_context(
+            no_viewport=True,
+            accept_downloads=True,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        )
+        # Hide automation fingerprint — same technique that lets
+        # familysearch_scraper.py bypass bot detection
+        await ctx.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
+            window.chrome = { runtime: {} };
+        """)
         page = await ctx.new_page()
 
         try:

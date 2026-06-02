@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
+from gui._app_icon import app_icon
 
 _EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
   fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -162,6 +163,7 @@ class MyHeritageApp(QMainWindow):
         self.setWindowTitle("MyHeritage Search")
         self.setMinimumWidth(860)
         self.setStyleSheet(STYLE)
+        self.setWindowIcon(app_icon())
         self._build_ui()
         self._load()
 
@@ -292,7 +294,7 @@ class MyHeritageApp(QMainWindow):
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn); br.addStretch()
         self._outer.addLayout(br)
-        self._outer.addWidget(QLabel("© Alla Khananashvili", alignment=Qt.AlignRight))
+        self._outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
         # Autosave wiring
         for w in self._all_fields():

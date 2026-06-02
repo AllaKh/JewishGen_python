@@ -56,10 +56,10 @@
     "url": "https://hryc.by/search"
   },
   {
-    "key": "skarb",
+    "key": "Skarblogo",
     "name": "АИС Скарб",
     "subtitle": "Автоматизированная информационная система архивов Беларуси",
-    "action": "open_url",
-    "url": "https://archiveskarb.by/db/"
+    "action": "open_window",
+    "window_cls": "gui.skarb.SkarbApp"
   }
 ]

@@ -24,6 +24,7 @@ Fixes vs original main_window.py
 import sys
 import asyncio
 from pathlib import Path
+from gui._app_icon import app_icon
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -246,6 +247,7 @@ class JewishGenApp(QMainWindow):
         self.setWindowTitle("JewishGen Mass Search")
         self.setMinimumWidth(840)
         self.setStyleSheet(STYLE)
+        self.setWindowIcon(app_icon())
         self._build_ui()
         self._load_autosave()
 
@@ -362,7 +364,7 @@ class JewishGenApp(QMainWindow):
         btn_row.addStretch(); btn_row.addWidget(self.start_btn); btn_row.addStretch()
         outer.addLayout(btn_row)
 
-        outer.addWidget(QLabel("© Alla Khananashvili", alignment=Qt.AlignRight))
+        outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
     # ── AUTOSAVE / PROFILES ──────────────────────────────────────────────── #
 
