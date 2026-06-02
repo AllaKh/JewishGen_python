@@ -1157,14 +1157,19 @@ def write_xlsx(path, records, qlines):
 async def run_scraper(*,
     site_preset    = "Israel (.co.il)",
     first_name     = "", surname       = "",
+    first_strict   = False, last_strict = False,
     birth_year     = "", birth_place   = "",
-    father         = "", mother        = "",
-    spouse         = "", death_year    = "",
+    father         = "", father_last   = "",
+    mother         = "", mother_last   = "",
+    spouse         = "", spouse_last   = "",
+    death_year     = "",
     death_place    = "", residence     = "",
     military       = "", immigration   = "",
     keywords       = "", gender        = "Any",
     exact_match    = False,
     record_filter  = "All Records",
+    record_type    = "Все записи",
+    category       = "Все коллекции",
     output_format  = "both",
     output_folder  = Path("."),
     email          = None, password    = None,
@@ -1194,15 +1199,23 @@ async def run_scraper(*,
     output_folder.mkdir(parents=True, exist_ok=True)
 
     qname  = " ".join(p for p in (first_name, surname) if p)
+    # Map the GUI record-type (Russian) onto the internal record_filter values
+    _RT_MAP = {"Исторические записи": "Historical Records",
+               "Семейные деревья": "Family Trees", "Все записи": "All Records"}
+    if record_type in _RT_MAP:
+        record_filter = _RT_MAP[record_type]
     params = dict(
         first_name=first_name, surname=surname,
+        first_strict=first_strict, last_strict=last_strict,
         birth_year=birth_year, birth_place=birth_place,
-        father=father, mother=mother, spouse=spouse,
+        father=father, father_last=father_last,
+        mother=mother, mother_last=mother_last,
+        spouse=spouse, spouse_last=spouse_last,
         death_year=death_year, death_place=death_place,
         residence=residence, military=military,
         immigration=immigration, keywords=keywords,
         gender=gender, exact_match=exact_match,
-        record_filter=record_filter,
+        record_filter=record_filter, category=category,
     )
     qlines = [f"{k}: {v}" for k, v in params.items()
               if v and v not in ("Any", False, "All Records")]

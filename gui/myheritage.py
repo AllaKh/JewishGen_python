@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QFileDialog, QProgressBar, QMessageBox, QInputDialog,
     QApplication, QGroupBox, QComboBox, QSpinBox,
+    QScrollArea, QRadioButton, QButtonGroup, QFrame, QGridLayout,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
@@ -61,6 +62,25 @@ except ImportError:
 
 FILTER_OPTIONS = ["All Records", "Historical Records", "Family Trees"]
 GENDER_OPTIONS = ["Any", "Male", "Female"]
+
+# Record-type radio options (refine by record type)
+RECORD_TYPE_OPTIONS = ["Все записи", "Исторические записи", "Семейные деревья"]
+
+# Category filter (restrict search by category)
+CATEGORY_OPTIONS = [
+    "Все коллекции",
+    "Публичные отчеты",
+    "Школы и университеты",
+    "Перепись и списки избирателей",
+    "Истории, мемуары и биографии",
+    "Реестры рождения, браков и смерти",
+    "Иммиграция и путешествия",
+    "Книги и публикации",
+    "Фото",
+    "Семейные деревья",
+    "Газеты",
+    "Правительство, земля, суды и завещания",
+]
 
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
@@ -210,13 +230,20 @@ class MyHeritageApp(QMainWindow):
 
         self._outer.addWidget(cg)
 
-        # ── Main search ──────────────────────────────────────────────────── #
-        ms = QGroupBox("Search")
-        mf = QFormLayout(ms); mf.setSpacing(8)
+        # ── Basic search (always visible) ────────────────────────────────── #
+        ms = QGroupBox("Basic Search")
+        mg = QGridLayout(ms); mg.setSpacing(8)
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
-        mf.addRow("First name / Patronymic:", self.f_first)
-        mf.addRow("Surname:", self.f_surname)
+        self.f_first_strict = QCheckBox("Искать совпадение строго по имени")
+        self.f_last_strict  = QCheckBox("Искать совпадение строго по фамилии")
+        mg.addWidget(QLabel("First name / Patronymic:"), 0, 0)
+        mg.addWidget(self.f_first,        0, 1)
+        mg.addWidget(self.f_first_strict, 0, 2)
+        mg.addWidget(QLabel("Surname:"),  1, 0)
+        mg.addWidget(self.f_surname,      1, 1)
+        mg.addWidget(self.f_last_strict,  1, 2)
+        mg.setColumnStretch(1, 1)
         self._outer.addWidget(ms)
 
         # ── Advanced toggle ──────────────────────────────────────────────── #
@@ -226,14 +253,18 @@ class MyHeritageApp(QMainWindow):
         self._adv_btn.toggled.connect(self._toggle_adv)
         self._outer.addWidget(self._adv_btn)
 
+        # Advanced panel — wrapped in a QScrollArea (like FamilySearch)
         self._adv = QGroupBox()
         af = QFormLayout(self._adv); af.setSpacing(8)
         self.f_by  = QSpinBox(); self.f_by.setRange(0,2025); self.f_by.setValue(0)
         self.f_by.setSpecialValueText("—"); self.f_by.setFixedWidth(110)
         self.f_bp  = QLineEdit(); self.f_bp.setPlaceholderText("City, country…")
         self.f_fa  = QLineEdit(); self.f_fa.setPlaceholderText("Father's name")
+        self.f_fa_last = QLineEdit(); self.f_fa_last.setPlaceholderText("Father's surname")
         self.f_mo  = QLineEdit(); self.f_mo.setPlaceholderText("Mother's name")
+        self.f_mo_last = QLineEdit(); self.f_mo_last.setPlaceholderText("Mother's surname")
         self.f_sp  = QLineEdit(); self.f_sp.setPlaceholderText("Spouse's name")
+        self.f_sp_last = QLineEdit(); self.f_sp_last.setPlaceholderText("Spouse's surname")
         self.f_dy  = QSpinBox(); self.f_dy.setRange(0,2025); self.f_dy.setValue(0)
         self.f_dy.setSpecialValueText("—"); self.f_dy.setFixedWidth(110)
         self.f_dp  = QLineEdit(); self.f_dp.setPlaceholderText("City, country…")
@@ -242,12 +273,15 @@ class MyHeritageApp(QMainWindow):
         self.f_imm = QLineEdit(); self.f_imm.setPlaceholderText("Destination / year")
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
-        self.f_ex  = QCheckBox("Exact match for all parameters")
+        self.f_ex  = QCheckBox("Точное совпадение всех параметров")
         af.addRow("Birth year:",  self.f_by)
         af.addRow("Birth place:", self.f_bp)
-        af.addRow("Father:",      self.f_fa)
-        af.addRow("Mother:",      self.f_mo)
-        af.addRow("Spouse:",      self.f_sp)
+        af.addRow("Father (name):",    self.f_fa)
+        af.addRow("Father (surname):", self.f_fa_last)
+        af.addRow("Mother (name):",    self.f_mo)
+        af.addRow("Mother (surname):", self.f_mo_last)
+        af.addRow("Spouse (name):",    self.f_sp)
+        af.addRow("Spouse (surname):", self.f_sp_last)
         af.addRow("Death year:",  self.f_dy)
         af.addRow("Death place:", self.f_dp)
         af.addRow("Residence:",   self.f_res)
@@ -256,18 +290,38 @@ class MyHeritageApp(QMainWindow):
         af.addRow("Keywords:",    self.f_kw)
         af.addRow("Gender:",      self.f_gen)
         af.addRow("",             self.f_ex)
-        self._adv.setVisible(False)
-        self._outer.addWidget(self._adv)
 
-        # ── Filter ───────────────────────────────────────────────────────── #
-        fg = QGroupBox("Record type")
-        fl = QHBoxLayout(fg); fl.setSpacing(10)
-        self.f_filter = QComboBox(); self.f_filter.addItems(FILTER_OPTIONS)
-        note2 = QLabel("Only results with ≥ 80 % match will be saved.")
-        note2.setObjectName("note")
-        fl.addWidget(QLabel("Show:")); fl.addWidget(self.f_filter)
-        fl.addStretch(); fl.addWidget(note2)
+        self._adv_scroll = QScrollArea()
+        self._adv_scroll.setWidget(self._adv)
+        self._adv_scroll.setWidgetResizable(True)
+        self._adv_scroll.setFrameShape(QFrame.NoFrame)
+        self._adv_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._adv_scroll.setVisible(False)
+        self._outer.addWidget(self._adv_scroll)
+
+        # ── Refine by record type (radio buttons) ────────────────────────── #
+        fg = QGroupBox("Уточнить по типу записи")
+        fl = QHBoxLayout(fg); fl.setSpacing(12)
+        self._rt_group = QButtonGroup(self)
+        self._rt_buttons = {}
+        for opt in RECORD_TYPE_OPTIONS:
+            rb = QRadioButton(opt)
+            self._rt_group.addButton(rb)
+            self._rt_buttons[opt] = rb
+            fl.addWidget(rb)
+        self._rt_buttons[RECORD_TYPE_OPTIONS[0]].setChecked(True)
+        fl.addStretch()
         self._outer.addWidget(fg)
+
+        # ── Restrict by category (combo) ─────────────────────────────────── #
+        cgb = QGroupBox("Ограничить поиск по категории")
+        cgl = QHBoxLayout(cgb); cgl.setSpacing(10)
+        self.f_category = QComboBox(); self.f_category.addItems(CATEGORY_OPTIONS)
+        note2 = QLabel("Сохраняются только результаты с совпадением ≥ 80 %.")
+        note2.setObjectName("note")
+        cgl.addWidget(QLabel("Категория:")); cgl.addWidget(self.f_category)
+        cgl.addStretch(); cgl.addWidget(note2)
+        self._outer.addWidget(cgb)
 
         # ── Output ───────────────────────────────────────────────────────── #
         og = QGroupBox("Output")
@@ -313,7 +367,10 @@ class MyHeritageApp(QMainWindow):
 
     # ── Advanced toggle ───────────────────────────────────────────────────── #
     def _toggle_adv(self, on):
-        self._adv.setVisible(on)
+        self._adv_scroll.setVisible(on)
+        if on:
+            screen_h = QApplication.primaryScreen().availableGeometry().height()
+            self._adv_scroll.setMaximumHeight(int(screen_h * 0.55))
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
 
@@ -321,14 +378,23 @@ class MyHeritageApp(QMainWindow):
         self.adjustSize()
         self.setFixedHeight(self.sizeHint().height())
 
+    def _record_type(self) -> str:
+        for opt, rb in self._rt_buttons.items():
+            if rb.isChecked():
+                return opt
+        return RECORD_TYPE_OPTIONS[0]
+
     # ── Field list ────────────────────────────────────────────────────────── #
     def _all_fields(self):
         return [self.f_site, self.f_email, self.f_pass, self.f_imap_pass,
                 self.f_first, self.f_surname,
-                self.f_by, self.f_bp, self.f_fa, self.f_mo, self.f_sp,
+                self.f_first_strict, self.f_last_strict,
+                self.f_by, self.f_bp,
+                self.f_fa, self.f_fa_last, self.f_mo, self.f_mo_last,
+                self.f_sp, self.f_sp_last,
                 self.f_dy, self.f_dp, self.f_res, self.f_mil, self.f_imm,
                 self.f_kw, self.f_gen, self.f_ex,
-                self.f_filter, self.f_folder, self.f_docx, self.f_xlsx]
+                self.f_category, self.f_folder, self.f_docx, self.f_xlsx]
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _save(self, *_):
@@ -339,11 +405,16 @@ class MyHeritageApp(QMainWindow):
             "imap_password": self.f_imap_pass.text(),
             "first_name":    self.f_first.text(),
             "surname":       self.f_surname.text(),
+            "first_strict":  self.f_first_strict.isChecked(),
+            "last_strict":   self.f_last_strict.isChecked(),
             "birth_year":    self.f_by.value(),
             "birth_place":   self.f_bp.text(),
             "father":        self.f_fa.text(),
+            "father_last":   self.f_fa_last.text(),
             "mother":        self.f_mo.text(),
+            "mother_last":   self.f_mo_last.text(),
             "spouse":        self.f_sp.text(),
+            "spouse_last":   self.f_sp_last.text(),
             "death_year":    self.f_dy.value(),
             "death_place":   self.f_dp.text(),
             "residence":     self.f_res.text(),
@@ -352,7 +423,8 @@ class MyHeritageApp(QMainWindow):
             "keywords":      self.f_kw.text(),
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
-            "record_filter": self.f_filter.currentText(),
+            "record_type":   self._record_type(),
+            "category":      self.f_category.currentText(),
             "output_folder": self.f_folder.text(),
             "fmt_docx":      self.f_docx.isChecked(),
             "fmt_xlsx":      self.f_xlsx.isChecked(),
@@ -385,13 +457,20 @@ class MyHeritageApp(QMainWindow):
         s(self.f_email,     "email");    s(self.f_pass,      "password")
         s(self.f_imap_pass, "imap_password")
         s(self.f_first,  "first_name"); s(self.f_surname, "surname")
+        s(self.f_first_strict, "first_strict"); s(self.f_last_strict, "last_strict")
         s(self.f_by,     "birth_year"); s(self.f_bp,  "birth_place")
-        s(self.f_fa,     "father");     s(self.f_mo,  "mother")
-        s(self.f_sp,     "spouse");     s(self.f_dy,  "death_year")
+        s(self.f_fa,     "father");     s(self.f_fa_last, "father_last")
+        s(self.f_mo,     "mother");     s(self.f_mo_last, "mother_last")
+        s(self.f_sp,     "spouse");     s(self.f_sp_last, "spouse_last")
+        s(self.f_dy,     "death_year")
         s(self.f_dp,     "death_place"); s(self.f_res,"residence")
         s(self.f_mil,    "military");   s(self.f_imm, "immigration")
         s(self.f_kw,     "keywords");   s(self.f_gen, "gender")
-        s(self.f_ex,     "exact_match"); s(self.f_filter,"record_filter")
+        s(self.f_ex,     "exact_match")
+        s(self.f_category, "category")
+        rt = d.get("record_type")
+        if rt in self._rt_buttons:
+            self._rt_buttons[rt].setChecked(True)
         s(self.f_folder, "output_folder")
         s(self.f_docx,   "fmt_docx");  s(self.f_xlsx, "fmt_xlsx")
         if d.get("adv_open"):
@@ -413,11 +492,16 @@ class MyHeritageApp(QMainWindow):
             "site_preset":   self.f_site.currentText(),
             "first_name":    self.f_first.text().strip(),
             "surname":       self.f_surname.text().strip(),
+            "first_strict":  self.f_first_strict.isChecked(),
+            "last_strict":   self.f_last_strict.isChecked(),
             "birth_year":    str(self.f_by.value()) if self.f_by.value() else "",
             "birth_place":   self.f_bp.text().strip(),
             "father":        self.f_fa.text().strip(),
+            "father_last":   self.f_fa_last.text().strip(),
             "mother":        self.f_mo.text().strip(),
+            "mother_last":   self.f_mo_last.text().strip(),
             "spouse":        self.f_sp.text().strip(),
+            "spouse_last":   self.f_sp_last.text().strip(),
             "death_year":    str(self.f_dy.value()) if self.f_dy.value() else "",
             "death_place":   self.f_dp.text().strip(),
             "residence":     self.f_res.text().strip(),
@@ -426,7 +510,8 @@ class MyHeritageApp(QMainWindow):
             "keywords":      self.f_kw.text().strip(),
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
-            "record_filter": self.f_filter.currentText(),
+            "record_type":   self._record_type(),
+            "category":      self.f_category.currentText(),
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "email":         self.f_email.text().strip() or None,
