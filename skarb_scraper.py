@@ -152,14 +152,14 @@ async def _scrape_record(page, url: str, images_dir: Path, log) -> dict:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(1.5)
 
-        # ── Record name = the page heading (e.g. "Шур Шая Залмановна") ─ #
+        # ── Fallback name from a heading (skip the "АИС Скарб" site header) ─ #
         rec["name"] = await page.evaluate(r"""() => {
+            const bad = /скарб|skarb|каталог|поиск/i;
             for (const sel of ['h1', 'h2', '.detail-title', '.page-title',
                                '[class*="title"]']) {
-                const el = document.querySelector(sel);
-                if (el) {
+                for (const el of document.querySelectorAll(sel)) {
                     const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
-                    if (t && t.length < 120) return t;
+                    if (t && t.length < 120 && !bad.test(t)) return t;
                 }
             }
             return '';
@@ -550,9 +550,10 @@ async def run_scraper(
                 log(f"  [{i}/{n}] {row['name']}")
 
                 rec = await _scrape_record(page, row["url"], images_dir, log)
-                # Name: page heading, else the search-result link text
-                if not rec.get("name"):
-                    rec["name"] = row["name"]
+                # Name = the search-result link text (authoritative person name,
+                # e.g. "Шур Шая Залмановна"). The page <h1> is the site header
+                # "АИС Скарб", so NEVER use it. Heading only as last resort.
+                rec["name"] = row["name"] or rec.get("name") or ""
                 # Merge search-table data into fields if not already there
                 if "Дата рождения" not in rec["fields"] and row["birth"]:
                     rec["fields"]["Дата рождения"] = row["birth"]

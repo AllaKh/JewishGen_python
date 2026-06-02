@@ -617,11 +617,9 @@ async def _login(page, login_url, has_cookies,
     if not submitted:
         await page.keyboard.press("Enter")
 
-    # Wait for navigation or 2FA dialog
-    await asyncio.sleep(5)
-
-    # Step 6: 2FA code dialog
-    # Detect by looking for any numeric / verification code input
+    # ── Step 6: wait for EITHER login success OR a 2FA code field ──────── #
+    # MyHeritage often shows a "verify it's you" code screen on the SAME
+    # /login URL after submit, and it can take >5s to appear. So we POLL.
     TFA_SELS = [
         'input[placeholder*="код" i]',
         'input[placeholder*="code" i]',
@@ -629,57 +627,77 @@ async def _login(page, login_url, has_cookies,
         'input[placeholder*="верификац" i]',
         'input[type="number"][maxlength]',
         'input[maxlength="6"]',
+        'input[autocomplete="one-time-code"]',
         'input[autocomplete*="one-time"]',
         'input[name*="code"]',
         'input[name*="otp"]',
         'input[name*="token"]',
+        'input[inputmode="numeric"]',
     ]
-    tfa_visible = False
-    for sel in TFA_SELS:
-        try:
-            el = page.locator(sel).first
-            if await el.count() and await el.is_visible():
-                tfa_visible = True
-                log(f"  ⚠  2FA dialog detected ({sel})")
-                break
-        except Exception:
-            pass
 
-    if tfa_visible:
-        # IMAP auto-read (email = same email used for MH login)
+    async def _logged_in() -> bool:
+        u = page.url.lower()
+        return ("login" not in u and "signin" not in u
+                and "verify" not in u and "auth" not in u)
+
+    async def _find_tfa():
+        for sel in TFA_SELS:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    return sel
+            except Exception:
+                pass
+        return None
+
+    tfa_sel = None
+    for _ in range(30):                       # poll up to ~30s
+        await asyncio.sleep(1)
+        if await _logged_in():
+            log(f"  ✓ Logged in (no 2FA). URL: {page.url}")
+            return True
+        tfa_sel = await _find_tfa()
+        if tfa_sel:
+            log(f"  ⚠  2FA code field detected ({tfa_sel})")
+            break
+
+    if tfa_sel:
+        # Get the code: open a new tab to the mail, read it (same email as MH)
         code = await _get_2fa_code(page.context, email, imap_password,
                                    log, ask_2fa_code)
         if not code:
             log("  !! 2FA: код не получен — прерываю.")
             return False
-        log(f"  → Вводю 2FA код: {code}")
-        await _fill(page, TFA_SELS, code, "2FA code", log)
-        # Click "Авторизация" / submit
+        log(f"  → Ввожу 2FA код: {code}")
+        await _fill(page, [tfa_sel] + TFA_SELS, code, "2FA code", log)
+        await asyncio.sleep(0.5)
+        # Submit the code
+        submitted2 = False
         for sel in ['button:has-text("Авторизация")',
-                    'button:has-text("Authorize")',
                     'button:has-text("Verify")',
                     'button:has-text("Подтвердить")',
+                    'button:has-text("Continue")',
+                    'button:has-text("Submit")',
                     'button[type="submit"]']:
             try:
                 el = page.locator(sel).first
-                if await el.count():
+                if await el.count() and await el.is_visible():
                     await el.click(timeout=6000)
+                    submitted2 = True
                     break
             except Exception:
                 pass
-        await asyncio.sleep(3)
+        if not submitted2:
+            await page.keyboard.press("Enter")
+        # Wait for login to complete
+        for _ in range(20):
+            await asyncio.sleep(1)
+            if await _logged_in():
+                log(f"  ✓ Logged in after 2FA. URL: {page.url}")
+                return True
 
-    # Check login success
-    try:
-        await page.wait_for_load_state("domcontentloaded", timeout=20000)
-    except Exception:
-        await asyncio.sleep(3)
-
+    # Neither success nor 2FA → report any error message
     cur = page.url
-    if "login" not in cur and "signin" not in cur:
-        log(f"  ✓ Logged in. URL: {cur}")
-        return True
-
     try:
         err = (await page.locator('[class*="error" i],[role="alert"]')
                .first.text_content(timeout=2000) or "").strip()
