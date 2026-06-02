@@ -1265,40 +1265,61 @@ async def _collect_one_page(page):
     }""")
 
 
+async def _set_results_per_page(page, log, want="50"):
+    """Open the results-per-page dropdown (data-automations=
+    selector_header_container) and pick `want` (e.g. 50) to reduce paging."""
+    try:
+        hdr = page.locator('[data-automations="selector_header_container"]').first
+        if not await hdr.count():
+            return
+        cur = (await hdr.text_content() or "").strip()
+        if cur == want:
+            return
+        await hdr.click(timeout=4000)
+        await asyncio.sleep(0.8)
+        # pick the option whose text is exactly `want`
+        opt = page.get_by_text(re.compile(rf"^{want}$")).first
+        if await opt.count():
+            await opt.click(timeout=4000)
+            await asyncio.sleep(2)
+            log(f"  → Результатов на странице: {want}")
+    except Exception:
+        pass
+
+
 async def _goto_next_results(page, log):
-    """Click the results-page «Далее»/Next (or «Показать больше»). Returns
-    True if it advanced. Logs the candidates it sees for diagnostics."""
-    res = await page.evaluate(r"""() => {
-        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        const cands = Array.from(document.querySelectorAll(
-            'a, button, [role=button], [class*="pagination" i] *'));
-        const seen = [];
-        const isNext = (el) => {
-            const t = norm(el.textContent);
-            const al = (el.getAttribute('aria-label') || '') + ' '
-                     + (el.getAttribute('title') || '')
-                     + ' ' + (el.getAttribute('rel') || '');
-            return /^(Далее|Next|הבא|Показать больше|Show more|Load more)\s*>?$/i.test(t)
-                   || /^>+$/.test(t)
-                   || /next|следующ|далее/i.test(al);
-        };
-        for (const el of cands) {
-            const t = norm(el.textContent).slice(0, 30);
-            if (isNext(el)) {
-                const disabled = el.getAttribute('aria-disabled') === 'true'
-                    || el.disabled || /disabled/i.test(el.className || '');
-                if (disabled) { seen.push('[disabled] ' + t); continue; }
-                el.scrollIntoView(); el.click();
-                return {ok: true, clicked: t};
-            }
-        }
-        return {ok: false, seen: seen.slice(0, 6)};
-    }""")
-    if not res.get("ok"):
-        log(f"  → «Далее» не найдена (кандидаты: {res.get('seen')})")
-    else:
-        log(f"  → Перешёл на следующую страницу (клик: {res.get('clicked')!r})")
-    return bool(res.get("ok"))
+    """Click the exact pagination Next icon (a[data-automations='next_icon']).
+    Returns True only if the result set actually changed."""
+    try:
+        nxt = page.locator('a[data-automations="next_icon"]').first
+        if not await nxt.count():
+            log("  → «Далее»: кнопка next_icon отсутствует — последняя страница")
+            return False
+        cls = (await nxt.get_attribute("class") or "").lower()
+        aria = (await nxt.get_attribute("aria-disabled") or "").lower()
+        if "disabled" in cls or aria == "true":
+            log("  → «Далее»: кнопка неактивна — последняя страница")
+            return False
+        # capture current first-record url to detect the change
+        before = await page.evaluate(
+            """() => { const a = document.querySelector('a[href*=\"showRecord\"]');
+                       return a ? a.href : ''; }""")
+        await nxt.scroll_into_view_if_needed(timeout=3000)
+        await nxt.click(timeout=5000)
+        # wait until the first record link changes (AJAX page swap)
+        for _ in range(15):
+            await asyncio.sleep(1)
+            after = await page.evaluate(
+                """() => { const a = document.querySelector('a[href*=\"showRecord\"]');
+                           return a ? a.href : ''; }""")
+            if after and after != before:
+                log("  → Перешёл на следующую страницу")
+                return True
+        log("  → «Далее»: страница не сменилась")
+        return False
+    except Exception as e:
+        log(f"  → «Далее»: {e}")
+        return False
 
 
 # ── COLLECT RESULTS (all pages) ───────────────────────────────────────────── #
@@ -1315,6 +1336,10 @@ async def _collect(page, log, max_pages=30):
             break
     else:
         first = []
+
+    # Show 50 per page to reduce the number of page turns
+    await _set_results_per_page(page, log, "50")
+    await asyncio.sleep(1)
 
     page_no = 1
     while page_no <= max_pages:
