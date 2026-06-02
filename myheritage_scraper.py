@@ -13,8 +13,9 @@ Logic:
 6. After login → navigate to the search URL for the chosen domain, fill
    the search form, collect results, open each qualifying record, save.
 
-IMPORTANT: NO persistent browser profile is used — fresh context every run
-so there are zero stale cookies from any previous session.
+IMPORTANT: a PERSISTENT browser profile (.mh_profile) is used so cookies and
+session survive between runs — after the first successful login + email 2FA,
+later runs reuse the session and MyHeritage stops flagging logins as suspicious.
 """
 
 import asyncio, difflib, imaplib, email as _email_lib
@@ -53,6 +54,10 @@ except ImportError:
 # ── Constants ─────────────────────────────────────────────────────────────── #
 MIN_MATCH_PCT = 80
 HYPERLINK_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+
+# Persistent Chromium profile — keeps MyHeritage cookies/session between runs
+# so the anti-bot stops flagging the login as suspicious.
+MH_PROFILE_DIR = Path(__file__).resolve().parent / ".mh_profile"
 
 # Site presets — key → (login_url, search_url, has_cookie_banner)
 SITE_PRESETS = {
@@ -1287,22 +1292,25 @@ async def run_scraper(*,
     _prog(0, "Launching browser…")
 
     async with async_playwright() as pw:
-        # FRESH context every run — no stale cookies from any previous session
-        browser = await pw.chromium.launch(
+        # PERSISTENT profile — cookies + history live in MH_PROFILE_DIR between
+        # runs. Once you've logged in (and passed the email 2FA) once, the next
+        # runs reuse the session and MyHeritage's anti-bot stops flagging the
+        # login as suspicious (no more "Confirm a login attempt" challenge).
+        MH_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        ctx = await pw.chromium.launch_persistent_context(
+            str(MH_PROFILE_DIR),
             headless=False,
-            args=["--start-maximized",
-                  "--disable-blink-features=AutomationControlled",
-                  "--disable-infobars",
-                  "--disable-dev-shm-usage"],
-        )
-        ctx = await browser.new_context(
-            no_viewport=True,
             accept_downloads=True,
+            no_viewport=True,
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
+            args=["--start-maximized",
+                  "--disable-blink-features=AutomationControlled",
+                  "--disable-infobars",
+                  "--disable-dev-shm-usage"],
         )
         # Hide automation fingerprint — same technique that lets
         # familysearch_scraper.py bypass bot detection
@@ -1312,7 +1320,7 @@ async def run_scraper(*,
             Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
             window.chrome = { runtime: {} };
         """)
-        page = await ctx.new_page()
+        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
 
         try:
             if email and password:
@@ -1424,12 +1432,9 @@ async def run_scraper(*,
                             "message": f"{type(exc).__name__}: {exc}"})
             log(f"  !! {exc}")
         finally:
+            # Persistent context — closing it saves cookies/session for next run
             try:
                 await ctx.close()
-            except Exception:
-                pass
-            try:
-                await browser.close()
             except Exception:
                 pass
 

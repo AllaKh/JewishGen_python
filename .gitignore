@@ -1,0 +1,22 @@
+# Browser profiles (persistent sessions — never commit cookies/credentials)
+.mh_profile/
+.profile/
+.mh_profile.*
+
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Results / temp
+results/
+temp/
+
+# Autosaves with credentials
+gui/.fs_autosave.json
+gui/.mh_autosave.json
+gui/.skarb_autosave.json
