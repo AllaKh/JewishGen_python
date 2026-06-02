@@ -1185,72 +1185,99 @@ async def _search(page, search_url, params, has_cookies, log):
                    'button:has-text("Поиск")', 'button:has-text("Search")',
                    'button:has-text("חיפוש")', 'button[type="submit"]',
                    'input[type="submit"]']
-    try:
-        async with ctx.expect_page(timeout=15000) as new_page_info:
-            clicked = False
-            for sel in submit_sels:
-                try:
-                    el = root.locator(sel).first
-                    if await el.count() and await el.is_visible():
-                        await el.click(timeout=6000)
-                        clicked = True
-                        log(f"  ✓ Нажал «Поиск» ({sel})")
-                        break
-                except Exception:
-                    pass
-            if not clicked:
-                await page.keyboard.press("Enter")
-                log("  → Поиск: Enter")
-        results_page = await new_page_info.value
-        await results_page.wait_for_load_state("domcontentloaded", timeout=30000)
-        log("  ✓ Результаты открылись в новом табе")
-    except Exception:
-        # No new tab — results loaded in the same page
-        results_page = page
+    pages_before = set(ctx.pages)
+    search_url_now = page.url
+    clicked = False
+    for sel in submit_sels:
         try:
-            await page.wait_for_load_state("networkidle", timeout=30000)
+            el = root.locator(sel).first
+            if await el.count() and await el.is_visible():
+                await el.click(timeout=6000)
+                clicked = True
+                log(f"  ✓ Нажал «Поиск» ({sel})")
+                break
         except Exception:
-            await asyncio.sleep(4)
+            pass
+    if not clicked:
+        await page.keyboard.press("Enter")
+        log("  → Поиск: Enter")
+
+    # Results open in a NEW TAB (a MyHeritage results page). Poll up to 25s for
+    # a new MH page, or for the current page to navigate to a results URL.
+    results_page = None
+    for _ in range(25):
+        await asyncio.sleep(1)
+        new_pages = [p for p in ctx.pages if p not in pages_before]
+        for np in new_pages:
+            try:
+                u = (np.url or "").lower()
+                if "myheritage" in u and "research" in u:
+                    results_page = np
+                    break
+            except Exception:
+                pass
+        if results_page:
+            break
+        # same-tab navigation to a results page?
+        if page.url != search_url_now and "research" in page.url.lower():
+            results_page = page
+            break
+    if results_page is None:
+        # fall back to the newest MH tab, else the search page
+        mh = [p for p in ctx.pages if "myheritage" in (p.url or "").lower()]
+        results_page = mh[-1] if mh else page
 
     try:
+        await results_page.bring_to_front()
         await results_page.wait_for_load_state("networkidle", timeout=20000)
     except Exception:
         await asyncio.sleep(3)
+    log(f"  ✓ Страница результатов: {results_page.url[:80]}")
     return results_page
 
 # ── COLLECT RESULTS ───────────────────────────────────────────────────────── #
 async def _collect(page, log):
-    await asyncio.sleep(2)
+    # Wait for result cards to render (poll up to 25s). MyHeritage results are
+    # cards each linking to a record (href contains /research/record- or
+    # record-matches / similar) plus a match-percent badge.
     links = []
-    for sel in ["a.results_result_link", 'a[class*="result" i]',
-                ".result-item a", ".search-result a",
-                'li[class*="result" i] a', '[class*="ResultItem" i] a']:
+    for _t in range(25):
+        await asyncio.sleep(1)
         try:
-            els = await page.query_selector_all(sel)
-            if els:
-                for el in els:
-                    href  = await el.get_attribute("href") or ""
-                    text  = (await el.text_content() or "").strip()
-                    score = -1.0
-                    m = re.search(r"(\d{1,3})\s*%", text)
-                    if m:
-                        score = float(m.group(1))
-                    if href.startswith("http"):
-                        links.append({"url": href, "name_text": text, "score": score})
-                if links:
-                    break
+            data = await page.evaluate(r"""() => {
+                const out = [];
+                const seen = new Set();
+                const anchors = Array.from(document.querySelectorAll('a[href]'));
+                for (const a of anchors) {
+                    const href = a.href || '';
+                    // record links on the research results page
+                    if (!/\/research\/(record|collection)|record-matches|recordId=|\/records\//i.test(href))
+                        continue;
+                    if (seen.has(href)) continue;
+                    seen.add(href);
+                    // name = the anchor's own text, else nearest heading
+                    let name = (a.textContent || '').replace(/\s+/g, ' ').trim();
+                    const card = a.closest('[class*="result" i], li, article, div');
+                    if ((!name || name.length < 2) && card) {
+                        const h = card.querySelector('h1,h2,h3,[class*="name" i],[class*="title" i]');
+                        if (h) name = (h.textContent || '').replace(/\s+/g, ' ').trim();
+                    }
+                    // match percent from the card text
+                    let score = -1;
+                    if (card) {
+                        const m = (card.textContent || '').match(/(\d{1,3})\s*%/);
+                        if (m) score = parseInt(m[1], 10);
+                    }
+                    out.push({url: href, name_text: name.slice(0, 200), score});
+                }
+                return out;
+            }""")
+            if data:
+                links = data
+                break
         except Exception:
             pass
-    if not links:
-        try:
-            for el in await page.query_selector_all("a[href]"):
-                href = await el.get_attribute("href") or ""
-                text = (await el.text_content() or "").strip()
-                if any(kw in href for kw in ["/record/", "/person/", "/family-site/"]):
-                    if href not in [r["url"] for r in links]:
-                        links.append({"url": href, "name_text": text, "score": -1.0})
-        except Exception:
-            pass
+    log(f"  → Найдено карточек-результатов: {len(links)}")
     return links
 
 # ── DETAIL PAGE ───────────────────────────────────────────────────────────── #
@@ -1507,6 +1534,33 @@ async def run_scraper(*,
             await ctx.route("**/*facebook.com/**", lambda r: r.abort())
         except Exception:
             pass
+
+        # Auto-close any JUNK tab the instant it opens (Facebook/Google/blank)
+        # so it never steals focus. MyHeritage result tabs (myheritage.com) are
+        # kept.
+        def _on_new_page(p):
+            async def _maybe_close():
+                try:
+                    u = (p.url or "").lower()
+                    # Social tabs are always junk → close at once
+                    if ("facebook.com" in u or "accounts.google" in u
+                            or "apple.com" in u):
+                        await p.close()
+                        return
+                    # A results tab may start as about:blank then navigate to
+                    # myheritage — give it 2s, then close only if still NOT MH.
+                    if not u or u == "about:blank":
+                        await asyncio.sleep(2)
+                        u2 = (p.url or "").lower()
+                        if "myheritage" not in u2:
+                            await p.close()
+                except Exception:
+                    pass
+            try:
+                asyncio.create_task(_maybe_close())
+            except Exception:
+                pass
+        ctx.on("page", _on_new_page)
 
         # The persistent profile RESTORES whatever tabs were open last time
         # (e.g. old Facebook/blank tabs). Keep ONE page, close the rest.
