@@ -692,26 +692,54 @@ async def _login(page, login_url, has_cookies,
             log("  !! 2FA: код не получен — прерываю.")
             return False
         log(f"  → Ввожу 2FA код: {code}")
-        await _fill(page, [tfa_sel] + TFA_SELS, code, "2FA code", log)
-        await asyncio.sleep(0.5)
-        # Submit the code
+        # Type the code via keyboard so it distributes across segmented inputs
+        try:
+            fld = page.locator(tfa_sel).first
+            await fld.click(timeout=4000)
+            await page.keyboard.press("Control+a")
+            await page.keyboard.press("Delete")
+            await page.keyboard.type(code, delay=120)
+            await asyncio.sleep(0.8)
+        except Exception:
+            await _fill(page, [tfa_sel] + TFA_SELS, code, "2FA code", log)
+        await asyncio.sleep(0.8)
+
+        # Submit — try several strategies; the button text sits inside a span
+        # and may briefly show a spinner, so force-click and JS-click too.
         submitted2 = False
-        for sel in ['button:has-text("Авторизация")',
-                    'button:has-text("Verify")',
-                    'button:has-text("Подтвердить")',
-                    'button:has-text("Continue")',
-                    'button:has-text("Submit")',
-                    'button[type="submit"]']:
+        for getter in (
+            lambda: page.get_by_role("button", name=re.compile("Авторизация|Verify|Подтвердить|Continue|Submit", re.I)).first,
+            lambda: page.locator('button:has-text("Авторизация")').first,
+            lambda: page.locator('button[type="submit"]').first,
+            lambda: page.locator('span.button_content:has-text("Авторизация")').first,
+        ):
             try:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    await el.click(timeout=6000)
+                el = getter()
+                if await el.count():
+                    await el.click(timeout=5000, force=True)
                     submitted2 = True
+                    log("  ✓ 2FA: нажал кнопку подтверждения")
                     break
+            except Exception:
+                continue
+        if not submitted2:
+            # JS click on any button whose text contains the submit label
+            try:
+                submitted2 = await page.evaluate(r"""() => {
+                    const re = /Авторизация|Verify|Подтвердить|Continue|Submit/i;
+                    for (const b of document.querySelectorAll('button, [role=button]')) {
+                        if (re.test(b.textContent || '')) { b.click(); return true; }
+                    }
+                    return false;
+                }""")
+                if submitted2:
+                    log("  ✓ 2FA: нажал кнопку (JS)")
             except Exception:
                 pass
         if not submitted2:
             await page.keyboard.press("Enter")
+            log("  2FA: отправил Enter")
+
         # Wait for login to complete
         for _ in range(20):
             await asyncio.sleep(1)
@@ -731,6 +759,51 @@ async def _login(page, login_url, has_cookies,
     log(f"  !! Login failed. URL: {cur}")
     return False
 
+# ── SELECT FAMILY SITE (FP/select-site.php) ───────────────────────────────── #
+async def _handle_select_site(page, family_site, log):
+    """
+    After login MyHeritage may show FP/select-site.php asking which family
+    site to enter. Click the chosen site (by name, default = first / admin).
+    Returns the research base URL (with the site id) if known.
+    """
+    if "select-site" not in page.url.lower():
+        return None
+    log("  → Страница выбора семейного сайта")
+    await asyncio.sleep(1.5)
+
+    # Each site link:  <a ... onclick="goToSiteClicked('SITEID',
+    #   'https://www.myheritage.com/family-sites/<slug>/<SITEID>?lang=..')">Name</a>
+    target = await page.evaluate(r"""(wanted) => {
+        const links = Array.from(document.querySelectorAll('a[onclick*="goToSiteClicked"]'));
+        const parse = (a) => {
+            const m = (a.getAttribute('onclick') || '')
+                .match(/goToSiteClicked\(\s*'([^']+)'\s*,\s*'([^']+)'/);
+            return m ? {id: m[1], url: m[2], name: (a.textContent||'').trim()} : null;
+        };
+        const all = links.map(parse).filter(Boolean);
+        if (!all.length) return null;
+        if (wanted) {
+            const hit = all.find(s => s.name.toLowerCase()
+                                       .includes(wanted.toLowerCase()));
+            if (hit) return hit;
+        }
+        return all[0];   // default: first (usually the admin's own site)
+    }""", family_site or "")
+
+    if not target:
+        log("  !! Сайты не найдены на странице выбора")
+        return None
+    log(f"  → Перехожу на сайт: {target['name']}")
+    await page.goto(target["url"], wait_until="domcontentloaded", timeout=35000)
+    await asyncio.sleep(2)
+    # Build the research search URL for this site: /research?s=<id>&lang=..
+    lang = "RU"
+    m = re.search(r"[?&]lang=([A-Za-z]+)", target["url"])
+    if m:
+        lang = m.group(1)
+    return f"https://www.myheritage.com/research?s={target['id']}&lang={lang}"
+
+
 # ── SEARCH FORM ───────────────────────────────────────────────────────────── #
 async def _search(page, search_url, params, has_cookies, log):
     log(f"  → Navigating to search: {search_url}")
@@ -743,18 +816,14 @@ async def _search(page, search_url, params, has_cookies, log):
         await _accept_cookies(page, log)
     await asyncio.sleep(1.5)
 
-    # First name / patronymic
+    # Exact field selectors from the live research form (data-automations)
     await _fill(page, [
-        'input[placeholder*="Имя" i]', 'input[placeholder*="Имя и отчество" i]',
-        'input[placeholder*="first" i]', 'input[placeholder*="given" i]',
-        'input[name*="first" i]', 'input[id*="first" i]',
+        'input[data-automations="research-family_first_name"]',
+        'input[placeholder*="Имя" i]', 'input[placeholder*="first" i]',
     ], params.get("first_name", ""), "First name", log)
-
-    # Surname
     await _fill(page, [
-        'input[placeholder*="Фамилия" i]',
-        'input[placeholder*="last" i]', 'input[placeholder*="surname" i]',
-        'input[name*="last" i]', 'input[id*="last" i]',
+        'input[data-automations="research-family_last_name"]',
+        'input[placeholder*="Фамилия" i]', 'input[placeholder*="last" i]',
     ], params.get("surname", ""), "Surname", log)
 
     # Birth year
@@ -872,23 +941,39 @@ async def _search(page, search_url, params, has_cookies, log):
             except Exception:
                 pass
 
-    # Submit search
-    for sel in ['button:has-text("Поиск")', 'button:has-text("Search")',
-                'button:has-text("חיפוש")', 'button[type="submit"]',
-                'input[type="submit"]', '.searchButton', '#searchButton']:
+    # Submit search — results usually open in a NEW TAB
+    ctx = page.context
+    results_page = None
+    submit_sels = ['span.button_content:has-text("Поиск")',
+                   'button:has-text("Поиск")', 'button:has-text("Search")',
+                   'button:has-text("חיפוש")', 'button[type="submit"]',
+                   'input[type="submit"]']
+    try:
+        async with ctx.expect_page(timeout=15000) as new_page_info:
+            for sel in submit_sels:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count():
+                        await el.click(timeout=6000)
+                        break
+                except Exception:
+                    pass
+        results_page = await new_page_info.value
+        await results_page.wait_for_load_state("domcontentloaded", timeout=30000)
+        log("  ✓ Результаты открылись в новом табе")
+    except Exception:
+        # No new tab — results loaded in the same page
+        results_page = page
         try:
-            el = page.locator(sel).first
-            if await el.count():
-                await el.click(timeout=6000)
-                break
+            await page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
-            pass
+            await asyncio.sleep(4)
 
     try:
-        await page.wait_for_load_state("networkidle", timeout=30000)
+        await results_page.wait_for_load_state("networkidle", timeout=20000)
     except Exception:
-        await asyncio.sleep(4)
-    return True
+        await asyncio.sleep(3)
+    return results_page
 
 # ── COLLECT RESULTS ───────────────────────────────────────────────────────── #
 async def _collect(page, log):
@@ -1087,7 +1172,8 @@ async def run_scraper(*,
     progress       = None,
     cancel_event   = None,
     ask_2fa_code   = None,   # callable() → str, fallback if IMAP auto-read fails
-    imap_password  = None,   # IMAP password for MH account email (to auto-read 2FA code)
+    imap_password  = None,   # mail password for MH account email (to auto-read 2FA code)
+    family_site    = "",     # which family site to enter on select-site.php (name substring)
 ) -> dict:
 
     def _prog(pct, txt):
@@ -1177,11 +1263,20 @@ async def run_scraper(*,
             if _done():
                 return summary
 
+            # If MyHeritage shows the family-site chooser, pick a site and get
+            # the research URL for it (overrides the generic search_url).
+            site_research_url = await _handle_select_site(page, family_site, log)
+            if site_research_url:
+                search_url = site_research_url
+
             _prog(15, "Opening search page…")
-            if not await _search(page, search_url, params, has_cookies, log):
+            results_page = await _search(page, search_url, params, has_cookies, log)
+            if not results_page:
                 summary["error"]   = "search_failed"
                 summary["message"] = "Could not reach search results page."
                 return summary
+            # All result collection happens on the (possibly new) results tab
+            page = results_page
 
             if _done():
                 return summary
