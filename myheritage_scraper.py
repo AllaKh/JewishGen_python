@@ -320,95 +320,84 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
     topmost email and read the 6-digit MyHeritage code. Then close the tab.
     Uses the EXACT selectors from the live Yandex login flow.
     """
+    async def _click_any(sels, label, wait=8000):
+        """Wait for and click the first matching selector. Returns True/False."""
+        for sel in sels:
+            try:
+                el = page.locator(sel).first
+                await el.wait_for(state="visible", timeout=wait)
+                await el.click(timeout=5000)
+                log(f"  2FA: {label}  ({sel})")
+                return True
+            except Exception:
+                continue
+        log(f"  2FA: !! не нашёл — {label}")
+        return False
+
+    async def _fill_any(sels, value, label, wait=8000):
+        for sel in sels:
+            try:
+                el = page.locator(sel).first
+                await el.wait_for(state="visible", timeout=wait)
+                await el.click(timeout=4000)
+                await el.fill(value)
+                await asyncio.sleep(0.4)
+                if (await el.input_value()).strip():
+                    log(f"  2FA: {label} заполнено  ({sel})")
+                    return True
+            except Exception:
+                continue
+        log(f"  2FA: !! поле не найдено — {label}")
+        return False
+
     page = await ctx.new_page()
     try:
+        await page.bring_to_front()
         log("  2FA: открываю новую вкладку mail.yandex.ru …")
         await page.goto("https://mail.yandex.ru/", wait_until="domcontentloaded",
                         timeout=30000)
         await asyncio.sleep(2)
 
-        # 1) Click "Войти" (header login button)
-        for sel in ['#header-login-button',
-                    'a:has-text("Войти")', 'a:has-text("Log in")']:
-            try:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    await el.click(timeout=5000)
-                    await asyncio.sleep(2)
-                    log("  2FA: нажал «Войти»")
-                    break
-            except Exception:
-                continue
+        # 1) Click "Войти" (header login button) → goes to passport.yandex
+        await _click_any(['#header-login-button',
+                          'a:has-text("Войти")', 'a:has-text("Log in")'],
+                         "нажал «Войти»")
+        await asyncio.sleep(2)
 
-        # 2) Enter email/username
-        for sel in ['input[data-testid="text-field-input"][autocomplete="username"]',
-                    'input[autocomplete="username"]',
-                    'input[name="login"]']:
-            try:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    await el.fill(mail_email)
-                    await asyncio.sleep(0.5)
-                    log(f"  2FA: ввёл логин {mail_email}")
-                    break
-            except Exception:
-                continue
+        # 2) Enter email/username (wait for passport page to render)
+        await _fill_any(
+            ['input[data-testid="text-field-input"][autocomplete="username"]',
+             'input[autocomplete="username"]',
+             'input[name="login"]', '#passp-field-login'],
+            mail_email, f"логин {mail_email}", wait=15000)
 
         # 3) Click "Next"
-        for sel in ['button[data-testid="add-user-next"]',
-                    'button:has-text("Next")', 'button:has-text("Далее")']:
-            try:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    await el.click(timeout=5000)
-                    await asyncio.sleep(2)
-                    log("  2FA: нажал Next")
-                    break
-            except Exception:
-                continue
+        await _click_any(['button[data-testid="add-user-next"]',
+                          'button:has-text("Next")', 'button:has-text("Далее")'],
+                         "нажал Next")
+        await asyncio.sleep(2)
 
         # 4) Choose "Log in with your password" (skip the one-time-code step)
-        for sel in ['span:has-text("Log in with your password")',
-                    'text="Log in with your password"',
-                    'span:has-text("Войти с паролем")',
-                    'button:has-text("Войти с паролем")']:
-            try:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    await el.click(timeout=5000)
-                    await asyncio.sleep(1.5)
-                    log("  2FA: выбрал «Log in with your password»")
-                    break
-            except Exception:
-                continue
+        await _click_any(['span:has-text("Log in with your password")',
+                          'button:has-text("Log in with your password")',
+                          'span:has-text("Войти с паролем")',
+                          'button:has-text("Войти с паролем")'],
+                         "выбрал «Log in with your password»")
+        await asyncio.sleep(1.5)
 
         # 5) Enter password
-        filled_pw = False
-        for sel in ['input[data-testid="text-field-input"][autocomplete="current-password"]',
-                    'input[autocomplete="current-password"]',
-                    'input[type="password"]']:
-            try:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    await el.fill(mail_password)
-                    await asyncio.sleep(0.5)
-                    filled_pw = True
-                    log("  2FA: ввёл пароль почты")
-                    break
-            except Exception:
-                continue
+        filled_pw = await _fill_any(
+            ['input[data-testid="text-field-input"][autocomplete="current-password"]',
+             'input[autocomplete="current-password"]',
+             'input[type="password"]', '#passp-field-passwd'],
+            mail_password, "пароль почты", wait=15000)
         if filled_pw:
             await page.keyboard.press("Enter")
-            # Some flows need an explicit Sign-in button
-            for sel in ['button[data-testid="add-user-next"]',
-                        'button:has-text("Sign in")', 'button:has-text("Войти")']:
-                try:
-                    el = page.locator(sel).first
-                    if await el.count() and await el.is_visible():
-                        await el.click(timeout=4000)
-                        break
-                except Exception:
-                    continue
+            await asyncio.sleep(1)
+            await _click_any(['button[data-testid="add-user-next"]',
+                              'button:has-text("Sign in")',
+                              'button:has-text("Войти")'],
+                             "подтвердил вход", wait=4000)
 
         # 6) Wait for inbox to load
         try:
@@ -637,8 +626,17 @@ async def _login(page, login_url, has_cookies,
 
     async def _logged_in() -> bool:
         u = page.url.lower()
-        return ("login" not in u and "signin" not in u
-                and "verify" not in u and "auth" not in u)
+        if any(x in u for x in ("login", "signin", "verify", "auth")):
+            return False
+        # Guard: if a password or code field is still visible we are NOT in yet
+        for sel in ('input[type="password"]', 'input[autocomplete="one-time-code"]',
+                    'input[maxlength="6"]'):
+            try:
+                if await page.locator(sel).first.is_visible(timeout=500):
+                    return False
+            except Exception:
+                pass
+        return True
 
     async def _find_tfa():
         for sel in TFA_SELS:
@@ -653,13 +651,16 @@ async def _login(page, login_url, has_cookies,
     tfa_sel = None
     for _ in range(30):                       # poll up to ~30s
         await asyncio.sleep(1)
-        if await _logged_in():
-            log(f"  ✓ Logged in (no 2FA). URL: {page.url}")
-            return True
+        # Check for the 2FA code field FIRST — MH may sit on a non-/login URL
+        # while showing the verification screen, so a premature "logged in"
+        # check would wrongly skip it.
         tfa_sel = await _find_tfa()
         if tfa_sel:
             log(f"  ⚠  2FA code field detected ({tfa_sel})")
             break
+        if await _logged_in():
+            log(f"  ✓ Logged in (no 2FA). URL: {page.url}")
+            return True
 
     if tfa_sel:
         # Get the code: open a new tab to the mail, read it (same email as MH)
