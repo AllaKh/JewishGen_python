@@ -147,10 +147,23 @@ async def _scrape_record(page, url: str, images_dir: Path, log) -> dict:
     Open a record page and scrape all fields.
     If "Наличие фото: да" — download the photo.
     """
-    rec = {"url": url, "fields": {}, "image_path": None}
+    rec = {"url": url, "name": "", "fields": {}, "image_path": None}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(1.5)
+
+        # ── Record name = the page heading (e.g. "Шур Шая Залмановна") ─ #
+        rec["name"] = await page.evaluate(r"""() => {
+            for (const sel of ['h1', 'h2', '.detail-title', '.page-title',
+                               '[class*="title"]']) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (t && t.length < 120) return t;
+                }
+            }
+            return '';
+        }""")
 
         # ── Extract ALL "Label: value" pairs from the record page ──── #
         # JS-based — robust across the various Bitrix markup variants.
@@ -345,9 +358,7 @@ def write_docx(path: Path, records: list, query_info: dict):
     doc.add_paragraph("")
 
     for i, rec in enumerate(records, 1):
-        name = rec.get("fields", {}).get(
-            next((k for k in rec.get("fields", {}) if "фио" in k.lower() or "имя" in k.lower()), ""),
-            "") or f"Запись {i}"
+        name = rec.get("name") or f"Запись {i}"
         doc.add_heading(f"{i}. {name}", level=2)
 
         # Full record info — all fields from the opened page (link goes LAST)
@@ -409,7 +420,8 @@ def write_xlsx(path: Path, records: list, query_info: dict):
             if k not in all_fields:
                 all_fields.append(k)
 
-    cols = ["#", "Имя", "Дата рождения", "Категория", "Фото", "URL"] + all_fields
+    # Columns: #, Имя, <all record fields…>, Фото, URL (link LAST)
+    cols = ["#", "Имя"] + all_fields + ["Фото", "URL"]
     for ci, cn in enumerate(cols, 1):
         c = ws.cell(row=1, column=ci, value=cn)
         c.font = HN; c.fill = HF; c.border = T
@@ -418,16 +430,11 @@ def write_xlsx(path: Path, records: list, query_info: dict):
 
     for ri, rec in enumerate(records, 2):
         fields = rec.get("fields", {})
-        # Try to guess name from fields
-        name = ""
-        for k in fields:
-            if any(x in k.lower() for x in ("фио", "имя", "name")):
-                name = fields[k]; break
-        birth = fields.get("Дата рождения", fields.get("Год рождения", ""))
-        category = fields.get("Категория", fields.get("Тип документа", ""))
+        name = rec.get("name", "")
         has_img = "да" if rec.get("image_path") else "нет"
-        vals = [ri-1, name, birth, category, has_img, rec.get("url", "")
-                ] + [fields.get(f, "") for f in all_fields]
+        vals = ([ri-1, name]
+                + [fields.get(f, "") for f in all_fields]
+                + [has_img, rec.get("url", "")])
         for ci, val in enumerate(vals, 1):
             c = ws.cell(row=ri, column=ci, value=val)
             c.border = T
@@ -543,6 +550,9 @@ async def run_scraper(
                 log(f"  [{i}/{n}] {row['name']}")
 
                 rec = await _scrape_record(page, row["url"], images_dir, log)
+                # Name: page heading, else the search-result link text
+                if not rec.get("name"):
+                    rec["name"] = row["name"]
                 # Merge search-table data into fields if not already there
                 if "Дата рождения" not in rec["fields"] and row["birth"]:
                     rec["fields"]["Дата рождения"] = row["birth"]

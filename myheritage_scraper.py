@@ -195,33 +195,53 @@ async def _fill(page, selectors, value, label, log):
 # ── Open login form ───────────────────────────────────────────────────────── #
 async def _open_login_form(page, log):
     """
-    Click the site's "Log in" nav link to open the login modal/page.
-    The form contains email + password fields.
+    Ensure the email/password form is visible.
+
+    IMPORTANT: the login_url we navigate to is already MyHeritage's /login
+    page, so the form is normally present immediately. We must NOT click any
+    random "Log in" / "Войти" text — on the home/footer that can match a
+    Facebook social link and navigate the tab to facebook.com (the bug Alla
+    hit). So:
+      1. If we're already on a /login or /signin URL → do nothing.
+      2. If the email field is already present → do nothing.
+      3. Only as a last resort click a login control that is a real
+         MyHeritage button/link (never a social link).
     """
-    LOGIN_LINK_TEXTS = [
-        # Hebrew
-        "כניסה", "להתחבר", "התחברות",
-        # Russian
-        "Вход", "Войти", "Авторизация",
-        # English
-        "Log in", "Login", "Sign in", "Sign in / Register",
-    ]
-    for text in LOGIN_LINK_TEXTS:
+    # 1) Already on the login page → form is there.
+    if "/login" in page.url.lower() or "/signin" in page.url.lower():
+        return True
+
+    # 2) Email field already on the page → nothing to open.
+    for sel in ('#registrationEmail', 'input[name="registrationEmail"]',
+                'input[type="email"]'):
         try:
-            el = page.get_by_role("link", name=re.compile(rf"^{re.escape(text)}$", re.I))
-            if not await el.count():
-                el = page.get_by_text(re.compile(rf"^{re.escape(text)}$", re.I)).first
+            if await page.locator(sel).first.count():
+                return True
+        except Exception:
+            pass
+
+    # 3) Last resort: click a real MyHeritage login control, scoped to
+    #    same-site hrefs only (skip facebook/google/twitter/etc).
+    LOGIN_TEXTS = ["כניסה", "Вход", "Войти", "Авторизация",
+                   "Log in", "Login", "Sign in"]
+    for text in LOGIN_TEXTS:
+        try:
+            el = page.get_by_role(
+                "link", name=re.compile(rf"^{re.escape(text)}$", re.I)).first
             if await el.count():
+                href = (await el.get_attribute("href") or "").lower()
+                # Skip social / external links
+                if any(bad in href for bad in
+                       ("facebook", "google", "twitter", "apple",
+                        "instagram", "linkedin")):
+                    continue
                 await el.click(timeout=5000)
                 await asyncio.sleep(1.5)
                 log(f"  ✓ Opened login form (clicked '{text}')")
                 return True
         except Exception:
             pass
-    # If URL already ends with /login the form is already visible
-    if "/login" in page.url or "/signin" in page.url:
-        return True
-    log("  (login form link not found — form may already be visible)")
+    log("  (login form already visible / no nav link needed)")
     return True
 
 # ── YANDEX 2FA CODE READER ────────────────────────────────────────────────── #
@@ -293,25 +313,195 @@ def _imap_read_mh_code(imap_email: str, imap_password: str,
     return None
 
 
-async def _get_2fa_code(imap_email: str, imap_password: str,
+async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
+                                    log, timeout: int = 120) -> str | None:
+    """
+    Open a NEW TAB at https://mail.yandex.ru/, log in with password, open the
+    topmost email and read the 6-digit MyHeritage code. Then close the tab.
+    Uses the EXACT selectors from the live Yandex login flow.
+    """
+    page = await ctx.new_page()
+    try:
+        log("  2FA: открываю новую вкладку mail.yandex.ru …")
+        await page.goto("https://mail.yandex.ru/", wait_until="domcontentloaded",
+                        timeout=30000)
+        await asyncio.sleep(2)
+
+        # 1) Click "Войти" (header login button)
+        for sel in ['#header-login-button',
+                    'a:has-text("Войти")', 'a:has-text("Log in")']:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    await el.click(timeout=5000)
+                    await asyncio.sleep(2)
+                    log("  2FA: нажал «Войти»")
+                    break
+            except Exception:
+                continue
+
+        # 2) Enter email/username
+        for sel in ['input[data-testid="text-field-input"][autocomplete="username"]',
+                    'input[autocomplete="username"]',
+                    'input[name="login"]']:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    await el.fill(mail_email)
+                    await asyncio.sleep(0.5)
+                    log(f"  2FA: ввёл логин {mail_email}")
+                    break
+            except Exception:
+                continue
+
+        # 3) Click "Next"
+        for sel in ['button[data-testid="add-user-next"]',
+                    'button:has-text("Next")', 'button:has-text("Далее")']:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    await el.click(timeout=5000)
+                    await asyncio.sleep(2)
+                    log("  2FA: нажал Next")
+                    break
+            except Exception:
+                continue
+
+        # 4) Choose "Log in with your password" (skip the one-time-code step)
+        for sel in ['span:has-text("Log in with your password")',
+                    'text="Log in with your password"',
+                    'span:has-text("Войти с паролем")',
+                    'button:has-text("Войти с паролем")']:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    await el.click(timeout=5000)
+                    await asyncio.sleep(1.5)
+                    log("  2FA: выбрал «Log in with your password»")
+                    break
+            except Exception:
+                continue
+
+        # 5) Enter password
+        filled_pw = False
+        for sel in ['input[data-testid="text-field-input"][autocomplete="current-password"]',
+                    'input[autocomplete="current-password"]',
+                    'input[type="password"]']:
+            try:
+                el = page.locator(sel).first
+                if await el.count() and await el.is_visible():
+                    await el.fill(mail_password)
+                    await asyncio.sleep(0.5)
+                    filled_pw = True
+                    log("  2FA: ввёл пароль почты")
+                    break
+            except Exception:
+                continue
+        if filled_pw:
+            await page.keyboard.press("Enter")
+            # Some flows need an explicit Sign-in button
+            for sel in ['button[data-testid="add-user-next"]',
+                        'button:has-text("Sign in")', 'button:has-text("Войти")']:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=4000)
+                        break
+                except Exception:
+                    continue
+
+        # 6) Wait for inbox to load
+        try:
+            await page.wait_for_url(
+                lambda u: "mail.yandex" in u and "passport" not in u,
+                timeout=25000)
+        except Exception:
+            await asyncio.sleep(5)
+        log("  2FA: вошёл в почту, ищу письмо с кодом …")
+
+        # 7) Poll the inbox, open the topmost message, read the 6-digit code
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            # First try to read the code straight from the top message snippet
+            try:
+                snippet = await page.evaluate(r"""() => {
+                    const rows = document.querySelectorAll(
+                        '[class*="MessageSnippet"], .mail-MessageSnippet, '
+                        + '[data-test-id="message-snippet"], li[data-id]');
+                    for (const r of rows) {
+                        const t = (r.textContent || '');
+                        const m = t.match(/\b(\d{6})\b/);
+                        if (m) return m[1];
+                    }
+                    return '';
+                }""")
+                if snippet:
+                    log(f"  2FA: код из списка писем: {snippet}")
+                    return snippet
+            except Exception:
+                pass
+
+            # Otherwise open the topmost message and read its body
+            try:
+                top = page.locator(
+                    '[class*="MessageSnippet"], .mail-MessageSnippet, '
+                    'li[data-id] a, [data-test-id="message-snippet"]').first
+                if await top.count():
+                    await top.click(timeout=5000)
+                    await asyncio.sleep(2)
+                    body = await page.evaluate("() => document.body.innerText")
+                    m = re.search(r"\b(\d{6})\b", body or "")
+                    if m:
+                        log(f"  2FA: код из письма: {m.group(1)}")
+                        return m.group(1)
+            except Exception:
+                pass
+
+            await asyncio.sleep(4)
+            try:
+                await page.reload(wait_until="domcontentloaded", timeout=15000)
+                await asyncio.sleep(2)
+            except Exception:
+                pass
+
+        log("  2FA: код в почте не найден за отведённое время")
+        return None
+    except Exception as e:
+        log(f"  2FA browser error: {e}")
+        return None
+    finally:
+        # Close the mail tab regardless of outcome
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
+async def _get_2fa_code(ctx, mail_email: str, mail_password: str,
                         log, ask_2fa_code=None) -> str | None:
     """
-    Get 2FA code via IMAP (exact pattern from project test suite),
-    with GUI dialog as fallback.
+    Get the MyHeritage 2FA code:
+      1. Browser: open a new tab to Yandex mail, log in, read the code.
+      2. IMAP fallback (if browser fails) for non-Yandex providers.
+      3. GUI dialog as a last resort.
+    `mail_email` is the SAME email used for MyHeritage login.
     """
-    if imap_email and imap_password:
-        host, _ = _imap_server(imap_email)
-        log(f"  2FA: reading code from {host} ({imap_email})…")
-        code = await asyncio.to_thread(
-            _imap_read_mh_code, imap_email, imap_password, 90)
+    if mail_email and mail_password:
+        # Primary: browser-based Yandex reading (exact flow Alla described)
+        code = await _browser_read_yandex_code(ctx, mail_email, mail_password, log)
         if code:
-            log(f"  2FA: code found ✓")
             return code
-        log("  2FA: IMAP timed out — falling back to GUI dialog")
+        # Secondary: IMAP (works for non-Yandex providers with IMAP enabled)
+        log("  2FA: пробую IMAP как запасной вариант …")
+        code = await asyncio.to_thread(
+            _imap_read_mh_code, mail_email, mail_password, 60)
+        if code:
+            log("  2FA: код получен по IMAP ✓")
+            return code
 
-    # Fallback: ask user
+    # Last resort: ask the user
     if ask_2fa_code:
-        log("  2FA: asking user for code…")
+        log("  2FA: запрашиваю код у пользователя …")
         return ask_2fa_code()
     return None
 
@@ -457,7 +647,8 @@ async def _login(page, login_url, has_cookies,
 
     if tfa_visible:
         # IMAP auto-read (email = same email used for MH login)
-        code = await _get_2fa_code(email, imap_password, log, ask_2fa_code)
+        code = await _get_2fa_code(page.context, email, imap_password,
+                                   log, ask_2fa_code)
         if not code:
             log("  !! 2FA: код не получен — прерываю.")
             return False

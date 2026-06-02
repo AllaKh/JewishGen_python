@@ -203,8 +203,8 @@ class MyHeritageApp(QMainWindow):
         imap_row = QHBoxLayout()
         self.f_imap_pass = PwdEdit()
         self.f_imap_pass.setPlaceholderText(
-            "Email IMAP password (to auto-read 2FA code — same email as above)")
-        imap_row.addWidget(QLabel("IMAP password:"))
+            "Password of the email above — to read the 2FA code automatically")
+        imap_row.addWidget(QLabel("Mail password:"))
         imap_row.addWidget(self.f_imap_pass, 3)
         cl.addLayout(imap_row)
 
