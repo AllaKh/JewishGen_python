@@ -408,50 +408,72 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
             await asyncio.sleep(5)
         log("  2FA: вошёл в почту, ищу письмо с кодом …")
 
-        # 7) Poll the inbox, open the topmost message, read the 6-digit code
+        # 7) Find the MyHeritage email (NOT the ad at the very top!) and
+        #    read the 6-digit code. The code is visible right in the snippet
+        #    preview: "...confirmation code in the login screen: 284383 ...".
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
-            # First try to read the code straight from the top message snippet
+            # (a) Scan the whole inbox text for the MyHeritage code phrase.
+            #     This skips the ad row entirely and needs no clicking.
             try:
-                snippet = await page.evaluate(r"""() => {
-                    const rows = document.querySelectorAll(
-                        '[class*="MessageSnippet"], .mail-MessageSnippet, '
-                        + '[data-test-id="message-snippet"], li[data-id]');
-                    for (const r of rows) {
-                        const t = (r.textContent || '');
-                        const m = t.match(/\b(\d{6})\b/);
+                code = await page.evaluate(r"""() => {
+                    const body = document.body.innerText || '';
+                    const pats = [
+                        /confirmation code in the login screen[:\s]*?(\d{6})/i,
+                        /confirmation code[^\d]{0,40}(\d{6})/i,
+                        /code in the login screen[:\s]*?(\d{6})/i,
+                        /код[^\d]{0,40}(\d{6})/i,
+                    ];
+                    for (const p of pats) {
+                        const m = body.match(p);
                         if (m) return m[1];
                     }
                     return '';
                 }""")
-                if snippet:
-                    log(f"  2FA: код из списка писем: {snippet}")
-                    return snippet
+                if code:
+                    log(f"  2FA: код найден в превью письма MyHeritage: {code}")
+                    return code
             except Exception:
                 pass
 
-            # Otherwise open the topmost message and read its body
+            # (b) Snippet truncated before the code → click the MyHeritage row
+            #     (the one whose text mentions MyHeritage + login attempt),
+            #     never the topmost ad row.
             try:
-                top = page.locator(
-                    '[class*="MessageSnippet"], .mail-MessageSnippet, '
-                    'li[data-id] a, [data-test-id="message-snippet"]').first
-                if await top.count():
-                    await top.click(timeout=5000)
-                    await asyncio.sleep(2)
+                clicked = await page.evaluate(r"""() => {
+                    const rows = Array.from(document.querySelectorAll(
+                        'a, li, div[role="listitem"], [class*="messageSnippet" i], '
+                        + '[class*="MessageSnippet"]'));
+                    // smallest element that mentions MyHeritage + login/confirm
+                    const cands = rows.filter(el => {
+                        const t = (el.textContent || '');
+                        return /myheritage/i.test(t) &&
+                               /(login attempt|confirm a login|confirmation code|подтвержд|код)/i.test(t) &&
+                               t.length < 600;
+                    });
+                    cands.sort((a, b) => a.textContent.length - b.textContent.length);
+                    if (cands.length) {
+                        const el = cands[0].closest('a') || cands[0];
+                        el.scrollIntoView();
+                        el.click();
+                        return true;
+                    }
+                    return false;
+                }""")
+                if clicked:
+                    log("  2FA: открыл письмо MyHeritage")
+                    await asyncio.sleep(2.5)
                     body = await page.evaluate("() => document.body.innerText")
-                    m = re.search(r"\b(\d{6})\b", body or "")
+                    m = (re.search(r"login screen[:\s]*?(\d{6})", body or "", re.I)
+                         or re.search(r"\b(\d{6})\b", body or ""))
                     if m:
-                        log(f"  2FA: код из письма: {m.group(1)}")
+                        log(f"  2FA: код из открытого письма: {m.group(1)}")
                         return m.group(1)
             except Exception:
                 pass
 
-            await asyncio.sleep(4)
-            try:
-                await page.reload(wait_until="domcontentloaded", timeout=15000)
-                await asyncio.sleep(2)
-            except Exception:
-                pass
+            # Wait a bit for the email to arrive, then re-check (no full reload)
+            await asyncio.sleep(3)
 
         log("  2FA: код в почте не найден за отведённое время")
         return None
