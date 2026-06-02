@@ -88,46 +88,57 @@ def _add_hyperlink(para, text, url):
 
 async def _collect_rows(page) -> list:
     """
-    Parse the results table on the current page.
+    Extract all record links from the current results page.
+    Uses JavaScript to reliably find all a[href*=ELEMENT_ID] anchors.
     Returns list of dicts: {name, birth, category, url}
     """
+    raw = await page.evaluate("""() => {
+        const out = [];
+        for (const a of document.querySelectorAll('a[href*="ELEMENT_ID"]')) {
+            const name = (a.textContent || '').trim();
+            const href = a.getAttribute('href') || '';
+            if (!name || !href) continue;
+            let birth = '', category = '';
+            const row = a.closest('tr');
+            if (row) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length > 1) birth    = (cells[1].textContent || '').trim();
+                if (cells.length > 2) category = (cells[2].textContent || '').trim();
+            }
+            out.push({name, href, birth, category});
+        }
+        return out;
+    }""")
     rows = []
-    try:
-        trs = await page.query_selector_all("table tr")
-        for tr in trs:
-            tds = await tr.query_selector_all("td")
-            if len(tds) < 2:
-                continue
-            # First cell: name link
-            a = await tds[0].query_selector("a[href]")
-            if not a:
-                continue
-            name = (await a.text_content() or "").strip()
-            href = (await a.get_attribute("href") or "").strip()
-            if not name or not href:
-                continue
-            url = urljoin(BASE_URL, href)
-            birth    = (await tds[1].text_content() or "").strip() if len(tds) > 1 else ""
-            category = (await tds[2].text_content() or "").strip() if len(tds) > 2 else ""
-            rows.append({"name": name, "birth": birth,
-                         "category": category, "url": url})
-    except Exception:
-        pass
+    for r in raw:
+        rows.append({
+            "name":     r["name"],
+            "birth":    r["birth"],
+            "category": r["category"],
+            "url":      urljoin(BASE_URL, r["href"]),
+        })
     return rows
 
 
 async def _get_next_url(page) -> str | None:
-    """Find the 'След.' (Next) pagination link."""
-    try:
-        # Try text "След." first
-        for sel in ['a:has-text("След.")', 'a:has-text("Next")', 'a[title*="След"]']:
-            el = page.locator(sel).first
-            if await el.count():
-                href = await el.get_attribute("href") or ""
-                if href:
-                    return urljoin(BASE_URL, href)
-    except Exception:
-        pass
+    """
+    Find the 'След.' pagination link.
+    АИС Скарб uses: <a class="modern-page-next" href="...">След.</a>
+    """
+    href = await page.evaluate("""() => {
+        // Primary: class="modern-page-next"
+        let a = document.querySelector('a.modern-page-next');
+        if (a) return a.getAttribute('href');
+        // Fallback: any link with text "След."
+        for (const el of document.querySelectorAll('a')) {
+            if ((el.textContent || '').trim() === 'След.') {
+                return el.getAttribute('href');
+            }
+        }
+        return null;
+    }""")
+    if href:
+        return urljoin(BASE_URL, href)
     return None
 
 

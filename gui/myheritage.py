@@ -200,22 +200,20 @@ class MyHeritageApp(QMainWindow):
         cl = QVBoxLayout(cg); cl.setSpacing(6)
 
         mh_row = QHBoxLayout()
-        self.f_email = QLineEdit(); self.f_email.setPlaceholderText("MyHeritage Email")
+        self.f_email = QLineEdit(); self.f_email.setPlaceholderText("Email")
         self.f_pass  = PwdEdit();   self.f_pass.setPlaceholderText("Password")
-        mh_row.addWidget(QLabel("MyHeritage:"))
+        mh_row.addWidget(QLabel("Email:"))
         mh_row.addWidget(self.f_email, 2)
         mh_row.addWidget(QLabel("Password:")); mh_row.addWidget(self.f_pass, 2)
         cl.addLayout(mh_row)
 
-        ya_row = QHBoxLayout()
-        self.f_yandex_email = QLineEdit()
-        self.f_yandex_email.setPlaceholderText("Yandex email (для авто-чтения 2FA кода)")
-        self.f_yandex_pass  = PwdEdit()
-        self.f_yandex_pass.setPlaceholderText("Пароль Яндекс")
-        ya_row.addWidget(QLabel("Яндекс 2FA:"))
-        ya_row.addWidget(self.f_yandex_email, 2)
-        ya_row.addWidget(QLabel("Пароль:")); ya_row.addWidget(self.f_yandex_pass, 2)
-        cl.addLayout(ya_row)
+        imap_row = QHBoxLayout()
+        self.f_imap_pass = PwdEdit()
+        self.f_imap_pass.setPlaceholderText(
+            "Email IMAP password (to auto-read 2FA code — same email as above)")
+        imap_row.addWidget(QLabel("IMAP password:"))
+        imap_row.addWidget(self.f_imap_pass, 3)
+        cl.addLayout(imap_row)
 
         self._outer.addWidget(cg)
 
@@ -332,8 +330,7 @@ class MyHeritageApp(QMainWindow):
 
     # ── Field list ────────────────────────────────────────────────────────── #
     def _all_fields(self):
-        return [self.f_site, self.f_email, self.f_pass,
-                self.f_yandex_email, self.f_yandex_pass,
+        return [self.f_site, self.f_email, self.f_pass, self.f_imap_pass,
                 self.f_first, self.f_surname,
                 self.f_by, self.f_bp, self.f_fa, self.f_mo, self.f_sp,
                 self.f_dy, self.f_dp, self.f_res, self.f_mil, self.f_imm,
@@ -344,10 +341,9 @@ class MyHeritageApp(QMainWindow):
     def _save(self, *_):
         d = {
             "site":          self.f_site.currentText(),
-            "email":          self.f_email.text(),
-            "password":       self.f_pass.text(),
-            "yandex_email":   self.f_yandex_email.text(),
-            "yandex_password":self.f_yandex_pass.text(),
+            "email":         self.f_email.text(),
+            "password":      self.f_pass.text(),
+            "imap_password": self.f_imap_pass.text(),
             "first_name":    self.f_first.text(),
             "surname":       self.f_surname.text(),
             "birth_year":    self.f_by.value(),
@@ -393,9 +389,8 @@ class MyHeritageApp(QMainWindow):
                 if i >= 0: w.setCurrentIndex(i)
             elif isinstance(w, QCheckBox): w.setChecked(bool(v))
         s(self.f_site,   "site")
-        s(self.f_email,  "email");    s(self.f_pass,  "password")
-        s(self.f_yandex_email, "yandex_email")
-        s(self.f_yandex_pass,  "yandex_password")
+        s(self.f_email,     "email");    s(self.f_pass,      "password")
+        s(self.f_imap_pass, "imap_password")
         s(self.f_first,  "first_name"); s(self.f_surname, "surname")
         s(self.f_by,     "birth_year"); s(self.f_bp,  "birth_place")
         s(self.f_fa,     "father");     s(self.f_mo,  "mother")
@@ -441,10 +436,9 @@ class MyHeritageApp(QMainWindow):
             "record_filter": self.f_filter.currentText(),
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
-            "email":            self.f_email.text().strip() or None,
-            "password":         self.f_pass.text() or None,
-            "yandex_email":     self.f_yandex_email.text().strip() or None,
-            "yandex_password":  self.f_yandex_pass.text() or None,
+            "email":         self.f_email.text().strip() or None,
+            "password":      self.f_pass.text() or None,
+            "imap_password": self.f_imap_pass.text() or None,
             "log":           print,
             "cancel_event":  None,
             # ask_2fa_code injected by Worker

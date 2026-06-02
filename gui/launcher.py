@@ -168,43 +168,49 @@ class LauncherWindow(QMainWindow):
         self._outer.setContentsMargins(24, 18, 24, 18)
         self._outer.setSpacing(10)
 
-        # Header: logo (190px) + bilingual title
+        # Header: logo (190px) centred between itself and the window edge,
+        # with bilingual title sitting to its right, vertically centred.
         hdr_row = QHBoxLayout()
-        hdr_row.setSpacing(16)
-        hdr_row.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        hdr_row.setSpacing(20)
+        hdr_row.setContentsMargins(0, 4, 0, 4)
 
         _logo_pix = QPixmap(str(_CONFIG / "app_logo.png"))
         if not _logo_pix.isNull():
             logo_lbl = QLabel()
             logo_lbl.setPixmap(
                 _logo_pix.scaledToWidth(190, Qt.SmoothTransformation))
-            logo_lbl.setAlignment(Qt.AlignVCenter)
+            logo_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+            hdr_row.addStretch(1)          # left spring
             hdr_row.addWidget(logo_lbl)
+        else:
+            hdr_row.addStretch(1)
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(2)
+        title_col.setSpacing(4)
         title_col.setAlignment(Qt.AlignVCenter)
 
         en_lbl = QLabel("Genealogy Search")
         en_lbl.setStyleSheet(
-            "font-size:26px;font-weight:bold;color:#2a4a2a;"
-            "font-family:'Palatino Linotype',Palatino,Georgia,serif;letter-spacing:1px;")
+            "font-size:30px;font-weight:bold;color:#2a4a2a;"
+            "font-family:'Palatino Linotype',Palatino,Georgia,serif;"
+            "letter-spacing:1px;")
 
         ru_lbl = QLabel("Генеалогический поиск")
         ru_lbl.setStyleSheet(
-            "font-size:15px;font-weight:600;color:#5a7a4a;"
+            "font-size:18px;font-weight:600;color:#5a7a4a;"
             "font-family:'Segoe UI',Arial,sans-serif;letter-spacing:0.5px;")
 
         sub_lbl = QLabel("Select a database  ·  Выберите базу данных")
         sub_lbl.setStyleSheet(
-            "font-size:11px;color:#888;font-style:italic;"
-            "font-family:'Segoe UI',Arial,sans-serif;margin-top:4px;")
+            "font-size:13px;color:#777;font-style:italic;"
+            "font-family:'Segoe UI',Arial,sans-serif;margin-top:2px;")
 
         title_col.addWidget(en_lbl)
         title_col.addWidget(ru_lbl)
         title_col.addWidget(sub_lbl)
+
         hdr_row.addLayout(title_col)
-        hdr_row.addStretch()
+        hdr_row.addStretch(1)              # right spring (mirrors left)
         self._outer.addLayout(hdr_row)
 
         # Divider

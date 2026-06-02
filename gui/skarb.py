@@ -12,10 +12,12 @@ from PySide6.QtWidgets import (
     QApplication, QGroupBox, QRadioButton, QButtonGroup,
 )
 from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtGui import QPixmap
 
-_HERE = Path(__file__).resolve().parent
-_ROOT = _HERE.parent
-_SAVE = _HERE / ".skarb_autosave.json"
+_HERE   = Path(__file__).resolve().parent
+_ROOT   = _HERE.parent
+_CONFIG = _ROOT / "config"
+_SAVE   = _HERE / ".skarb_autosave.json"
 _DEF_DIR = str(Path.home() / "Downloads" / "Skarb_results")
 
 if str(_ROOT) not in sys.path:
@@ -85,11 +87,16 @@ class SkarbApp(QMainWindow):
         outer.setContentsMargins(16, 12, 16, 12)
         outer.setSpacing(10)
 
-        # Logo / title
-        title = QLabel("АИС Скарб")
-        title.setStyleSheet("font-size:20px;font-weight:bold;color:#2a4a7f;")
-        title.setAlignment(Qt.AlignLeft)
-        outer.addWidget(title)
+        # Logo
+        lbl = QLabel()
+        pix = QPixmap(str(_CONFIG / "Skarblogo.png"))
+        if not pix.isNull():
+            lbl.setPixmap(pix.scaledToWidth(200, Qt.SmoothTransformation))
+        else:
+            lbl.setText("АИС Скарб")
+            lbl.setStyleSheet("font-size:20px;font-weight:bold;color:#2a4a7f;")
+        lbl.setAlignment(Qt.AlignLeft)
+        outer.addWidget(lbl)
         outer.addWidget(QLabel(
             "Автоматизированная информационная система архивов Беларуси"))
 
