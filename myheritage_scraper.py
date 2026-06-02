@@ -754,40 +754,53 @@ async def _login(page, login_url, has_cookies,
             return False
 
         async def _submit_once() -> bool:
-            clicked = False
-            for name, getter in (
-                ("role", lambda: page.get_by_role("button", name=re.compile(
-                    r"^\s*Отправить\s*$", re.I)).first),
-                ("span-parent", lambda: page.locator(
-                    'button:has(span.button_content:has-text("Отправить"))').first),
-                ("has-text", lambda: page.locator('button:has-text("Отправить")').last),
-            ):
+            # The confirm button lives INSIDE the verification MODAL (next to the
+            # code field). On the page behind it there is ALSO an "Авторизация"
+            # button (the login form) — we must NOT click that one. So: find the
+            # code field, climb to its modal/dialog/form container, locate the
+            # action button inside it, tag it, and click THAT with a real click.
+            tagged = await page.evaluate(r"""() => {
+                document.querySelectorAll('[data-pw-2fa]').forEach(
+                    e => e.removeAttribute('data-pw-2fa'));
+                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                const fld = document.querySelector(
+                    'input[inputmode="numeric"], input[autocomplete="one-time-code"], '
+                    + 'input[maxlength="6"], input[name*="code"]');
+                if (!fld) return false;
+                // climb to a reasonable container (dialog/modal/form)
+                let box = fld.closest('[role=dialog], .modal, form') || fld.parentElement;
+                for (let i = 0; i < 5 && box && box.parentElement; i++) {
+                    const btns = box.querySelectorAll('button, [role=button]');
+                    // a submit-ish button whose text is Отправить/Авторизация/Continue
+                    const re = /^(Отправить|Авторизация|Continue|Продолжить|Verify|Подтвердить|Submit|Send)$/i;
+                    let hit = Array.from(btns).find(b => re.test(norm(b.textContent)));
+                    if (!hit && btns.length) hit = btns[btns.length - 1];
+                    if (hit) { hit.setAttribute('data-pw-2fa', '1'); return true; }
+                    box = box.parentElement;
+                }
+                return false;
+            }""")
+            if tagged:
                 try:
-                    el = getter()
-                    if await el.count() and await el.is_visible():
-                        await el.click(timeout=5000)
-                        clicked = True
-                        log(f"  ✓ 2FA: нажал «Отправить» ({name})")
-                        break
-                except Exception:
-                    continue
-            if not clicked:
-                try:
-                    clicked = await page.evaluate(r"""() => {
-                        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                        let span = Array.from(document.querySelectorAll('span.button_content, span'))
-                            .find(s => /^Отправить$/i.test(norm(s.textContent)));
-                        let btn = span ? (span.closest('button') || span.parentElement) : null;
-                        if (!btn) btn = Array.from(document.querySelectorAll('button,[role=button]'))
-                            .find(b => /^Отправить$/i.test(norm(b.textContent)));
-                        if (btn) { btn.scrollIntoView(); btn.click(); return true; }
-                        return false;
-                    }""")
-                except Exception:
-                    pass
-            if not clicked:
-                await page.keyboard.press("Enter")
-            return clicked
+                    btn = page.locator('[data-pw-2fa="1"]').first
+                    await btn.scroll_into_view_if_needed(timeout=3000)
+                    await btn.click(timeout=5000)
+                    log("  ✓ 2FA: нажал кнопку подтверждения в окне кода")
+                    return True
+                except Exception as e:
+                    log(f"  2FA: реальный клик не вышел ({e}); пробую JS-клик")
+                    try:
+                        await page.evaluate(
+                            "() => { const b=document.querySelector('[data-pw-2fa=\"1\"]');"
+                            " if (b) b.click(); }")
+                        log("  ✓ 2FA: нажал кнопку (JS)")
+                        return True
+                    except Exception:
+                        pass
+            # Last resort: a single Enter
+            await page.keyboard.press("Enter")
+            log("  2FA: Enter в поле кода")
+            return False
 
         # Bring MH tab back to front (mail tab was focused) so input lands here
         try:
