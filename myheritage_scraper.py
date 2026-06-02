@@ -936,6 +936,51 @@ LAST_NAME_SELS = [
 ]
 
 
+async def _find_form_root(page, sels, log, secs=25):
+    """
+    Return the frame (main or iframe) that contains the search form, polling
+    up to `secs`. The MyHeritage research form can live inside an iframe, so
+    page.locator() alone won't see it.
+    """
+    for _t in range(secs):
+        await asyncio.sleep(1)
+        for fr in page.frames:
+            for sel in sels:
+                try:
+                    if await fr.locator(sel).first.count():
+                        log(f"  ✓ Форма поиска готова ({_t+1}с"
+                            f"{', iframe' if fr is not page.main_frame else ''})")
+                        return fr
+                except Exception:
+                    continue
+    return None
+
+
+async def _fill_root(root, page, sels, value, label, log):
+    """Fill a field inside `root` (page or frame); type via page.keyboard so
+    it works whether the field is in the main frame or an iframe."""
+    if not value:
+        return True
+    for sel in sels:
+        try:
+            el = root.locator(sel).first
+            if not await el.count():
+                continue
+            await el.scroll_into_view_if_needed(timeout=4000)
+            await el.click(timeout=3000)
+            await page.keyboard.press("Control+a")
+            await page.keyboard.press("Delete")
+            await page.keyboard.type(value, delay=40)
+            await asyncio.sleep(0.2)
+            if (await el.input_value(timeout=2000)).strip():
+                log(f"  ✓ {label}: OK")
+                return True
+        except Exception:
+            continue
+    log(f"  !! Field not found: {label}")
+    return False
+
+
 async def _search(page, search_url, params, has_cookies, log):
     log(f"  → Navigating to search: {search_url}")
     try:
@@ -945,65 +990,36 @@ async def _search(page, search_url, params, has_cookies, log):
         return False
     if has_cookies:
         await _accept_cookies(page, log)
-
-    # Close any Facebook/social popup tab that MyHeritage may have spawned
     await _close_social_tabs(page.context, page, log)
 
-    # Wait for the research form to actually render (React) — poll up to 25s
+    # Wait for the research form (searches the main frame AND any iframe)
     log("  → Жду форму поиска…")
-    found_form = False
-    for _t in range(25):
-        await asyncio.sleep(1)
-        try:
-            for sel in FIRST_NAME_SELS:
-                el = page.locator(sel).first
-                if await el.count() and await el.is_visible():
-                    found_form = True
-                    break
-        except Exception:
-            pass
-        if found_form:
-            log(f"  ✓ Форма поиска готова ({_t+1}с)")
-            break
-        # If we somehow landed on the family-site home, click "Исследование"
-        if _t == 5:
-            for sel in ['a:has-text("Исследование")', 'a:has-text("Research")',
-                        'a[href*="research"]']:
-                try:
-                    el = page.locator(sel).first
-                    if await el.count() and await el.is_visible():
-                        await el.click(timeout=4000)
-                        log("  → Кликнул «Исследование»")
-                        await asyncio.sleep(2)
-                        break
-                except Exception:
-                    pass
-    if not found_form:
-        log("  !! Форма поиска не появилась — пробую заполнять как есть")
+    root = await _find_form_root(page, FIRST_NAME_SELS, log, secs=25)
+    if root is None:
+        log("  !! Форма поиска не появилась — пробую главный фрейм")
+        root = page.main_frame
 
-    # Exact field selectors from the live research form (data-automations)
-    await _fill(page, FIRST_NAME_SELS, params.get("first_name", ""), "First name", log)
-    await _fill(page, LAST_NAME_SELS,  params.get("surname", ""),    "Surname",    log)
-
-    # Birth year
-    await _fill(page, [
+    # Fill basic fields inside the form root
+    await _fill_root(root, page, FIRST_NAME_SELS, params.get("first_name", ""),
+                     "First name", log)
+    await _fill_root(root, page, LAST_NAME_SELS, params.get("surname", ""),
+                     "Surname", log)
+    await _fill_root(root, page, [
         'input[placeholder*="Год рождения" i]', 'input[placeholder*="birth year" i]',
         'input[name*="birthYear" i]', 'input[id*="birthYear" i]',
     ], params.get("birth_year", ""), "Birth year", log)
-
-    # Birth place
-    await _fill(page, [
+    await _fill_root(root, page, [
         'input[placeholder*="Населенный пункт" i]', 'input[placeholder*="birth place" i]',
         'input[name*="birthPlace" i]', 'input[id*="birthPlace" i]',
     ], params.get("birth_place", ""), "Birth place", log)
 
-    # Extended fields via pill buttons
+    # Extended fields via pill buttons — operate on the form root (frame-aware)
     async def pill(ru, en, he=""):
         for txt in [ru, en, he]:
             if not txt:
                 continue
             try:
-                el = page.get_by_text(re.compile(rf"^{re.escape(txt)}$", re.I)).first
+                el = root.get_by_text(re.compile(rf"^{re.escape(txt)}$", re.I)).first
                 if await el.count():
                     await el.click(timeout=4000)
                     await asyncio.sleep(0.6)
@@ -1014,72 +1030,78 @@ async def _search(page, search_url, params, has_cookies, log):
 
     if params.get("father"):
         await pill("Отец", "Father", "אב")
-        await _fill(page, ['input[name*="father" i]', 'input[placeholder*="father" i]',
-                           'input[placeholder*="Отец" i]'],
-                   params["father"], "Father", log)
+        await _fill_root(root, page, ['input[name*="father" i]',
+                         'input[placeholder*="father" i]', 'input[placeholder*="Отец" i]'],
+                         params["father"], "Father", log)
 
     if params.get("mother"):
         await pill("Мать", "Mother", "אם")
-        await _fill(page, ['input[name*="mother" i]', 'input[placeholder*="mother" i]',
-                           'input[placeholder*="Мать" i]'],
-                   params["mother"], "Mother", log)
+        await _fill_root(root, page, ['input[name*="mother" i]',
+                         'input[placeholder*="mother" i]', 'input[placeholder*="Мать" i]'],
+                         params["mother"], "Mother", log)
 
     if params.get("spouse"):
         await pill("Супруг(-а)", "Spouse", "בן/בת זוג")
-        await _fill(page, ['input[name*="spouse" i]', 'input[placeholder*="spouse" i]',
-                           'input[placeholder*="Супруг" i]'],
-                   params["spouse"], "Spouse", log)
+        await _fill_root(root, page, ['input[name*="spouse" i]',
+                         'input[placeholder*="spouse" i]', 'input[placeholder*="Супруг" i]'],
+                         params["spouse"], "Spouse", log)
 
     if params.get("death_year") or params.get("death_place"):
         await pill("Смерть", "Death", "פטירה")
         if params.get("death_year"):
-            await _fill(page, ['input[name*="deathYear" i]'],
-                       params["death_year"], "Death year", log)
+            await _fill_root(root, page, ['input[name*="deathYear" i]'],
+                             params["death_year"], "Death year", log)
         if params.get("death_place"):
-            await _fill(page, ['input[name*="deathPlace" i]'],
-                       params["death_place"], "Death place", log)
+            await _fill_root(root, page, ['input[name*="deathPlace" i]'],
+                             params["death_place"], "Death place", log)
 
-    # More panel
-    for txt in ["+ Больше", "+ More", "+ עוד"]:
-        try:
-            el = page.get_by_text(re.compile(re.escape(txt), re.I)).first
-            if await el.count():
-                await el.click(timeout=4000)
-                await asyncio.sleep(0.8)
-                break
-        except Exception:
-            pass
+    # "+ Больше" panel — ONLY open it when an advanced field actually needs it
+    need_more = (any(params.get(f) for f in
+                     ("residence", "military", "immigration", "keywords"))
+                 or params.get("gender", "Any") not in ("Any", "Любой", "כל")
+                 or params.get("exact_match"))
+    if need_more:
+        for txt in ["+ Больше", "+ More", "+ עוד"]:
+            try:
+                el = root.get_by_text(re.compile(re.escape(txt), re.I)).first
+                if await el.count():
+                    await el.click(timeout=4000)
+                    await asyncio.sleep(0.8)
+                    break
+            except Exception:
+                pass
 
-    for field, labels in [
-        ("residence",   ["Местожительство", "Residence",  "מגורים"]),
-        ("military",    ["Вооруженные силы", "Military",  "צבא"]),
-        ("immigration", ["Иммиграция",       "Immigration","הגירה"]),
-        ("keywords",    ["Ключевые слова",   "Keywords",  "מילות מפתח"]),
-    ]:
-        if params.get(field):
-            await pill(*labels)
-            await _fill(page,
-                       [f'input[name*="{field}" i]', f'input[placeholder*="{labels[0]}" i]'],
-                       params[field], labels[0], log)
+        for field, labels in [
+            ("residence",   ["Местожительство", "Residence",  "מגורים"]),
+            ("military",    ["Вооруженные силы", "Military",  "צבא"]),
+            ("immigration", ["Иммиграция",       "Immigration", "הגירה"]),
+            ("keywords",    ["Ключевые слова",   "Keywords",   "מילות מפתח"]),
+        ]:
+            if params.get(field):
+                await pill(*labels)
+                await _fill_root(root, page,
+                                 [f'input[name*="{field}" i]',
+                                  f'input[placeholder*="{labels[0]}" i]'],
+                                 params[field], labels[0], log)
 
-    if params.get("gender", "Any") not in ("Any", "Любой", "כל"):
-        await pill("Пол", "Gender", "מין")
-        try:
-            g = page.get_by_text(re.compile(re.escape(params["gender"]), re.I)).first
-            if await g.count():
-                await g.click(timeout=3000)
-        except Exception:
-            pass
+        if params.get("gender", "Any") not in ("Any", "Любой", "כל"):
+            await pill("Пол", "Gender", "מין")
+            try:
+                g = root.get_by_text(re.compile(re.escape(params["gender"]), re.I)).first
+                if await g.count():
+                    await g.click(timeout=3000)
+            except Exception:
+                pass
 
-    if params.get("exact_match"):
-        try:
-            cb = page.get_by_text(
-                re.compile(r"Точное совпадение|Exact match|התאמה מדויקת", re.I)
-            ).first
-            if await cb.count():
-                await cb.click(timeout=3000)
-        except Exception:
-            pass
+        if params.get("exact_match"):
+            try:
+                cb = root.get_by_text(
+                    re.compile(r"Точное совпадение|Exact match|התאמה מדויקת", re.I)
+                ).first
+                if await cb.count():
+                    await cb.click(timeout=3000)
+            except Exception:
+                pass
 
     # Record type filter
     rf = params.get("record_filter", "All Records")
@@ -1109,14 +1131,20 @@ async def _search(page, search_url, params, has_cookies, log):
                    'input[type="submit"]']
     try:
         async with ctx.expect_page(timeout=15000) as new_page_info:
+            clicked = False
             for sel in submit_sels:
                 try:
-                    el = page.locator(sel).first
-                    if await el.count():
+                    el = root.locator(sel).first
+                    if await el.count() and await el.is_visible():
                         await el.click(timeout=6000)
+                        clicked = True
+                        log(f"  ✓ Нажал «Поиск» ({sel})")
                         break
                 except Exception:
                     pass
+            if not clicked:
+                await page.keyboard.press("Enter")
+                log("  → Поиск: Enter")
         results_page = await new_page_info.value
         await results_page.wait_for_load_state("domcontentloaded", timeout=30000)
         log("  ✓ Результаты открылись в новом табе")
@@ -1410,7 +1438,19 @@ async def run_scraper(*,
             Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
             Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
             window.chrome = { runtime: {} };
+            // Block the Facebook social-plugin popup tab MyHeritage tries to open
+            const _open = window.open;
+            window.open = function(u, ...rest) {
+                try { if (u && /facebook\\.com|accounts\\.google|apple\\.com/i.test(u)) return null; }
+                catch (e) {}
+                return _open ? _open.call(window, u, ...rest) : null;
+            };
         """)
+        # Also abort any facebook plugin requests at the network level
+        try:
+            await ctx.route("**/*facebook.com/**", lambda r: r.abort())
+        except Exception:
+            pass
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
 
         try:
