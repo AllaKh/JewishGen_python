@@ -938,14 +938,16 @@ LAST_NAME_SELS = [
 
 async def _find_form_root(page, sels, log, secs=25):
     """
-    Return the frame (main or iframe) that contains the search form, polling
-    up to `secs`. The MyHeritage research form can live inside an iframe, so
-    page.locator() alone won't see it.
+    Return the frame (main or iframe) that contains the research search form,
+    polling up to `secs`. Detect by the first-name field OR the «Поиск» submit
+    button (the form can be in the main frame or an iframe).
     """
+    btn_sels = ['button:has(span.button_content:has-text("Поиск"))',
+                'button:has-text("Поиск")', 'button:has-text("Search")']
     for _t in range(secs):
         await asyncio.sleep(1)
         for fr in page.frames:
-            for sel in sels:
+            for sel in list(sels) + btn_sels:
                 try:
                     if await fr.locator(sel).first.count():
                         log(f"  ✓ Форма поиска готова ({_t+1}с"
@@ -954,6 +956,70 @@ async def _find_form_root(page, sels, log, secs=25):
                 except Exception:
                     continue
     return None
+
+
+async def _fill_research_basic(root, page, params, log) -> bool:
+    """
+    Robustly fill the basic research fields. Selectors for the inputs vary, but
+    the «Поиск» button is reliable — so we walk up from it to the form
+    container and TAG its text inputs (by data-automations / placeholder /
+    order), then fill the tagged fields. Works in main frame or iframe.
+    """
+    tagged = await root.evaluate(r"""() => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        const vis = el => el && el.offsetParent !== null;
+        // find the search submit button
+        let btn = Array.from(document.querySelectorAll('button, [role=button], span'))
+            .find(b => /^(Поиск|Search|חיפוש)$/i.test(norm(b.textContent)));
+        // climb to a container that holds >= 2 visible text inputs (the form)
+        let form = null, n = btn;
+        for (let i = 0; i < 9 && n; i++) {
+            const ins = Array.from(n.querySelectorAll('input'))
+                .filter(x => vis(x) && /^(text|search|number|)$/i.test(x.type || ''));
+            if (ins.length >= 2) { form = n; break; }
+            n = n.parentElement;
+        }
+        if (!form) form = document.querySelector('form') || document.body;
+        const inputs = Array.from(form.querySelectorAll('input'))
+            .filter(x => vis(x) && /^(text|search|number|)$/i.test(x.type || ''));
+        document.querySelectorAll('[data-pw-rf]').forEach(e => e.removeAttribute('data-pw-rf'));
+        const byAuto = sub => inputs.find(i =>
+            ((i.getAttribute('data-automations') || '').toLowerCase()).includes(sub));
+        const byPh = re => inputs.find(i => re.test(i.getAttribute('placeholder') || ''));
+        const first = byAuto('first_name') || byPh(/Имя|first/i) || inputs[0];
+        const last  = byAuto('last_name')  || byPh(/Фамилия|last|surname/i) || inputs[1];
+        const year  = byAuto('birth')      || byPh(/Год рождения|birth\s*year/i);
+        const place = byAuto('place')      || byPh(/Насел|place/i);
+        const tag = (el, name) => { if (el) el.setAttribute('data-pw-rf', name); };
+        tag(first, 'first'); tag(last, 'last'); tag(year, 'year'); tag(place, 'place');
+        return {first: !!first, last: !!last, year: !!year, place: !!place,
+                count: inputs.length};
+    }""")
+    log(f"  → Поля формы: {tagged}")
+
+    async def _type(name, value, label):
+        if not value:
+            return
+        try:
+            el = root.locator(f'[data-pw-rf="{name}"]').first
+            if not await el.count():
+                log(f"  !! Field not found: {label}")
+                return
+            await el.scroll_into_view_if_needed(timeout=4000)
+            await el.click(timeout=3000)
+            await page.keyboard.press("Control+a")
+            await page.keyboard.press("Delete")
+            await page.keyboard.type(value, delay=40)
+            await asyncio.sleep(0.2)
+            log(f"  ✓ {label}: OK")
+        except Exception as e:
+            log(f"  !! {label}: {e}")
+
+    await _type("first", params.get("first_name", ""), "First name")
+    await _type("last",  params.get("surname", ""),    "Surname")
+    await _type("year",  params.get("birth_year", ""), "Birth year")
+    await _type("place", params.get("birth_place", ""), "Birth place")
+    return bool(tagged and (tagged.get("first") or tagged.get("last")))
 
 
 async def _fill_root(root, page, sels, value, label, log):
@@ -999,19 +1065,9 @@ async def _search(page, search_url, params, has_cookies, log):
         log("  !! Форма поиска не появилась — пробую главный фрейм")
         root = page.main_frame
 
-    # Fill basic fields inside the form root
-    await _fill_root(root, page, FIRST_NAME_SELS, params.get("first_name", ""),
-                     "First name", log)
-    await _fill_root(root, page, LAST_NAME_SELS, params.get("surname", ""),
-                     "Surname", log)
-    await _fill_root(root, page, [
-        'input[placeholder*="Год рождения" i]', 'input[placeholder*="birth year" i]',
-        'input[name*="birthYear" i]', 'input[id*="birthYear" i]',
-    ], params.get("birth_year", ""), "Birth year", log)
-    await _fill_root(root, page, [
-        'input[placeholder*="Населенный пункт" i]', 'input[placeholder*="birth place" i]',
-        'input[name*="birthPlace" i]', 'input[id*="birthPlace" i]',
-    ], params.get("birth_place", ""), "Birth place", log)
+    # Fill basic fields (JS-tag the form's inputs, then type) — robust to the
+    # varying selectors; works in main frame or iframe.
+    await _fill_research_basic(root, page, params, log)
 
     # Extended fields via pill buttons — operate on the form root (frame-aware)
     async def pill(ru, en, he=""):
@@ -1451,7 +1507,16 @@ async def run_scraper(*,
             await ctx.route("**/*facebook.com/**", lambda r: r.abort())
         except Exception:
             pass
+
+        # The persistent profile RESTORES whatever tabs were open last time
+        # (e.g. old Facebook/blank tabs). Keep ONE page, close the rest.
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+        for extra in list(ctx.pages):
+            if extra is not page:
+                try:
+                    await extra.close()
+                except Exception:
+                    pass
 
         try:
             if email and password:
