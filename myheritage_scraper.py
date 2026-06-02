@@ -1265,20 +1265,40 @@ async def _collect_one_page(page):
     }""")
 
 
-async def _goto_next_results(page):
-    """Click the results-page «Далее»/Next link. Returns True if it advanced."""
-    return await page.evaluate(r"""() => {
+async def _goto_next_results(page, log):
+    """Click the results-page «Далее»/Next (or «Показать больше»). Returns
+    True if it advanced. Logs the candidates it sees for diagnostics."""
+    res = await page.evaluate(r"""() => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        const cands = Array.from(document.querySelectorAll('a, button, [role=button]'));
-        for (const el of cands) {
+        const cands = Array.from(document.querySelectorAll(
+            'a, button, [role=button], [class*="pagination" i] *'));
+        const seen = [];
+        const isNext = (el) => {
             const t = norm(el.textContent);
-            if (/^(Далее|Next|הבא)\s*>?$/i.test(t) || /^>+$/.test(t)) {
-                if (el.getAttribute('aria-disabled') === 'true') return false;
-                el.scrollIntoView(); el.click(); return true;
+            const al = (el.getAttribute('aria-label') || '') + ' '
+                     + (el.getAttribute('title') || '')
+                     + ' ' + (el.getAttribute('rel') || '');
+            return /^(Далее|Next|הבא|Показать больше|Show more|Load more)\s*>?$/i.test(t)
+                   || /^>+$/.test(t)
+                   || /next|следующ|далее/i.test(al);
+        };
+        for (const el of cands) {
+            const t = norm(el.textContent).slice(0, 30);
+            if (isNext(el)) {
+                const disabled = el.getAttribute('aria-disabled') === 'true'
+                    || el.disabled || /disabled/i.test(el.className || '');
+                if (disabled) { seen.push('[disabled] ' + t); continue; }
+                el.scrollIntoView(); el.click();
+                return {ok: true, clicked: t};
             }
         }
-        return false;
+        return {ok: false, seen: seen.slice(0, 6)};
     }""")
+    if not res.get("ok"):
+        log(f"  → «Далее» не найдена (кандидаты: {res.get('seen')})")
+    else:
+        log(f"  → Перешёл на следующую страницу (клик: {res.get('clicked')!r})")
+    return bool(res.get("ok"))
 
 
 # ── COLLECT RESULTS (all pages) ───────────────────────────────────────────── #
@@ -1311,7 +1331,7 @@ async def _collect(page, log, max_pages=30):
         log(f"  → Страница {page_no}: записей {len(rows)} (новых {new}), всего {len(results)}")
         # next page
         try:
-            advanced = await _goto_next_results(page)
+            advanced = await _goto_next_results(page, log)
         except Exception:
             advanced = False
         if not advanced:
@@ -1338,56 +1358,75 @@ async def _detail(page, url, has_cookies, log):
         log(f"    !! {exc}")
         return d
 
-    # Extract the record card ONLY (never the account-menu / nav name).
+    # Extract record data by WHITELISTED genealogy labels (avoids the sidebar
+    # "more records"/Geni garbage). Labels are unique enough to scan the page.
     info = await page.evaluate(r"""() => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
         const res = {name: '', category: '', fields: [], profile: '', photo: ''};
-        // Anchor the record card on the "В категории / In category" line
-        let catEl = Array.from(document.querySelectorAll('*')).find(e => {
-            if (e.children.length) return false;
-            return /^(В категории|In category|Dans la catégorie)/i.test(norm(e.textContent));
-        });
-        let card = catEl ? catEl.closest('div, section, article, main') : null;
-        // climb so the card includes the title h1 above the category line
-        for (let i = 0; i < 4 && card && card.parentElement; i++) {
-            if (card.querySelector('h1, h2')) break;
-            card = card.parentElement;
-        }
-        if (!card) card = document.querySelector('main') || document.body;
 
-        const h = card.querySelector('h1, h2');
-        if (h) res.name = norm(h.textContent);
-        if (catEl) res.category = norm(catEl.textContent).replace(/^В категории:?\s*/i, '')
-                                     .replace(/^In category:?\s*/i, '');
+        // category line
+        let catEl = Array.from(document.querySelectorAll('*')).find(e =>
+            !e.children.length &&
+            /^(В категории|In category)/i.test(norm(e.textContent)));
+        if (catEl) res.category = norm(catEl.textContent)
+            .replace(/^В категории:?\s*/i, '').replace(/^In category:?\s*/i, '');
 
-        // label/value rows: a short label cell followed by a value cell
-        const rows = card.querySelectorAll('tr, li, div');
-        const seen = new Set();
-        rows.forEach(r => {
-            if (r.querySelector('tr, li')) return;          // skip big containers
-            const kids = Array.from(r.children).filter(c => norm(c.textContent));
-            if (kids.length === 2) {
-                const k = norm(kids[0].textContent).replace(/:$/, '');
-                const v = norm(kids[1].textContent);
-                if (k && v && k.length < 40 && !seen.has(k) && k !== v) {
-                    seen.add(k); res.fields.push([k, v]);
-                }
+        // record title = the h1 nearest the category line (NOT the account name)
+        const h1s = Array.from(document.querySelectorAll('h1, h2'));
+        if (catEl) {
+            // the title h1 sits just above the category line
+            let best = null, bestDist = 1e9;
+            const cy = catEl.getBoundingClientRect().top;
+            for (const h of h1s) {
+                const t = norm(h.textContent);
+                if (!t || t.length > 120) continue;
+                const dy = cy - h.getBoundingClientRect().top;
+                if (dy >= 0 && dy < bestDist) { bestDist = dy; best = h; }
             }
+            if (best) res.name = norm(best.textContent);
+        }
+        if (!res.name && h1s.length) res.name = norm(h1s[0].textContent);
+
+        // WHITELISTED label/value pairs
+        const LABELS = ['Имя','Рождение','Смерть','Брак','Крещение','Погребение',
+            'Захоронение','Проживание','Местожительство','Пол','Возраст',
+            'Отец','Мать','Муж','Жена','Супруг','Супруга','Родители','Дети',
+            'Сын','Дочь','Родные брат/сестра','Члены семьи','Иммиграция',
+            'Name','Birth','Death','Marriage','Residence','Gender','Father',
+            'Mother','Husband','Wife','Spouse','Children'];
+        const seen = new Set();
+        const valueFor = (labelEl) => {
+            // value = next sibling with text, else parent's last child
+            let n = labelEl.nextElementSibling;
+            while (n && !norm(n.textContent)) n = n.nextElementSibling;
+            if (n && norm(n.textContent)) return norm(n.textContent);
+            const par = labelEl.parentElement;
+            if (par) {
+                const kids = Array.from(par.children).filter(c => norm(c.textContent));
+                if (kids.length === 2 && kids[0] === labelEl) return norm(kids[1].textContent);
+            }
+            return '';
+        };
+        Array.from(document.querySelectorAll('div, span, td, dt, li, p')).forEach(el => {
+            if (el.children.length) return;                 // leaf only
+            const t = norm(el.textContent).replace(/:$/, '');
+            if (!LABELS.includes(t) || seen.has(t)) return;
+            const v = valueFor(el);
+            if (v && v.length < 400 && v !== t) { seen.add(t); res.fields.push([t, v]); }
         });
 
-        // "Посмотреть полный профиль на этом сайте" link
-        const prof = Array.from(card.querySelectorAll('a[href]')).find(a =>
+        // "Посмотреть полный профиль на этом сайте" — search whole page
+        const prof = Array.from(document.querySelectorAll('a[href]')).find(a =>
             /полный профиль|full profile|profil complet/i.test(norm(a.textContent)));
         if (prof) res.profile = prof.href;
 
-        // record photo (skip avatars/icons)
-        const img = Array.from(card.querySelectorAll('img[src]')).find(i =>
-            (i.naturalWidth || i.width) > 60 &&
-            !/avatar|icon|sprite|placeholder/i.test(i.src));
+        // record photo (a real image, not avatar/icon, in the record area)
+        const img = Array.from(document.querySelectorAll('img[src]')).find(i =>
+            (i.naturalWidth || i.width || 0) > 80 &&
+            !/avatar|icon|sprite|placeholder|logo/i.test(i.src || ''));
         if (img) res.photo = img.src;
 
-        // historical vs tree (full image needs Omni for historical records)
-        res.historical = /историческ|historical/i.test(card.textContent || '');
+        res.historical = /историческ|historical/i.test(res.category || '');
         return res;
     }""")
 
@@ -1618,13 +1657,26 @@ async def run_scraper(*,
             Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
             Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
             window.chrome = { runtime: {} };
-            // Block the Facebook social-plugin popup tab MyHeritage tries to open
+            // ── Nuke Facebook entirely so it can never open a tab ──────────
             const _open = window.open;
             window.open = function(u, ...rest) {
-                try { if (u && /facebook\\.com|accounts\\.google|apple\\.com/i.test(u)) return null; }
+                try { if (u && /facebook|fbcdn|accounts\\.google|apple\\.com/i.test(u)) return null; }
                 catch (e) {}
                 return _open ? _open.call(window, u, ...rest) : null;
             };
+            const killFB = () => {
+                try {
+                    document.querySelectorAll(
+                        'a[href*=\"facebook.com\"], a[href*=\"facebook.net\"], '
+                        + 'iframe[src*=\"facebook\"], [class*=\"facebook\" i], '
+                        + '[data-href*=\"facebook\"], .fb-page, .fb-like, .fb_iframe_widget'
+                    ).forEach(e => { try { e.remove(); } catch (x) {} });
+                } catch (x) {}
+            };
+            try { setInterval(killFB, 400); } catch (e) {}
+            if (document.addEventListener) {
+                document.addEventListener('DOMContentLoaded', killFB);
+            }
         """)
         # Abort the Facebook SDK + plugin requests at the network level so the
         # social widget never loads and never spawns popup tabs.
@@ -1641,19 +1693,20 @@ async def run_scraper(*,
         def _on_new_page(p):
             async def _maybe_close():
                 try:
-                    u = (p.url or "").lower()
-                    # Social tabs are always junk → close at once
-                    if ("facebook.com" in u or "accounts.google" in u
-                            or "apple.com" in u):
-                        await p.close()
-                        return
-                    # A results tab may start as about:blank then navigate to
-                    # myheritage — give it 2s, then close only if still NOT MH.
-                    if not u or u == "about:blank":
-                        await asyncio.sleep(2)
-                        u2 = (p.url or "").lower()
-                        if "myheritage" not in u2:
+                    # Poll the tab's URL for up to 3s: close the instant it is
+                    # (or becomes) Facebook/blank-junk; keep MyHeritage tabs.
+                    for _ in range(10):
+                        u = (p.url or "").lower()
+                        if any(s in u for s in ("facebook", "fbcdn",
+                                                "accounts.google", "apple.com")):
                             await p.close()
+                            return
+                        if "myheritage" in u:
+                            return                      # real results tab — keep
+                        await asyncio.sleep(0.3)
+                    # Still blank after 3s and not MyHeritage → junk, close it
+                    if "myheritage" not in (p.url or "").lower():
+                        await p.close()
                 except Exception:
                     pass
             try:
