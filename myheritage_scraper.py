@@ -752,49 +752,73 @@ async def _login(page, login_url, has_cookies,
             log("  !! 2FA: код не подтверждён в поле — всё равно пробую отправить")
         await asyncio.sleep(0.5)
 
-        # Submit — the CODE-confirm button is labelled "Отправить" (Send),
-        # NOT "Авторизация" (that's the leftover login button). Prefer
-        # "Отправить"/"Send"/"Continue" and click via the span's parent button.
-        submitted2 = False
+        # Submit. The confirm button is "Отправить". Try MANY ways and after
+        # each one check whether we left the code screen — keep going until
+        # one of them actually submits.
+        async def _submit_done() -> bool:
+            await asyncio.sleep(2)
+            if await _logged_in():
+                return True
+            # also "done" if the code field disappeared (moved to next step)
+            return (await _find_tfa()) is None
+
+        # 1) Enter key in the focused code field (most reliable for OTP forms)
+        try:
+            await page.keyboard.press("Enter")
+            log("  2FA: Enter в поле кода")
+            if await _submit_done():
+                log(f"  ✓ Logged in after 2FA. URL: {page.url}")
+                return True
+        except Exception:
+            pass
+
+        # 2) Click the real <button> ancestor of the "Отправить" span
         for getter in (
             lambda: page.get_by_role("button", name=re.compile(
-                r"Отправить|Send|Continue|Продолжить|Verify|Подтвердить", re.I)).first,
+                r"^\s*Отправить\s*$|^\s*Send\s*$|^\s*Continue\s*$", re.I)).first,
             lambda: page.locator(
                 'button:has(span.button_content:has-text("Отправить"))').first,
-            lambda: page.locator('span.button_content:has-text("Отправить")').first,
-            lambda: page.locator('button:has-text("Отправить")').first,
+            lambda: page.locator('button:has-text("Отправить")').last,
         ):
             try:
                 el = getter()
                 if await el.count() and await el.is_visible():
-                    await el.click(timeout=5000, force=True)
-                    submitted2 = True
-                    log("  ✓ 2FA: нажал «Отправить»")
-                    break
+                    await el.click(timeout=5000)
+                    log("  ✓ 2FA: клик по кнопке «Отправить»")
+                    if await _submit_done():
+                        log(f"  ✓ Logged in after 2FA. URL: {page.url}")
+                        return True
             except Exception:
                 continue
-        if not submitted2:
-            # JS: click the button whose text is exactly the code-submit label
-            try:
-                submitted2 = await page.evaluate(r"""() => {
-                    const re = /^(Отправить|Send|Continue|Продолжить|Verify|Подтвердить)$/i;
-                    const btns = Array.from(document.querySelectorAll('button, [role=button]'));
-                    // exact-text match first (avoids the 'Авторизация' login button)
-                    for (const b of btns) {
-                        const t = (b.textContent || '').trim();
-                        if (re.test(t)) { b.click(); return true; }
-                    }
-                    return false;
-                }""")
-                if submitted2:
-                    log("  ✓ 2FA: нажал «Отправить» (JS)")
-            except Exception:
-                pass
-        if not submitted2:
-            await page.keyboard.press("Enter")
-            log("  2FA: отправил Enter")
 
-        # Wait for login to complete
+        # 3) JS: locate the exact "Отправить" button, climb to <button>, click
+        try:
+            ok = await page.evaluate(r"""() => {
+                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                // prefer a span.button_content whose text is exactly Отправить
+                let span = Array.from(document.querySelectorAll('span.button_content, span'))
+                    .find(s => /^Отправить$/i.test(norm(s.textContent)));
+                let btn = span ? (span.closest('button') || span.parentElement) : null;
+                if (!btn) {
+                    btn = Array.from(document.querySelectorAll('button,[role=button]'))
+                        .find(b => /^Отправить$/i.test(norm(b.textContent)));
+                }
+                if (btn) {
+                    btn.scrollIntoView();
+                    btn.click();
+                    return true;
+                }
+                return false;
+            }""")
+            if ok:
+                log("  ✓ 2FA: клик по «Отправить» (JS)")
+                if await _submit_done():
+                    log(f"  ✓ Logged in after 2FA. URL: {page.url}")
+                    return True
+        except Exception:
+            pass
+
+        # Final wait for login to complete
         for _ in range(20):
             await asyncio.sleep(1)
             if await _logged_in():
