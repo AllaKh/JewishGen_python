@@ -1382,22 +1382,41 @@ async def _search(page, search_url, params, has_cookies, log):
     return results_page
 
 async def _collect_one_page(page):
-    """Extract record cards from the CURRENT results page."""
+    """
+    Extract record cards from the CURRENT results page.
+    Returns {rows, stop}: rows are the EXACT matches (those appearing BEFORE
+    the «расширения критериев / expanded search criteria» divider); stop=True
+    once that divider is seen so pagination halts (the records below it are
+    the relaxed, irrelevant matches).
+    """
     return await page.evaluate(r"""() => {
         const out = [];
         const seen = new Set();
-        // Real record links contain action=showRecord (and recordTitle).
+        // Find the "expanded criteria" divider — everything after it is relaxed.
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        let divider = null;
+        for (const e of document.querySelectorAll('*')) {
+            if (e.children.length) continue;
+            if (/расширени[ея] критери|expanded (the )?search criteria|broadened/i
+                    .test(norm(e.textContent))) { divider = e; break; }
+        }
+        const beforeDivider = (el) => {
+            if (!divider) return true;
+            // el comes before divider in document order?
+            return !!(divider.compareDocumentPosition(el)
+                      & Node.DOCUMENT_POSITION_PRECEDING);
+        };
         const anchors = Array.from(document.querySelectorAll(
             'a[href*="showRecord"], a[href*="recordTitle"]'));
         for (const a of anchors) {
             const href = a.href || '';
             if (!href || seen.has(href)) continue;
+            if (!beforeDivider(a)) continue;          // skip relaxed matches
             seen.add(href);
             const card = a.closest('[class*="result" i], li, article, div') || a;
-            // name: prefer the card's heading / record-title, else the recordTitle param
             let name = '';
             const h = card.querySelector('h1,h2,h3,[class*="recordTitle" i],[class*="name" i]');
-            if (h) name = (h.textContent || '').replace(/\s+/g, ' ').trim();
+            if (h) name = norm(h.textContent);
             if (!name) {
                 const m = href.match(/recordTitle=([^&]+)/);
                 if (m) { try { name = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch(e){} }
@@ -1405,9 +1424,9 @@ async def _collect_one_page(page):
             let score = -1;
             const sm = (card.textContent || '').match(/(\d{1,3})\s*%/);
             if (sm) score = parseInt(sm[1], 10);
-            out.push({url: href, name_text: (name || '').slice(0, 200), score});
+            out.push({url: href, name_text: name.slice(0, 200), score});
         }
-        return out;
+        return {rows: out, stop: !!divider};
     }""")
 
 
@@ -1468,20 +1487,18 @@ async def _goto_next_results(page, log):
         return False
 
 
-# ── COLLECT RESULTS (all pages) ───────────────────────────────────────────── #
+# ── COLLECT RESULTS (exact matches across pages) ──────────────────────────── #
 async def _collect(page, log, max_pages=30):
     # Wait for result cards to render
     results, seen_urls = [], set()
     for _t in range(25):
         await asyncio.sleep(1)
         try:
-            first = await _collect_one_page(page)
+            res = await _collect_one_page(page)
         except Exception:
-            first = []
-        if first:
+            res = {"rows": [], "stop": False}
+        if res.get("rows"):
             break
-    else:
-        first = []
 
     # Show 50 per page to reduce the number of page turns
     await _set_results_per_page(page, log, "50")
@@ -1490,9 +1507,11 @@ async def _collect(page, log, max_pages=30):
     page_no = 1
     while page_no <= max_pages:
         try:
-            rows = await _collect_one_page(page)
+            res = await _collect_one_page(page)
         except Exception:
-            rows = []
+            res = {"rows": [], "stop": False}
+        rows = res.get("rows", [])
+        stop = res.get("stop", False)
         new = 0
         for r in rows:
             if r["url"] not in seen_urls:
@@ -1500,7 +1519,10 @@ async def _collect(page, log, max_pages=30):
                 results.append(r)
                 new += 1
         log(f"  → Страница {page_no}: записей {len(rows)} (новых {new}), всего {len(results)}")
-        # next page
+        # The «expanded criteria» divider was reached → stop (rest are relaxed)
+        if stop:
+            log("  → Достигнут разделитель «расширения критериев» — стоп")
+            break
         try:
             advanced = await _goto_next_results(page, log)
         except Exception:
@@ -1513,7 +1535,7 @@ async def _collect(page, log, max_pages=30):
             await page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             await asyncio.sleep(2)
-    log(f"  → Всего записей со всех страниц: {len(results)}")
+    log(f"  → Всего точных записей: {len(results)}")
     return results
 
 # ── DETAIL PAGE ───────────────────────────────────────────────────────────── #
@@ -1960,15 +1982,20 @@ async def run_scraper(*,
             raw = await _collect(page, log)
             log(f"  Candidates: {len(raw)}")
 
+            # Results collected are MyHeritage's matches (everything BEFORE the
+            # «expanded criteria» divider). Keep them all: use the card's match
+            # % when shown, otherwise treat as an exact MyHeritage match (100%).
+            # Do NOT re-filter by name similarity — that wrongly drops correct
+            # multi-word names (e.g. "Тамара Хананновна Рогинская (Рубина)").
             qualified = []
             for r in raw:
                 s = r["score"]
                 if s < 0:
-                    s = _name_sim(qname, r["name_text"])
+                    s = 100.0
                 if s >= MIN_MATCH_PCT:
                     r["score"] = round(s, 1)
                     qualified.append(r)
-            log(f"  Qualified (≥{MIN_MATCH_PCT}%): {len(qualified)}")
+            log(f"  Подходящих записей: {len(qualified)}")
 
             if not qualified:
                 _prog(100, "No results above threshold.")
