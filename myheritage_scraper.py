@@ -1056,33 +1056,60 @@ async def _fill_advanced(root, page, params, log):
     "+ Больше" opens extra event/relative/other tags + «Точное совпадение всех
     параметров».
     """
-    async def _click_tag(texts):
-        """Click a pill/tag by visible text — searches ALL frames via JS click
-        (the chip may be a div/span/button with class tag_label, anywhere)."""
+    async def _open_pill(texts, verify_auto_id):
+        """REAL mouse-click the visible chip (JS .click() does NOT open the
+        React popup), then confirm the popup opened by waiting for its input
+        (verify_auto_id) to become visible. Returns True only if it opened."""
         for fr in page.frames:
             for t in texts:
+                # tag via JS so we can click the right element via Playwright
                 try:
-                    ok = await fr.evaluate(r"""(label) => {
+                    tagged = await fr.evaluate(r"""(label) => {
                         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                        document.querySelectorAll('[data-pw-pill]').forEach(
+                            e => e.removeAttribute('data-pw-pill'));
                         const els = Array.from(document.querySelectorAll(
                             'div, span, button, [role=button], [class*="tag" i], [class*="chip" i]'));
                         for (const e of els) {
-                            const t = norm(e.textContent);
-                            if (!t || t.length > 40) continue;
-                            // match "Отец" or "Отец: ..." (already filled)
-                            if (t === label || t.startsWith(label + ':')
-                                || t.startsWith(label + ' ') || t === label) {
-                                if (e.offsetParent === null) continue;   // hidden
-                                e.scrollIntoView();
-                                e.click();
+                            const txt = norm(e.textContent);
+                            if (!txt || txt.length > 40 || e.offsetParent === null) continue;
+                            if (txt === label || txt.startsWith(label + ':')
+                                || txt.startsWith(label + ' ')) {
+                                e.setAttribute('data-pw-pill', '1');
                                 return true;
                             }
                         }
                         return false;
                     }""", t)
-                    if ok:
+                    if not tagged:
+                        continue
+                    chip = fr.locator('[data-pw-pill="1"]').first
+                    # real mouse click (bubbles → React handler fires)
+                    await chip.scroll_into_view_if_needed(timeout=3000)
+                    await chip.click(timeout=4000)
+                    if not verify_auto_id:
                         await asyncio.sleep(0.8)
                         return True
+                    # confirm the popup's input is now visible
+                    for _ in range(8):
+                        await asyncio.sleep(0.4)
+                        v_fr, v_el = await _find_auto(verify_auto_id, want_visible=True,
+                                                      wait_secs=1)
+                        if v_el:
+                            return True
+                    # popup didn't open — try clicking the closest clickable parent
+                    try:
+                        await chip.evaluate(
+                            "e => { const b = e.closest('button,[role=button]'); "
+                            "if (b && b!==e) b.click(); }")
+                        for _ in range(6):
+                            await asyncio.sleep(0.4)
+                            v_fr, v_el = await _find_auto(verify_auto_id,
+                                                          want_visible=True, wait_secs=1)
+                            if v_el:
+                                return True
+                    except Exception:
+                        pass
                 except Exception:
                     continue
         return False
@@ -1180,21 +1207,23 @@ async def _fill_advanced(root, page, params, log):
         lv = params.get(f"{key}_last", "")
         if not fv and not lv:
             continue
-        if await _click_tag(tags):
+        if await _open_pill(tags, fa):
             log(f"  → открыл «{tags[0]}»")
             await _fill_auto(fa, fv)
             await _fill_auto(la, lv)
             await _apply(apply_id)
         else:
-            log(f"  !! pill «{tags[0]}» не найден")
+            log(f"  !! «{tags[0]}»: попап не открылся")
 
     # ── Death: pill → year + place → apply ──────────────────────────────────
     if params.get("death_year") or params.get("death_place"):
-        if await _click_tag(["Смерть", "Death"]):
+        if await _open_pill(["Смерть", "Death"], "death_year_field"):
             log("  → открыл «Смерть»")
             await _fill_auto("death_year_field", params.get("death_year", ""))
             await _fill_auto("death_place_field", params.get("death_place", ""))
             await _apply("death_filter_apply_button")
+        else:
+            log("  !! «Смерть»: попап не открылся")
 
     # ── "+ Больше": extra events / keywords / gender / exact-all ─────────────
     need_more = (any(params.get(f) for f in
@@ -1202,10 +1231,10 @@ async def _fill_advanced(root, page, params, log):
                  or params.get("gender", "Any") not in ("Any", "Любой")
                  or params.get("exact_match"))
     if need_more:
-        await _click_tag(["Больше", "More", "+ Больше"])
-        await asyncio.sleep(0.5)
+        # open the "+ Больше" panel (plain click, no input to verify)
+        await _open_pill(["Больше", "More"], "")
+        await asyncio.sleep(0.6)
 
-        # life-event tags (each opens its own place/date inputs)
         for key, tags, place_auto, apply_id in [
             ("residence", ["Местожительство", "Residence"],
              "residence_place_field", "residence_filter_apply_button"),
@@ -1215,20 +1244,18 @@ async def _fill_advanced(root, page, params, log):
              "immigration_place_field", "immigration_filter_apply_button"),
         ]:
             if params.get(key):
-                if await _click_tag(tags):
+                if await _open_pill(tags, place_auto):
                     await _fill_auto(place_auto, params[key])
                     await _apply(apply_id)
 
-        # keywords
         if params.get("keywords"):
-            if await _click_tag(["Ключевые слова", "Keywords"]):
+            if await _open_pill(["Ключевые слова", "Keywords"], "keywords_field"):
                 await _fill_auto("keywords_field", params["keywords"])
                 await _apply("keywords_filter_apply_button")
 
-        # gender
         g = params.get("gender", "Any")
         if g not in ("Any", "Любой"):
-            if await _click_tag(["Пол", "Gender"]):
+            if await _open_pill(["Пол", "Gender"], ""):
                 ru = {"Male": "Мужчина", "Female": "Женщина"}.get(g, g)
                 try:
                     opt = root.get_by_text(re.compile(rf"^{re.escape(ru)}$", re.I)).first
