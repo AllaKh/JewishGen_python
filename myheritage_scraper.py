@@ -1287,69 +1287,74 @@ async def _fill_advanced(root, page, params, log):
                     pass
                 await _apply("gender_filter_apply_button")
 
-        # «Точное совпадение всех параметров». Match by the FULL text «всех
-        # параметров» (so we never hit «Точное совпадение года»), tag the
-        # VISIBLE [role=checkbox], then toggle it and VERIFY aria-checked flips
-        # to true (real click → if it doesn't register, focus + Space).
+        # «Точное совпадение всех параметров». The text span has class
+        # "checkbox_control_label_text" — it's only the LABEL; the clickable
+        # control is a PARENT. So tag the label, then try clicking the label,
+        # its parent and grandparent (and Space), re-reading aria-checked via a
+        # FRESH query each time (React re-creates the node on toggle).
         if params.get("exact_match"):
-            async def _find_exact():
+            async def _exact_state():
+                """Find the checkbox; return (frame, aria-checked) or (None,None)."""
                 for fr in page.frames:
                     try:
-                        info = await fr.evaluate(r"""() => {
+                        st = await fr.evaluate(r"""() => {
                             const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                            document.querySelectorAll('[data-pw-exact]').forEach(
-                                e => e.removeAttribute('data-pw-exact'));
-                            const els = Array.from(document.querySelectorAll(
-                                '[role=checkbox], span, label'));
-                            for (const e of els) {
+                            document.querySelectorAll('[data-pw-exlabel]').forEach(
+                                e => e.removeAttribute('data-pw-exlabel'));
+                            for (const e of document.querySelectorAll('span, label, [role=checkbox]')) {
                                 const t = norm(e.textContent);
                                 if (t.length > 60) continue;
                                 if (!/Точное совпадение всех параметров/i.test(t)) continue;
                                 if (e.offsetParent === null) continue;
-                                const cb = e.closest('[role=checkbox]') || e;
-                                cb.setAttribute('data-pw-exact', '1');
-                                return {checked: cb.getAttribute('aria-checked')};
+                                e.setAttribute('data-pw-exlabel', '1');
+                                const cb = e.closest('[role=checkbox]') ||
+                                           e.parentElement.closest('[role=checkbox]') || e;
+                                return cb.getAttribute('aria-checked');
                             }
-                            return null;
+                            return 'none';
                         }""")
-                        if info is not None:
-                            return fr, info.get("checked")
+                        if st != 'none':
+                            return fr, st
                     except Exception:
                         continue
                 return None, None
 
             done = False
             for _attempt in range(12):
-                fr, checked = await _find_exact()
+                fr, checked = await _exact_state()
                 if fr is None:
                     await asyncio.sleep(0.5)
                     continue
-                cb = fr.locator('[data-pw-exact="1"]').first
                 if checked == "true":
-                    log("  ✓ Точное совпадение всех параметров (уже включено)")
+                    log("  ✓ Точное совпадение всех параметров")
                     done = True
                     break
-                # toggle: real click, then verify; fall back to focus+Space
-                for method in ("click", "space", "jsclick"):
+                label = fr.locator('[data-pw-exlabel="1"]').first
+                # click label, its parent, its grandparent, then Space
+                targets = [label, label.locator("xpath=.."),
+                           label.locator("xpath=../..")]
+                for tgt in targets:
                     try:
-                        if method == "click":
-                            await cb.scroll_into_view_if_needed(timeout=2000)
-                            await cb.click(timeout=3000)
-                        elif method == "space":
-                            await cb.focus()
-                            await page.keyboard.press("Space")
-                        else:
-                            await fr.evaluate("() => { const e=document."
-                                "querySelector('[data-pw-exact=\"1\"]'); if(e) e.click(); }")
-                        await asyncio.sleep(0.5)
-                        now = await cb.get_attribute("aria-checked")
-                        if now == "true":
-                            log(f"  ✓ Точное совпадение всех параметров (через {method})")
-                            done = True
-                            break
+                        await tgt.scroll_into_view_if_needed(timeout=1500)
+                        await tgt.click(timeout=2500)
+                        await asyncio.sleep(0.4)
                     except Exception:
                         continue
+                    _, now = await _exact_state()
+                    if now == "true":
+                        done = True
+                        break
+                if not done:
+                    try:
+                        await label.focus(); await page.keyboard.press("Space")
+                        await asyncio.sleep(0.4)
+                        _, now = await _exact_state()
+                        if now == "true":
+                            done = True
+                    except Exception:
+                        pass
                 if done:
+                    log("  ✓ Точное совпадение всех параметров")
                     break
                 await asyncio.sleep(0.4)
             if not done:
@@ -1728,19 +1733,16 @@ async def _detail(page, url, has_cookies, log):
             td[str(pair[0])] = str(pair[1])
     d["table_data"] = td
 
-    # Photo thumbnail for Word (download the preview image bytes)
+    # Photo thumbnail for Word — fetch via the page's request context (NO new
+    # tab; opening a tab per record exhausted the browser and crashed it).
     photo = info.get("photo") or ""
     if photo:
         try:
-            ip = await page.context.new_page()
-            try:
-                r = await ip.goto(photo, timeout=15000)
-                if r and r.ok:
-                    body = await r.body()
-                    if len(body) > 1000:
-                        d["thumb_bytes"] = body
-            finally:
-                await ip.close()
+            r = await page.request.get(photo, timeout=15000)
+            if r.ok:
+                body = await r.body()
+                if len(body) > 1000:
+                    d["thumb_bytes"] = body
         except Exception:
             pass
     return d
