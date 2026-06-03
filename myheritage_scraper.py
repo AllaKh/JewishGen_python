@@ -1047,6 +1047,151 @@ async def _fill_root(root, page, sels, value, label, log):
     return False
 
 
+# ── ADVANCED SEARCH (pills → popup with data-automations → «Применить») ─────── #
+async def _fill_advanced(root, page, params, log):
+    """
+    Each advanced detail is a tag/pill (div.tag_label «Отец»/«Мать»/«Супруг(-а)»/
+    «Смерть»). Clicking it opens a popup whose inputs have exact data-automations
+    ids; after filling we MUST click the «Применить» (apply) button.
+    "+ Больше" opens extra event/relative/other tags + «Точное совпадение всех
+    параметров».
+    """
+    async def _click_tag(texts):
+        """Click a pill/tag by visible text (div.tag_label or any element)."""
+        for t in texts:
+            for getter in (
+                lambda: root.locator('div.tag_label').filter(
+                    has_text=re.compile(rf"^{re.escape(t)}\b", re.I)).first,
+                lambda: root.get_by_text(re.compile(rf"^{re.escape(t)}\b", re.I)).first,
+            ):
+                try:
+                    el = getter()
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=4000)
+                        await asyncio.sleep(0.8)
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    async def _fill_auto(auto_id, value):
+        """Fill an input by its exact data-automations id."""
+        if not value:
+            return
+        try:
+            el = root.locator(f'[data-automations="{auto_id}"]').first
+            if await el.count():
+                await el.scroll_into_view_if_needed(timeout=3000)
+                await el.click(timeout=3000)
+                await page.keyboard.press("Control+a")
+                await page.keyboard.press("Delete")
+                await page.keyboard.type(str(value), delay=40)
+                await asyncio.sleep(0.2)
+                log(f"  ✓ {auto_id} = {value!r}")
+            else:
+                log(f"  !! {auto_id} не найден")
+        except Exception as e:
+            log(f"  !! {auto_id}: {e}")
+
+    async def _apply(auto_id):
+        """Click the popup's «Применить» button (data-automations=*_apply_button)."""
+        for sel in (f'[data-automations="{auto_id}"]',
+                    'button.search_form_apply_button',
+                    'button:has-text("Применить")', 'button:has-text("Apply")'):
+            try:
+                b = root.locator(sel).first
+                if await b.count() and await b.is_visible():
+                    await b.click(timeout=4000)
+                    await asyncio.sleep(0.6)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    # ── Family members: pill → two name inputs → apply ──────────────────────
+    fam = [
+        ("father", ["Отец", "Father"], "father_first_name_field",
+         "father_last_name_field", "father_filter_apply_button"),
+        ("mother", ["Мать", "Mother"], "mother_first_name_field",
+         "mother_last_name_field", "mother_filter_apply_button"),
+        ("spouse", ["Супруг(-а)", "Супруг", "Spouse"], "spouse_first_name_field",
+         "spouse_last_name_field", "spouse_filter_apply_button"),
+    ]
+    for key, tags, fa, la, apply_id in fam:
+        fv = params.get(key, "")
+        lv = params.get(f"{key}_last", "")
+        if not fv and not lv:
+            continue
+        if await _click_tag(tags):
+            log(f"  → открыл «{tags[0]}»")
+            await _fill_auto(fa, fv)
+            await _fill_auto(la, lv)
+            await _apply(apply_id)
+        else:
+            log(f"  !! pill «{tags[0]}» не найден")
+
+    # ── Death: pill → year + place → apply ──────────────────────────────────
+    if params.get("death_year") or params.get("death_place"):
+        if await _click_tag(["Смерть", "Death"]):
+            log("  → открыл «Смерть»")
+            await _fill_auto("death_year_field", params.get("death_year", ""))
+            await _fill_auto("death_place_field", params.get("death_place", ""))
+            await _apply("death_filter_apply_button")
+
+    # ── "+ Больше": extra events / keywords / gender / exact-all ─────────────
+    need_more = (any(params.get(f) for f in
+                     ("residence", "military", "immigration", "keywords"))
+                 or params.get("gender", "Any") not in ("Any", "Любой")
+                 or params.get("exact_match"))
+    if need_more:
+        await _click_tag(["Больше", "More", "+ Больше"])
+        await asyncio.sleep(0.5)
+
+        # life-event tags (each opens its own place/date inputs)
+        for key, tags, place_auto, apply_id in [
+            ("residence", ["Местожительство", "Residence"],
+             "residence_place_field", "residence_filter_apply_button"),
+            ("military", ["Вооруженные силы", "Military"],
+             "military_place_field", "military_filter_apply_button"),
+            ("immigration", ["Иммиграция", "Immigration"],
+             "immigration_place_field", "immigration_filter_apply_button"),
+        ]:
+            if params.get(key):
+                if await _click_tag(tags):
+                    await _fill_auto(place_auto, params[key])
+                    await _apply(apply_id)
+
+        # keywords
+        if params.get("keywords"):
+            if await _click_tag(["Ключевые слова", "Keywords"]):
+                await _fill_auto("keywords_field", params["keywords"])
+                await _apply("keywords_filter_apply_button")
+
+        # gender
+        g = params.get("gender", "Any")
+        if g not in ("Any", "Любой"):
+            if await _click_tag(["Пол", "Gender"]):
+                ru = {"Male": "Мужчина", "Female": "Женщина"}.get(g, g)
+                try:
+                    opt = root.get_by_text(re.compile(rf"^{re.escape(ru)}$", re.I)).first
+                    if await opt.count():
+                        await opt.click(timeout=3000)
+                except Exception:
+                    pass
+                await _apply("gender_filter_apply_button")
+
+        # «Точное совпадение всех параметров»
+        if params.get("exact_match"):
+            try:
+                cb = root.get_by_text(
+                    re.compile(r"Точное совпадение всех параметров", re.I)).first
+                if await cb.count():
+                    await cb.click(timeout=3000)
+                    log("  ✓ Точное совпадение всех параметров")
+            except Exception:
+                pass
+
+
 async def _search(page, search_url, params, has_cookies, log):
     log(f"  → Navigating to search: {search_url}")
     try:
@@ -1069,95 +1214,8 @@ async def _search(page, search_url, params, has_cookies, log):
     # varying selectors; works in main frame or iframe.
     await _fill_research_basic(root, page, params, log)
 
-    # Extended fields via pill buttons — operate on the form root (frame-aware)
-    async def pill(ru, en, he=""):
-        for txt in [ru, en, he]:
-            if not txt:
-                continue
-            try:
-                el = root.get_by_text(re.compile(rf"^{re.escape(txt)}$", re.I)).first
-                if await el.count():
-                    await el.click(timeout=4000)
-                    await asyncio.sleep(0.6)
-                    return True
-            except Exception:
-                pass
-        return False
-
-    if params.get("father"):
-        await pill("Отец", "Father", "אב")
-        await _fill_root(root, page, ['input[name*="father" i]',
-                         'input[placeholder*="father" i]', 'input[placeholder*="Отец" i]'],
-                         params["father"], "Father", log)
-
-    if params.get("mother"):
-        await pill("Мать", "Mother", "אם")
-        await _fill_root(root, page, ['input[name*="mother" i]',
-                         'input[placeholder*="mother" i]', 'input[placeholder*="Мать" i]'],
-                         params["mother"], "Mother", log)
-
-    if params.get("spouse"):
-        await pill("Супруг(-а)", "Spouse", "בן/בת זוג")
-        await _fill_root(root, page, ['input[name*="spouse" i]',
-                         'input[placeholder*="spouse" i]', 'input[placeholder*="Супруг" i]'],
-                         params["spouse"], "Spouse", log)
-
-    if params.get("death_year") or params.get("death_place"):
-        await pill("Смерть", "Death", "פטירה")
-        if params.get("death_year"):
-            await _fill_root(root, page, ['input[name*="deathYear" i]'],
-                             params["death_year"], "Death year", log)
-        if params.get("death_place"):
-            await _fill_root(root, page, ['input[name*="deathPlace" i]'],
-                             params["death_place"], "Death place", log)
-
-    # "+ Больше" panel — ONLY open it when an advanced field actually needs it
-    need_more = (any(params.get(f) for f in
-                     ("residence", "military", "immigration", "keywords"))
-                 or params.get("gender", "Any") not in ("Any", "Любой", "כל")
-                 or params.get("exact_match"))
-    if need_more:
-        for txt in ["+ Больше", "+ More", "+ עוד"]:
-            try:
-                el = root.get_by_text(re.compile(re.escape(txt), re.I)).first
-                if await el.count():
-                    await el.click(timeout=4000)
-                    await asyncio.sleep(0.8)
-                    break
-            except Exception:
-                pass
-
-        for field, labels in [
-            ("residence",   ["Местожительство", "Residence",  "מגורים"]),
-            ("military",    ["Вооруженные силы", "Military",  "צבא"]),
-            ("immigration", ["Иммиграция",       "Immigration", "הגירה"]),
-            ("keywords",    ["Ключевые слова",   "Keywords",   "מילות מפתח"]),
-        ]:
-            if params.get(field):
-                await pill(*labels)
-                await _fill_root(root, page,
-                                 [f'input[name*="{field}" i]',
-                                  f'input[placeholder*="{labels[0]}" i]'],
-                                 params[field], labels[0], log)
-
-        if params.get("gender", "Any") not in ("Any", "Любой", "כל"):
-            await pill("Пол", "Gender", "מין")
-            try:
-                g = root.get_by_text(re.compile(re.escape(params["gender"]), re.I)).first
-                if await g.count():
-                    await g.click(timeout=3000)
-            except Exception:
-                pass
-
-        if params.get("exact_match"):
-            try:
-                cb = root.get_by_text(
-                    re.compile(r"Точное совпадение|Exact match|התאמה מדויקת", re.I)
-                ).first
-                if await cb.count():
-                    await cb.click(timeout=3000)
-            except Exception:
-                pass
+    # ── Advanced search: pills → popup (data-automations) → «Применить» ──────
+    await _fill_advanced(root, page, params, log)
 
     # Record type filter
     rf = params.get("record_filter", "All Records")
