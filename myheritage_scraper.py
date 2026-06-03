@@ -1476,7 +1476,29 @@ async def _search(page, search_url, params, has_cookies, log):
         await results_page.wait_for_load_state("networkidle", timeout=20000)
     except Exception:
         await asyncio.sleep(3)
-    log(f"  ✓ Страница результатов: {results_page.url[:80]}")
+    log(f"  ✓ Страница результатов: {results_page.url[:90]}")
+
+    # EXACT search via the URL (deterministic — the «Точное совпадение всех
+    # параметров» checkbox is unreliable). MyHeritage encodes exact mode as
+    # exactSearch=1 in the results URL, which already carries every field
+    # param. If exact was requested, set it and reload.
+    if params.get("exact_match") and not params.get("_exact_ok"):
+        u = results_page.url
+        if re.search(r"[?&]exactSearch=", u):
+            new_u = re.sub(r"([?&]exactSearch=)[^&]*", r"\g<1>1", u)
+        else:
+            new_u = u + ("&" if "?" in u else "?") + "exactSearch=1"
+        if new_u != u:
+            try:
+                log("  → Применяю точное совпадение через URL (exactSearch=1)…")
+                await results_page.goto(new_u, wait_until="domcontentloaded",
+                                        timeout=30000)
+                await results_page.wait_for_load_state("networkidle", timeout=20000)
+                params["_exact_ok"] = True
+                log(f"  ✓ Точный поиск: {results_page.url[:90]}")
+            except Exception as _e:
+                log(f"  !! exactSearch через URL не вышел: {_e}")
+
     return results_page
 
 async def _collect_one_page(page):
@@ -1649,7 +1671,15 @@ async def _detail(page, url, has_cookies, log):
         await page.goto(url, wait_until="domcontentloaded", timeout=35000)
         if has_cookies:
             await _accept_cookies(page, log)
-        await asyncio.sleep(2)
+        await asyncio.sleep(1.5)
+        # nudge lazy-loaded images (the record photo) into loading
+        try:
+            await page.evaluate("() => window.scrollBy(0, 400)")
+            await asyncio.sleep(1.2)
+            await page.evaluate("() => window.scrollTo(0, 0)")
+            await asyncio.sleep(0.5)
+        except Exception:
+            pass
     except Exception as exc:
         log(f"    !! {exc}")
         return d
@@ -1716,15 +1746,32 @@ async def _detail(page, url, has_cookies, log):
             /полный профиль|full profile|profil complet/i.test(norm(a.textContent)));
         if (prof) res.profile = prof.href;
 
-        // record photo — a REAL person/document image only. Skip brand logos
-        // (Geni), avatars, icons, sprites. NOTE: do NOT skip "myheritage" — the
-        // real person photos are served from the MyHeritage CDN!
-        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank/i;
-        const img = Array.from(document.querySelectorAll('img[src]')).find(i =>
-            (i.naturalWidth || i.width || 0) >= 100 &&
-            (i.naturalHeight || i.height || 0) >= 100 &&
-            !SKIP.test(i.src || '') && !SKIP.test(i.alt || ''));
-        if (img) res.photo = img.src;
+        // record photo — a REAL person/document image. Photos are lazy-loaded,
+        // so naturalWidth can be 0 → take the URL from src / data-src / srcset
+        // regardless of load state. Skip brand logos (Geni), icons, avatars.
+        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank|spacer|loading/i;
+        const bestSrc = (im) => {
+            // prefer the largest candidate in srcset, else data-src/src
+            const ss = im.getAttribute('srcset') || im.getAttribute('data-srcset') || '';
+            if (ss) {
+                const parts = ss.split(',').map(s => s.trim().split(' ')[0]).filter(Boolean);
+                if (parts.length) return parts[parts.length - 1];
+            }
+            return im.getAttribute('src') || im.getAttribute('data-src')
+                || im.getAttribute('data-original') || '';
+        };
+        let photo = '';
+        for (const im of document.querySelectorAll('img')) {
+            const s = bestSrc(im);
+            if (!s || !/^https?:|^\/\//.test(s)) continue;
+            if (SKIP.test(s) || SKIP.test(im.getAttribute('alt') || '')) continue;
+            // skip obviously tiny declared sizes
+            const w = parseInt(im.getAttribute('width') || '0', 10);
+            if (w && w < 40) continue;
+            photo = s.startsWith('//') ? 'https:' + s : s;
+            break;
+        }
+        res.photo = photo;
 
         // source line ("Семейные деревья MyHeritage", "Geni ...") as TEXT
         let src = Array.from(document.querySelectorAll('*')).find(e =>
@@ -1757,8 +1804,15 @@ async def _detail(page, url, has_cookies, log):
                 body = await r.body()
                 if len(body) > 1000:
                     d["thumb_bytes"] = body
-        except Exception:
-            pass
+                    log(f"    📷 фото {len(body)//1024}KB")
+                else:
+                    log("    📷 фото слишком маленькое — пропуск")
+            else:
+                log(f"    !! фото HTTP {r.status}")
+        except Exception as e:
+            log(f"    !! фото не скачалось: {e}")
+    else:
+        log("    (фото на странице не найдено)")
     return d
 
 # ── OUTPUT ───────────────────────────────────────────────────────────────── #
