@@ -1057,55 +1057,87 @@ async def _fill_advanced(root, page, params, log):
     параметров».
     """
     async def _click_tag(texts):
-        """Click a pill/tag by visible text (div.tag_label or any element)."""
-        for t in texts:
-            for getter in (
-                lambda: root.locator('div.tag_label').filter(
-                    has_text=re.compile(rf"^{re.escape(t)}\b", re.I)).first,
-                lambda: root.get_by_text(re.compile(rf"^{re.escape(t)}\b", re.I)).first,
-            ):
+        """Click a pill/tag by visible text — searches ALL frames via JS click
+        (the chip may be a div/span/button with class tag_label, anywhere)."""
+        for fr in page.frames:
+            for t in texts:
                 try:
-                    el = getter()
-                    if await el.count() and await el.is_visible():
-                        await el.click(timeout=4000)
+                    ok = await fr.evaluate(r"""(label) => {
+                        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                        const els = Array.from(document.querySelectorAll(
+                            'div, span, button, [role=button], [class*="tag" i], [class*="chip" i]'));
+                        for (const e of els) {
+                            const t = norm(e.textContent);
+                            if (!t || t.length > 40) continue;
+                            // match "Отец" or "Отец: ..." (already filled)
+                            if (t === label || t.startsWith(label + ':')
+                                || t.startsWith(label + ' ') || t === label) {
+                                if (e.offsetParent === null) continue;   // hidden
+                                e.scrollIntoView();
+                                e.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""", t)
+                    if ok:
                         await asyncio.sleep(0.8)
                         return True
                 except Exception:
                     continue
         return False
 
+    async def _find_auto(auto_id):
+        """Return (frame, locator) for a data-automations element, any frame."""
+        for fr in page.frames:
+            try:
+                loc = fr.locator(f'[data-automations="{auto_id}"]').first
+                if await loc.count():
+                    return fr, loc
+            except Exception:
+                continue
+        return None, None
+
     async def _fill_auto(auto_id, value):
-        """Fill an input by its exact data-automations id."""
         if not value:
             return
+        fr, el = await _find_auto(auto_id)
+        if not el:
+            log(f"  !! {auto_id} не найден")
+            return
         try:
-            el = root.locator(f'[data-automations="{auto_id}"]').first
-            if await el.count():
-                await el.scroll_into_view_if_needed(timeout=3000)
-                await el.click(timeout=3000)
-                await page.keyboard.press("Control+a")
-                await page.keyboard.press("Delete")
-                await page.keyboard.type(str(value), delay=40)
-                await asyncio.sleep(0.2)
-                log(f"  ✓ {auto_id} = {value!r}")
-            else:
-                log(f"  !! {auto_id} не найден")
+            await el.scroll_into_view_if_needed(timeout=3000)
+            await el.click(timeout=3000)
+            await page.keyboard.press("Control+a")
+            await page.keyboard.press("Delete")
+            await page.keyboard.type(str(value), delay=40)
+            await asyncio.sleep(0.2)
+            log(f"  ✓ {auto_id} = {value!r}")
         except Exception as e:
             log(f"  !! {auto_id}: {e}")
 
     async def _apply(auto_id):
-        """Click the popup's «Применить» button (data-automations=*_apply_button)."""
-        for sel in (f'[data-automations="{auto_id}"]',
-                    'button.search_form_apply_button',
-                    'button:has-text("Применить")', 'button:has-text("Apply")'):
+        """Click the popup's «Применить» button — exact id first, else generic."""
+        fr, el = await _find_auto(auto_id)
+        if el:
             try:
-                b = root.locator(sel).first
-                if await b.count() and await b.is_visible():
-                    await b.click(timeout=4000)
-                    await asyncio.sleep(0.6)
-                    return True
+                await el.click(timeout=4000)
+                await asyncio.sleep(0.6)
+                return True
             except Exception:
-                continue
+                pass
+        # generic Применить button across frames
+        for fr in page.frames:
+            for sel in ('button.search_form_apply_button',
+                        'button:has-text("Применить")', 'button:has-text("Apply")'):
+                try:
+                    b = fr.locator(sel).first
+                    if await b.count() and await b.is_visible():
+                        await b.click(timeout=4000)
+                        await asyncio.sleep(0.6)
+                        return True
+                except Exception:
+                    continue
         return False
 
     # ── Family members: pill → two name inputs → apply ──────────────────────
@@ -1431,7 +1463,8 @@ async def _collect(page, log, max_pages=30):
 # ── DETAIL PAGE ───────────────────────────────────────────────────────────── #
 async def _detail(page, url, has_cookies, log):
     d = {"url": url, "full_name": "", "category": "", "table_data": {},
-         "profile_url": "", "thumb_bytes": None, "is_historical": False}
+         "profile_url": "", "source_text": "", "thumb_bytes": None,
+         "is_historical": False}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=35000)
         if has_cookies:
@@ -1503,11 +1536,21 @@ async def _detail(page, url, has_cookies, log):
             /полный профиль|full profile|profil complet/i.test(norm(a.textContent)));
         if (prof) res.profile = prof.href;
 
-        // record photo (a real image, not avatar/icon, in the record area)
+        // record photo — a REAL person/document image only. Skip brand logos
+        // (Geni, MyHeritage), avatars, icons, sprites. Geni-sourced tree
+        // records show only the Geni logo → we must NOT embed it.
+        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|myheritage|\.svg|badge|flag/i;
         const img = Array.from(document.querySelectorAll('img[src]')).find(i =>
-            (i.naturalWidth || i.width || 0) > 80 &&
-            !/avatar|icon|sprite|placeholder|logo/i.test(i.src || ''));
+            (i.naturalWidth || i.width || 0) >= 100 &&
+            (i.naturalHeight || i.height || 0) >= 100 &&
+            !SKIP.test(i.src || '') && !SKIP.test(i.alt || ''));
         if (img) res.photo = img.src;
+
+        // source line ("Семейные деревья MyHeritage", "Geni ...") as TEXT
+        let src = Array.from(document.querySelectorAll('*')).find(e =>
+            !e.children.length &&
+            /^(Источник|Source|В категории|In category)/i.test(norm(e.textContent)));
+        res.source = src ? norm(src.textContent) : '';
 
         res.historical = /историческ|historical/i.test(res.category || '');
         return res;
@@ -1516,6 +1559,7 @@ async def _detail(page, url, has_cookies, log):
     d["full_name"]  = (info.get("name") or "").strip()
     d["category"]   = (info.get("category") or "").strip()
     d["profile_url"] = info.get("profile") or ""
+    d["source_text"] = (info.get("source") or "").strip()
     d["is_historical"] = bool(info.get("historical"))
     td = {}
     for pair in info.get("fields", []):
@@ -1576,9 +1620,14 @@ def write_docx(path, records, qlines):
         p2 = doc.add_paragraph()
         p2.add_run("Match: ").bold = True
         p2.add_run(f"{rec.get('score','?')}%")
+        # Source as TEXT (e.g. "Семейные деревья MyHeritage / Geni") — never a logo
+        if rec.get("source_text"):
+            ps = doc.add_paragraph()
+            ps.add_run("Источник: ").bold = True
+            ps.add_run(rec["source_text"])
         if rec.get("url"):
             p3 = doc.add_paragraph()
-            p3.add_run("Source: ").bold = True
+            p3.add_run("Ссылка: ").bold = True
             _hyperlink(p3, rec["url"], rec["url"])
         td = rec.get("table_data", {})
         if td:
