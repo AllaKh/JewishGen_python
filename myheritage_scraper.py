@@ -1231,9 +1231,29 @@ async def _fill_advanced(root, page, params, log):
                  or params.get("gender", "Any") not in ("Any", "Любой")
                  or params.get("exact_match"))
     if need_more:
-        # open the "+ Больше" panel (plain click, no input to verify)
-        await _open_pill(["Больше", "More"], "")
-        await asyncio.sleep(0.6)
+        # Open the "+ Больше" panel and VERIFY it opened by waiting for one of
+        # its hallmark texts to appear (the exact-match checkbox / event tags).
+        async def _more_open():
+            for fr in page.frames:
+                try:
+                    el = fr.get_by_text(re.compile(
+                        r"Точное совпадение всех параметров|событие из жизни|"
+                        r"Семейное положение", re.I)).first
+                    if await el.count() and await el.is_visible():
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        opened_more = False
+        for _attempt in range(3):
+            await _open_pill(["Больше", "More"], "")
+            await asyncio.sleep(0.8)
+            if await _more_open():
+                opened_more = True
+                break
+        log("  → панель «+ Больше» открыта" if opened_more
+            else "  !! панель «+ Больше» не открылась")
 
         for key, tags, place_auto, apply_id in [
             ("residence", ["Местожительство", "Residence"],
@@ -1265,26 +1285,30 @@ async def _fill_advanced(root, page, params, log):
                     pass
                 await _apply("gender_filter_apply_button")
 
-        # «Точное совпадение всех параметров» — checkbox is
-        # <span role="checkbox" data-automations="check_box_control_label">.
-        # Search ALL frames and click only if not already checked.
+        # «Точное совпадение всех параметров» — the data-automations
+        # "check_box_control_label" is NOT unique (every field's «строго по
+        # имени» checkbox shares it). So match the checkbox by its TEXT,
+        # frame-wide, and click the VISIBLE one (only if not already checked).
         if params.get("exact_match"):
             done = False
             for fr in page.frames:
-                for sel in ('[data-automations="check_box_control_label"]',
-                            '[role="checkbox"]:has-text("Точное совпадение всех параметров")',
-                            'span:has-text("Точное совпадение всех параметров")'):
-                    try:
-                        cb = fr.locator(sel).first
-                        if await cb.count() and await cb.is_visible():
-                            checked = (await cb.get_attribute("aria-checked") or "")
-                            if checked != "true":
-                                await cb.click(timeout=3000)
-                            log("  ✓ Точное совпадение всех параметров")
-                            done = True
-                            break
-                    except Exception:
-                        continue
+                try:
+                    cbs = fr.get_by_text(re.compile(
+                        r"Точное совпадение всех параметров", re.I))
+                    nc = await cbs.count()
+                    for i in range(nc):
+                        cb = cbs.nth(i)
+                        if not await cb.is_visible():
+                            continue
+                        checked = (await cb.get_attribute("aria-checked") or "")
+                        if checked != "true":
+                            await cb.click(timeout=3000)
+                            await asyncio.sleep(0.4)
+                        log("  ✓ Точное совпадение всех параметров")
+                        done = True
+                        break
+                except Exception:
+                    continue
                 if done:
                     break
             if not done:
