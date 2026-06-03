@@ -1265,16 +1265,30 @@ async def _fill_advanced(root, page, params, log):
                     pass
                 await _apply("gender_filter_apply_button")
 
-        # «Точное совпадение всех параметров»
+        # «Точное совпадение всех параметров» — checkbox is
+        # <span role="checkbox" data-automations="check_box_control_label">.
+        # Search ALL frames and click only if not already checked.
         if params.get("exact_match"):
-            try:
-                cb = root.get_by_text(
-                    re.compile(r"Точное совпадение всех параметров", re.I)).first
-                if await cb.count():
-                    await cb.click(timeout=3000)
-                    log("  ✓ Точное совпадение всех параметров")
-            except Exception:
-                pass
+            done = False
+            for fr in page.frames:
+                for sel in ('[data-automations="check_box_control_label"]',
+                            '[role="checkbox"]:has-text("Точное совпадение всех параметров")',
+                            'span:has-text("Точное совпадение всех параметров")'):
+                    try:
+                        cb = fr.locator(sel).first
+                        if await cb.count() and await cb.is_visible():
+                            checked = (await cb.get_attribute("aria-checked") or "")
+                            if checked != "true":
+                                await cb.click(timeout=3000)
+                            log("  ✓ Точное совпадение всех параметров")
+                            done = True
+                            break
+                    except Exception:
+                        continue
+                if done:
+                    break
+            if not done:
+                log("  !! чекбокс «Точное совпадение» не найден")
 
 
 async def _search(page, search_url, params, has_cookies, log):
