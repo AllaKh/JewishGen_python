@@ -1087,38 +1087,65 @@ async def _fill_advanced(root, page, params, log):
                     continue
         return False
 
-    async def _find_auto(auto_id):
-        """Return (frame, locator) for a data-automations element, any frame."""
-        for fr in page.frames:
-            try:
-                loc = fr.locator(f'[data-automations="{auto_id}"]').first
-                if await loc.count():
-                    return fr, loc
-            except Exception:
-                continue
+    async def _find_auto(auto_id, want_visible=True, wait_secs=5):
+        """Return (frame, locator) for the VISIBLE data-automations element.
+        MyHeritage keeps hidden template duplicates, so we must skip those and
+        wait for the popup's real (visible) one to appear."""
+        for _ in range(wait_secs * 2):
+            for fr in page.frames:
+                try:
+                    loc = fr.locator(f'[data-automations="{auto_id}"]')
+                    n = await loc.count()
+                    for i in range(n):
+                        el = loc.nth(i)
+                        if not want_visible or await el.is_visible():
+                            return fr, el
+                except Exception:
+                    continue
+            if not want_visible:
+                break
+            await asyncio.sleep(0.5)
         return None, None
 
     async def _fill_auto(auto_id, value):
         if not value:
             return
-        fr, el = await _find_auto(auto_id)
+        fr, el = await _find_auto(auto_id, want_visible=True)
         if not el:
-            log(f"  !! {auto_id} не найден")
+            log(f"  !! {auto_id} не виден")
             return
+        # Try a normal click+type first; fall back to a JS value-set with the
+        # React native setter + input/change events (handles hidden/animating).
         try:
-            await el.scroll_into_view_if_needed(timeout=3000)
             await el.click(timeout=3000)
             await page.keyboard.press("Control+a")
             await page.keyboard.press("Delete")
             await page.keyboard.type(str(value), delay=40)
             await asyncio.sleep(0.2)
-            log(f"  ✓ {auto_id} = {value!r}")
+            if (await el.input_value()).strip():
+                log(f"  ✓ {auto_id} = {value!r}")
+                return
+        except Exception:
+            pass
+        try:
+            await fr.evaluate(r"""([id, val]) => {
+                const el = Array.from(document.querySelectorAll('[data-automations="'+id+'"]'))
+                    .find(e => e.offsetParent !== null) ||
+                    document.querySelector('[data-automations="'+id+'"]');
+                if (!el) return;
+                const setter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                el.focus(); setter.call(el, val);
+                el.dispatchEvent(new Event('input',  {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+            }""", [auto_id, str(value)])
+            log(f"  ✓ {auto_id} = {value!r} (JS)")
         except Exception as e:
             log(f"  !! {auto_id}: {e}")
 
     async def _apply(auto_id):
         """Click the popup's «Применить» button — exact id first, else generic."""
-        fr, el = await _find_auto(auto_id)
+        fr, el = await _find_auto(auto_id, want_visible=True, wait_secs=2)
         if el:
             try:
                 await el.click(timeout=4000)
@@ -1126,7 +1153,6 @@ async def _fill_advanced(root, page, params, log):
                 return True
             except Exception:
                 pass
-        # generic Применить button across frames
         for fr in page.frames:
             for sel in ('button.search_form_apply_button',
                         'button:has-text("Применить")', 'button:has-text("Apply")'):
@@ -1247,7 +1273,10 @@ async def _search(page, search_url, params, has_cookies, log):
     await _fill_research_basic(root, page, params, log)
 
     # ── Advanced search: pills → popup (data-automations) → «Применить» ──────
-    await _fill_advanced(root, page, params, log)
+    try:
+        await _fill_advanced(root, page, params, log)
+    except Exception as _exc:
+        log(f"  !! advanced search error (продолжаю поиск): {_exc}")
 
     # Record type filter
     rf = params.get("record_filter", "All Records")
