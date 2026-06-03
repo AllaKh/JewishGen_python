@@ -1245,13 +1245,15 @@ async def _fill_advanced(root, page, params, log):
                     continue
             return False
 
+        # "+ Больше" is a TOGGLE — clicking it twice closes it again. So check
+        # whether it's already open BEFORE each click, and click only if not.
         opened_more = False
-        for _attempt in range(3):
-            await _open_pill(["Больше", "More"], "")
-            await asyncio.sleep(0.8)
+        for _attempt in range(4):
             if await _more_open():
                 opened_more = True
                 break
+            await _open_pill(["Больше", "More"], "")
+            await asyncio.sleep(1.0)
         log("  → панель «+ Больше» открыта" if opened_more
             else "  !! панель «+ Больше» не открылась")
 
