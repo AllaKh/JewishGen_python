@@ -1285,34 +1285,62 @@ async def _fill_advanced(root, page, params, log):
                     pass
                 await _apply("gender_filter_apply_button")
 
-        # «Точное совпадение всех параметров» — the data-automations
-        # "check_box_control_label" is NOT unique (every field's «строго по
-        # имени» checkbox shares it). So match the checkbox by its TEXT,
-        # frame-wide, and click the VISIBLE one (only if not already checked).
+        # «Точное совпадение всех параметров». The checkbox text/role lives in
+        # the "+ Больше" panel; it may render slightly late and/or sit below a
+        # scroll. Poll up to 6s across all frames, tag the checkbox via JS,
+        # scroll it in and REAL-click it; verify aria-checked flips to true.
         if params.get("exact_match"):
             done = False
-            for fr in page.frames:
-                try:
-                    cbs = fr.get_by_text(re.compile(
-                        r"Точное совпадение всех параметров", re.I))
-                    nc = await cbs.count()
-                    for i in range(nc):
-                        cb = cbs.nth(i)
-                        if not await cb.is_visible():
-                            continue
-                        checked = (await cb.get_attribute("aria-checked") or "")
-                        if checked != "true":
-                            await cb.click(timeout=3000)
-                            await asyncio.sleep(0.4)
-                        log("  ✓ Точное совпадение всех параметров")
-                        done = True
-                        break
-                except Exception:
-                    continue
+            for _attempt in range(12):
+                seen_count = 0
+                for fr in page.frames:
+                    try:
+                        info = await fr.evaluate(r"""() => {
+                            const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+                            document.querySelectorAll('[data-pw-exact]').forEach(
+                                e => e.removeAttribute('data-pw-exact'));
+                            const els = Array.from(document.querySelectorAll(
+                                '[role=checkbox], span, label, div'));
+                            let found = 0, checked = null;
+                            for (const e of els) {
+                                const t = norm(e.textContent);
+                                if (t.length > 60) continue;
+                                if (!/Точное совпадение/i.test(t)) continue;
+                                found++;
+                                if (e.offsetParent === null) continue;   // hidden
+                                const cb = e.closest('[role=checkbox]') || e;
+                                cb.setAttribute('data-pw-exact', '1');
+                                checked = cb.getAttribute('aria-checked');
+                                return {found, visible: true, checked};
+                            }
+                            return {found, visible: false, checked};
+                        }""")
+                        seen_count += info.get("found", 0)
+                        if info.get("visible"):
+                            cb = fr.locator('[data-pw-exact="1"]').first
+                            try:
+                                await cb.scroll_into_view_if_needed(timeout=2000)
+                            except Exception:
+                                pass
+                            if info.get("checked") != "true":
+                                try:
+                                    await cb.click(timeout=3000)
+                                except Exception:
+                                    await fr.evaluate(
+                                        "() => { const e=document.querySelector("
+                                        "'[data-pw-exact=\"1\"]'); if(e) e.click(); }")
+                                await asyncio.sleep(0.4)
+                            log("  ✓ Точное совпадение всех параметров")
+                            done = True
+                            break
+                    except Exception:
+                        continue
                 if done:
                     break
+                await asyncio.sleep(0.5)
             if not done:
-                log("  !! чекбокс «Точное совпадение» не найден")
+                log(f"  !! чекбокс «Точное совпадение» не найден "
+                    f"(в DOM элементов с текстом: {seen_count})")
 
 
 async def _search(page, search_url, params, has_cookies, log):
