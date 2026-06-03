@@ -1393,12 +1393,16 @@ async def _collect_one_page(page):
         const out = [];
         const seen = new Set();
         // Find the "expanded criteria" divider — everything after it is relaxed.
+        // The phrase may be split across child spans, so search the SMALLEST
+        // element whose text contains both key words (not just leaf nodes).
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        let divider = null;
-        for (const e of document.querySelectorAll('*')) {
-            if (e.children.length) continue;
-            if (/расширени[ея] критери|expanded (the )?search criteria|broadened/i
-                    .test(norm(e.textContent))) { divider = e; break; }
+        let divider = null, dlen = 1e9;
+        for (const e of document.querySelectorAll('div, p, span, section, h1, h2, h3')) {
+            const t = norm(e.textContent);
+            if (t.length > 300 || t.length >= dlen) continue;
+            const ru = /расширени/i.test(t) && /критери/i.test(t);
+            const en = /expand/i.test(t) && /criteri/i.test(t);
+            if (ru || en) { divider = e; dlen = t.length; }
         }
         const beforeDivider = (el) => {
             if (!divider) return true;
@@ -1615,9 +1619,9 @@ async def _detail(page, url, has_cookies, log):
         if (prof) res.profile = prof.href;
 
         // record photo — a REAL person/document image only. Skip brand logos
-        // (Geni, MyHeritage), avatars, icons, sprites. Geni-sourced tree
-        // records show only the Geni logo → we must NOT embed it.
-        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|myheritage|\.svg|badge|flag/i;
+        // (Geni), avatars, icons, sprites. NOTE: do NOT skip "myheritage" — the
+        // real person photos are served from the MyHeritage CDN!
+        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank/i;
         const img = Array.from(document.querySelectorAll('img[src]')).find(i =>
             (i.naturalWidth || i.width || 0) >= 100 &&
             (i.naturalHeight || i.height || 0) >= 100 &&
@@ -2010,16 +2014,25 @@ async def run_scraper(*,
                 if _done():
                     break
                 _prog(35 + int(50 * i / n), f"[{i}/{n}] Reading record…")
-                dp = await ctx.new_page()
+                dp = None
                 try:
+                    dp = await ctx.new_page()
                     det = await _detail(dp, r["url"], has_cookies, log)
                     det["score"] = r["score"]
                     if not det.get("full_name"):
                         det["full_name"] = r["name_text"]
                     records.append(det)
                     log(f"    ✓ {det['full_name']} — {det['score']}%")
+                except Exception as _exc:
+                    log(f"    !! запись пропущена: {_exc}")
+                    if "closed" in str(_exc).lower():
+                        break          # context/browser gone — stop gracefully
                 finally:
-                    await dp.close()
+                    if dp is not None:
+                        try:
+                            await dp.close()
+                        except Exception:
+                            pass
                 await asyncio.sleep(0.7)
 
             _prog(88, "Saving files…")
