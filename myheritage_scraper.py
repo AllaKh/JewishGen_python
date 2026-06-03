@@ -1287,69 +1287,82 @@ async def _fill_advanced(root, page, params, log):
                     pass
                 await _apply("gender_filter_apply_button")
 
-        # «Точное совпадение всех параметров». The text span has class
-        # "checkbox_control_label_text" — it's only the LABEL; the clickable
-        # control is a PARENT. So tag the label, then try clicking the label,
-        # its parent and grandparent (and Space), re-reading aria-checked via a
-        # FRESH query each time (React re-creates the node on toggle).
+        # «Точное совпадение всех параметров». aria-checked never flips by
+        # plain clicks → the click is intercepted by the visual checkbox box
+        # and/or aria-checked is decorative. So: tag the label; FORCE-click
+        # several candidate targets (the visible checkbox box, the parent
+        # control, the label) at real coordinates; verify "checked" via EITHER
+        # aria-checked OR a nearby input[type=checkbox].checked, re-read fresh.
         if params.get("exact_match"):
             async def _exact_state():
-                """Find the checkbox; return (frame, aria-checked) or (None,None)."""
+                """Tag the control; return (frame, checked_bool) or (None,None)."""
                 for fr in page.frames:
                     try:
                         st = await fr.evaluate(r"""() => {
                             const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                            document.querySelectorAll('[data-pw-exlabel]').forEach(
-                                e => e.removeAttribute('data-pw-exlabel'));
-                            for (const e of document.querySelectorAll('span, label, [role=checkbox]')) {
+                            document.querySelectorAll('[data-pw-ex],[data-pw-exbox]')
+                                .forEach(e => { e.removeAttribute('data-pw-ex');
+                                                e.removeAttribute('data-pw-exbox'); });
+                            for (const e of document.querySelectorAll('span,label,[role=checkbox]')) {
                                 const t = norm(e.textContent);
                                 if (t.length > 60) continue;
                                 if (!/Точное совпадение всех параметров/i.test(t)) continue;
                                 if (e.offsetParent === null) continue;
-                                e.setAttribute('data-pw-exlabel', '1');
-                                const cb = e.closest('[role=checkbox]') ||
-                                           e.parentElement.closest('[role=checkbox]') || e;
-                                return cb.getAttribute('aria-checked');
+                                // control = nearest clickable wrapper
+                                const ctrl = e.closest('label, [role=checkbox]')
+                                          || e.parentElement || e;
+                                ctrl.setAttribute('data-pw-ex', '1');
+                                // the visual checkbox box (first small sibling/child)
+                                const box = ctrl.querySelector(
+                                    '[class*="checkbox" i]:not([class*="label" i]), '
+                                    + 'svg, [class*="box" i], [class*="control" i]');
+                                if (box) box.setAttribute('data-pw-exbox', '1');
+                                // state from aria-checked or a real input
+                                const inp = ctrl.querySelector('input[type=checkbox]');
+                                const aria = (e.closest('[role=checkbox]')
+                                    || ctrl).getAttribute('aria-checked');
+                                const checked = (inp && inp.checked) || aria === 'true';
+                                return checked;
                             }
                             return 'none';
                         }""")
                         if st != 'none':
-                            return fr, st
+                            return fr, bool(st)
                     except Exception:
                         continue
                 return None, None
 
             done = False
-            for _attempt in range(12):
+            for _attempt in range(10):
                 fr, checked = await _exact_state()
                 if fr is None:
                     await asyncio.sleep(0.5)
                     continue
-                if checked == "true":
+                if checked:
                     log("  ✓ Точное совпадение всех параметров")
                     done = True
                     break
-                label = fr.locator('[data-pw-exlabel="1"]').first
-                # click label, its parent, its grandparent, then Space
-                targets = [label, label.locator("xpath=.."),
-                           label.locator("xpath=../..")]
-                for tgt in targets:
+                for sel in ('[data-pw-exbox="1"]', '[data-pw-ex="1"]'):
                     try:
+                        tgt = fr.locator(sel).first
+                        if not await tgt.count():
+                            continue
                         await tgt.scroll_into_view_if_needed(timeout=1500)
-                        await tgt.click(timeout=2500)
-                        await asyncio.sleep(0.4)
+                        await tgt.click(timeout=2500, force=True)
+                        await asyncio.sleep(1.0)
+                        _, now = await _exact_state()
+                        if now:
+                            done = True
+                            break
                     except Exception:
                         continue
-                    _, now = await _exact_state()
-                    if now == "true":
-                        done = True
-                        break
                 if not done:
                     try:
-                        await label.focus(); await page.keyboard.press("Space")
-                        await asyncio.sleep(0.4)
+                        await fr.locator('[data-pw-ex="1"]').first.focus()
+                        await page.keyboard.press("Space")
+                        await asyncio.sleep(1.0)
                         _, now = await _exact_state()
-                        if now == "true":
+                        if now:
                             done = True
                     except Exception:
                         pass
@@ -1357,6 +1370,7 @@ async def _fill_advanced(root, page, params, log):
                     log("  ✓ Точное совпадение всех параметров")
                     break
                 await asyncio.sleep(0.4)
+            params["_exact_ok"] = done
             if not done:
                 log("  !! не удалось включить «Точное совпадение всех параметров»")
 
@@ -2081,6 +2095,15 @@ async def run_scraper(*,
                     r["score"] = round(s, 1)
                     qualified.append(r)
             log(f"  Подходящих записей: {len(qualified)}")
+
+            # Safety: if exact match was requested but couldn't be enabled, the
+            # site returns a huge fuzzy set — don't grind through 500 records.
+            if (params.get("exact_match") and not params.get("_exact_ok")
+                    and len(qualified) > 40):
+                log(f"  !! «Точное совпадение» не включилось — обрабатываю первые "
+                    f"40 из {len(qualified)} (самые релевантные сверху), "
+                    f"чтобы не ждать часами.")
+                qualified = qualified[:40]
 
             if not qualified:
                 _prog(100, "No results above threshold.")
