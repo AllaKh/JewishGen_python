@@ -1287,14 +1287,12 @@ async def _fill_advanced(root, page, params, log):
                     pass
                 await _apply("gender_filter_apply_button")
 
-        # «Точное совпадение всех параметров». The checkbox text/role lives in
-        # the "+ Больше" panel; it may render slightly late and/or sit below a
-        # scroll. Poll up to 6s across all frames, tag the checkbox via JS,
-        # scroll it in and REAL-click it; verify aria-checked flips to true.
+        # «Точное совпадение всех параметров». Match by the FULL text «всех
+        # параметров» (so we never hit «Точное совпадение года»), tag the
+        # VISIBLE [role=checkbox], then toggle it and VERIFY aria-checked flips
+        # to true (real click → if it doesn't register, focus + Space).
         if params.get("exact_match"):
-            done = False
-            for _attempt in range(12):
-                seen_count = 0
+            async def _find_exact():
                 for fr in page.frames:
                     try:
                         info = await fr.evaluate(r"""() => {
@@ -1302,47 +1300,60 @@ async def _fill_advanced(root, page, params, log):
                             document.querySelectorAll('[data-pw-exact]').forEach(
                                 e => e.removeAttribute('data-pw-exact'));
                             const els = Array.from(document.querySelectorAll(
-                                '[role=checkbox], span, label, div'));
-                            let found = 0, checked = null;
+                                '[role=checkbox], span, label'));
                             for (const e of els) {
                                 const t = norm(e.textContent);
                                 if (t.length > 60) continue;
-                                if (!/Точное совпадение/i.test(t)) continue;
-                                found++;
-                                if (e.offsetParent === null) continue;   // hidden
+                                if (!/Точное совпадение всех параметров/i.test(t)) continue;
+                                if (e.offsetParent === null) continue;
                                 const cb = e.closest('[role=checkbox]') || e;
                                 cb.setAttribute('data-pw-exact', '1');
-                                checked = cb.getAttribute('aria-checked');
-                                return {found, visible: true, checked};
+                                return {checked: cb.getAttribute('aria-checked')};
                             }
-                            return {found, visible: false, checked};
+                            return null;
                         }""")
-                        seen_count += info.get("found", 0)
-                        if info.get("visible"):
-                            cb = fr.locator('[data-pw-exact="1"]').first
-                            try:
-                                await cb.scroll_into_view_if_needed(timeout=2000)
-                            except Exception:
-                                pass
-                            if info.get("checked") != "true":
-                                try:
-                                    await cb.click(timeout=3000)
-                                except Exception:
-                                    await fr.evaluate(
-                                        "() => { const e=document.querySelector("
-                                        "'[data-pw-exact=\"1\"]'); if(e) e.click(); }")
-                                await asyncio.sleep(0.4)
-                            log("  ✓ Точное совпадение всех параметров")
+                        if info is not None:
+                            return fr, info.get("checked")
+                    except Exception:
+                        continue
+                return None, None
+
+            done = False
+            for _attempt in range(12):
+                fr, checked = await _find_exact()
+                if fr is None:
+                    await asyncio.sleep(0.5)
+                    continue
+                cb = fr.locator('[data-pw-exact="1"]').first
+                if checked == "true":
+                    log("  ✓ Точное совпадение всех параметров (уже включено)")
+                    done = True
+                    break
+                # toggle: real click, then verify; fall back to focus+Space
+                for method in ("click", "space", "jsclick"):
+                    try:
+                        if method == "click":
+                            await cb.scroll_into_view_if_needed(timeout=2000)
+                            await cb.click(timeout=3000)
+                        elif method == "space":
+                            await cb.focus()
+                            await page.keyboard.press("Space")
+                        else:
+                            await fr.evaluate("() => { const e=document."
+                                "querySelector('[data-pw-exact=\"1\"]'); if(e) e.click(); }")
+                        await asyncio.sleep(0.5)
+                        now = await cb.get_attribute("aria-checked")
+                        if now == "true":
+                            log(f"  ✓ Точное совпадение всех параметров (через {method})")
                             done = True
                             break
                     except Exception:
                         continue
                 if done:
                     break
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.4)
             if not done:
-                log(f"  !! чекбокс «Точное совпадение» не найден "
-                    f"(в DOM элементов с текстом: {seen_count})")
+                log("  !! не удалось включить «Точное совпадение всех параметров»")
 
 
 async def _search(page, search_url, params, has_cookies, log):
