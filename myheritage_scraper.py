@@ -1746,32 +1746,47 @@ async def _detail(page, url, has_cookies, log):
             /полный профиль|full profile|profil complet/i.test(norm(a.textContent)));
         if (prof) res.profile = prof.href;
 
-        // record photo — a REAL person/document image. Photos are lazy-loaded,
-        // so naturalWidth can be 0 → take the URL from src / data-src / srcset
-        // regardless of load state. Skip brand logos (Geni), icons, avatars.
-        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank|spacer|loading/i;
+        // record photo — pick the LARGEST real image (the portrait), not the
+        // first one (which was a 1×1 tracking pixel). Photos are lazy-loaded,
+        // so use src / data-src / srcset and size by the displayed box.
+        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank|spacer|loading|pixel|1x1/i;
         const bestSrc = (im) => {
-            // prefer the largest candidate in srcset, else data-src/src
             const ss = im.getAttribute('srcset') || im.getAttribute('data-srcset') || '';
             if (ss) {
                 const parts = ss.split(',').map(s => s.trim().split(' ')[0]).filter(Boolean);
                 if (parts.length) return parts[parts.length - 1];
             }
             return im.getAttribute('src') || im.getAttribute('data-src')
-                || im.getAttribute('data-original') || '';
+                || im.getAttribute('data-original') || im.getAttribute('data-lazy') || '';
         };
-        let photo = '';
+        const candidates = [];
         for (const im of document.querySelectorAll('img')) {
             const s = bestSrc(im);
             if (!s || !/^https?:|^\/\//.test(s)) continue;
             if (SKIP.test(s) || SKIP.test(im.getAttribute('alt') || '')) continue;
-            // skip obviously tiny declared sizes
-            const w = parseInt(im.getAttribute('width') || '0', 10);
-            if (w && w < 40) continue;
-            photo = s.startsWith('//') ? 'https:' + s : s;
-            break;
+            const r = im.getBoundingClientRect();
+            const w = Math.max(r.width || 0, im.naturalWidth || 0,
+                               parseInt(im.getAttribute('width') || '0', 10) || 0);
+            const h = Math.max(r.height || 0, im.naturalHeight || 0,
+                               parseInt(im.getAttribute('height') || '0', 10) || 0);
+            const area = w * h;
+            if (area < 50 * 50) continue;           // skip tiny pixels/icons
+            candidates.push({src: s.startsWith('//') ? 'https:' + s : s, area});
         }
-        res.photo = photo;
+        // also CSS background-image photos (some cards use them)
+        for (const el of document.querySelectorAll('[style*="background-image" i], [class*="photo" i], [class*="thumbnail" i]')) {
+            const bg = (el.style && el.style.backgroundImage) || '';
+            const m = bg.match(/url\((['"]?)(.*?)\1\)/i);
+            if (!m) continue;
+            let s = m[2];
+            if (!s || SKIP.test(s)) continue;
+            const r = el.getBoundingClientRect();
+            const area = (r.width || 0) * (r.height || 0);
+            if (area < 50 * 50) continue;
+            candidates.push({src: s.startsWith('//') ? 'https:' + s : s, area});
+        }
+        candidates.sort((a, b) => b.area - a.area);
+        res.photo = candidates.length ? candidates[0].src : '';
 
         // source line ("Семейные деревья MyHeritage", "Geni ...") as TEXT
         let src = Array.from(document.querySelectorAll('*')).find(e =>
