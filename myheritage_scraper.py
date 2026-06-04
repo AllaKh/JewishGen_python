@@ -44,7 +44,7 @@ except ImportError:
     _DOCX_OK = False
 
 try:
-    from openpyxl import Workbook
+    from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
     from openpyxl.utils import get_column_letter
     _OPENPYXL_OK = True
@@ -114,6 +114,109 @@ SITE_PRESETS = {
 }
 
 FILTER_OPTIONS = ["All Records", "Historical Records", "Family Trees"]
+
+# ── Multi-language UI labels ─────────────────────────────────────────────────
+# MyHeritage renders the research form in the SITE language (the lang= in the
+# URL, picked by the GUI "Site / Language" selector). Every place we locate a
+# pill / section / button BY ITS VISIBLE TEXT must therefore use the label in
+# the active site language. The GUI itself is always English and sends canonical
+# English values; the scraper translates them here.
+#
+# We pass ALL supported-language variants to the text matchers: only the variant
+# matching the loaded site exists on the page, and the data-automations verify-id
+# confirms the correct popup actually opened — so the same code drives every
+# site. Supported: en, ru, he, fr, de, es, pt. (Non-EN/RU labels are best-effort
+# — but the data-automations IDs do the real field/apply work and are language-
+# independent, so a wrong word only affects finding a pill by text, never input.)
+#
+# NOTE: the user's MyHeritage account UI language may override the URL lang after
+# the page loads (e.g. it reverts to Russian). That's fine: _ui_labels returns
+# EVERY language's variant, so whatever language the page ends up in, its label
+# is in the list and still matches.
+def _site_lang(site):
+    """Map a Site/Language preset to a language code (en/ru/he/fr/de/es/pt)."""
+    s = (site or "").lower()
+    if "russ" in s or "(.com ru" in s or " ru)" in s:
+        return "ru"
+    if "hebrew" in s or "co.il" in s or "israel" in s or "(.com he" in s:
+        return "he"
+    if "french" in s or "(.com fr" in s:
+        return "fr"
+    if "german" in s or "(.com de" in s:
+        return "de"
+    if "spanish" in s or "(.com es" in s:
+        return "es"
+    if "portug" in s or "(.com pt" in s:
+        return "pt"
+    return "en"
+
+_UI_I18N = {
+    "search":      {"en": "Search",      "ru": "Поиск",            "he": "חיפוש",
+                    "fr": "Rechercher",  "de": "Suchen",           "es": "Buscar",
+                    "pt": "Pesquisar"},
+    "more":        {"en": "More",        "ru": "Больше",           "he": "עוד",
+                    "fr": "Plus",        "de": "Mehr",             "es": "Más",
+                    "pt": "Mais"},
+    "father":      {"en": "Father",      "ru": "Отец",             "he": "אב",
+                    "fr": "Père",        "de": "Vater",            "es": "Padre",
+                    "pt": "Pai"},
+    "mother":      {"en": "Mother",      "ru": "Мать",             "he": "אם",
+                    "fr": "Mère",        "de": "Mutter",           "es": "Madre",
+                    "pt": "Mãe"},
+    "spouse":      {"en": "Spouse",      "ru": ["Супруг(-а)", "Супруг"],
+                    "he": ["בן/בת זוג", "בן זוג"],
+                    "fr": ["Conjoint(e)", "Conjoint"], "de": ["Ehepartner", "Partner"],
+                    "es": "Cónyuge",     "pt": "Cônjuge"},
+    "death":       {"en": "Death",       "ru": "Смерть",           "he": "פטירה",
+                    "fr": "Décès",       "de": "Tod",              "es": ["Defunción", "Fallecimiento"],
+                    "pt": ["Falecimento", "Morte"]},
+    "residence":   {"en": "Residence",   "ru": "Местожительство",  "he": "מגורים",
+                    "fr": "Résidence",   "de": ["Wohnsitz", "Wohnort"], "es": "Residencia",
+                    "pt": "Residência"},
+    "military":    {"en": "Military",    "ru": "Вооруженные силы", "he": "צבא",
+                    "fr": ["Service militaire", "Militaire"], "de": ["Militär", "Militärdienst"],
+                    "es": ["Servicio militar", "Militar"], "pt": ["Serviço militar", "Militar"]},
+    "immigration": {"en": "Immigration", "ru": "Иммиграция",       "he": "הגירה",
+                    "fr": "Immigration", "de": "Einwanderung",     "es": "Inmigración",
+                    "pt": "Imigração"},
+    "keywords":    {"en": "Keywords",    "ru": "Ключевые слова",   "he": "מילות מפתח",
+                    "fr": "Mots-clés",   "de": ["Schlüsselwörter", "Stichwörter"],
+                    "es": "Palabras clave", "pt": "Palavras-chave"},
+    "gender":      {"en": "Gender",      "ru": "Пол",              "he": "מין",
+                    "fr": "Sexe",        "de": "Geschlecht",       "es": ["Sexo", "Género"],
+                    "pt": ["Sexo", "Gênero"]},
+    "apply":       {"en": "Apply",       "ru": "Применить",        "he": "החל",
+                    "fr": "Appliquer",   "de": ["Anwenden", "Übernehmen"], "es": "Aplicar",
+                    "pt": "Aplicar"},
+    "male":        {"en": "Male",        "ru": "Мужчина",          "he": "זכר",
+                    "fr": ["Homme", "Masculin"], "de": ["Männlich", "Mann"],
+                    "es": ["Hombre", "Masculino"], "pt": ["Masculino", "Homem"]},
+    "female":      {"en": "Female",      "ru": "Женщина",          "he": "נקבה",
+                    "fr": ["Femme", "Féminin"], "de": ["Weiblich", "Frau"],
+                    "es": ["Mujer", "Femenino"], "pt": ["Feminino", "Mulher"]},
+}
+
+# Stable language order used when no specific site-language is given.
+_LANGS = ["en", "ru", "he", "fr", "de", "es", "pt"]
+
+def _ui_labels(concept, lang=None):
+    """All language variants of a concept's UI label, site-lang first when known.
+    Accepts dict values that are a single string or a list of strings. Iterates
+    every language present, so adding a language to _UI_I18N just works."""
+    d = _UI_I18N.get(concept, {})
+    out, seen = [], set()
+    for k in ([lang] if lang else []) + _LANGS + list(d.keys()):
+        vals = d.get(k) or []
+        if isinstance(vals, str):
+            vals = [vals]
+        for v in vals:
+            if v and v not in seen:
+                seen.add(v); out.append(v)
+    return out
+
+def _search_words(lang=None):
+    """Every language's word for the search-submit button (site-lang first)."""
+    return _ui_labels("search", lang)
 
 # ── Helpers ───────────────────────────────────────────────────────────────── #
 def _name_sim(a, b):
@@ -381,7 +484,19 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
         log(f"  2FA: !! поле не найдено — {label}")
         return False
 
+    # Protect the mail tab from the junk-tab auto-closer (_on_new_page): without
+    # this it closes the tab after ~3s for "not being MyHeritage", which killed
+    # the 2FA flow on fresh logins (notably the .co.il site, whose cookies don't
+    # carry over from .com so it always needs a real login + email code).
+    try:
+        ctx._mh_pause_autoclose = True
+    except Exception:
+        pass
     page = await ctx.new_page()
+    try:
+        page._mh_protected = True
+    except Exception:
+        pass
     try:
         await page.bring_to_front()
         log("  2FA: открываю новую вкладку mail.yandex.ru …")
@@ -389,55 +504,87 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
                         timeout=30000)
         await asyncio.sleep(2)
 
-        # 1) Click "Войти" (header login button) → goes to passport.yandex
-        await _click_any(['#header-login-button',
-                          'a:has-text("Войти")', 'a:has-text("Log in")'],
-                         "нажал «Войти»")
-        await asyncio.sleep(2)
+        # The PERSISTENT profile usually keeps the Yandex session, so the inbox
+        # opens straight away. In that case there is NO login form — running the
+        # login dance clicks a stray "Войти", navigates AWAY from the inbox and
+        # breaks the tab. So detect "already logged in" and skip login entirely.
+        async def _mail_logged_in():
+            try:
+                return await page.evaluate(r"""() => {
+                    if (document.querySelector('#header-login-button')) return false;
+                    const txt = e => (e.textContent || '').trim();
+                    const compose = Array.from(
+                        document.querySelectorAll('a,button,span,div'))
+                        .some(e => /^(Написать|Compose|Написати|כתוב)$/i.test(txt(e)));
+                    const rows = document.querySelectorAll(
+                        '[class*="MessageSnippet"], .mail-MessageSnippet, '
+                        + 'li[data-id]').length;
+                    return compose || rows > 0
+                           || /[#/](inbox|message)/i.test(location.href);
+                }""")
+            except Exception:
+                return False
 
-        # 2) Enter email/username (wait for passport page to render)
-        await _fill_any(
-            ['input[data-testid="text-field-input"][autocomplete="username"]',
-             'input[autocomplete="username"]',
-             'input[name="login"]', '#passp-field-login'],
-            mail_email, f"логин {mail_email}", wait=15000)
-
-        # 3) Click "Next"
-        await _click_any(['button[data-testid="add-user-next"]',
-                          'button:has-text("Next")', 'button:has-text("Далее")'],
-                         "нажал Next")
-        await asyncio.sleep(2)
-
-        # 4) Choose "Log in with your password" (skip the one-time-code step)
-        await _click_any(['span:has-text("Log in with your password")',
-                          'button:has-text("Log in with your password")',
-                          'span:has-text("Войти с паролем")',
-                          'button:has-text("Войти с паролем")'],
-                         "выбрал «Log in with your password»")
-        await asyncio.sleep(1.5)
-
-        # 5) Enter password
-        filled_pw = await _fill_any(
-            ['input[data-testid="text-field-input"][autocomplete="current-password"]',
-             'input[autocomplete="current-password"]',
-             'input[type="password"]', '#passp-field-passwd'],
-            mail_password, "пароль почты", wait=15000)
-        if filled_pw:
-            await page.keyboard.press("Enter")
+        # Poll up to ~10s for the logged-in state — the persistent session can
+        # briefly show the landing page before redirecting into the inbox.
+        logged_in_mail = False
+        for _ in range(10):
+            if await _mail_logged_in():
+                logged_in_mail = True
+                break
             await asyncio.sleep(1)
-            await _click_any(['button[data-testid="add-user-next"]',
-                              'button:has-text("Sign in")',
-                              'button:has-text("Войти")'],
-                             "подтвердил вход", wait=4000)
 
-        # 6) Wait for inbox to load
-        try:
-            await page.wait_for_url(
-                lambda u: "mail.yandex" in u and "passport" not in u,
-                timeout=25000)
-        except Exception:
-            await asyncio.sleep(5)
-        log("  2FA: вошёл в почту, ищу письма с кодами …")
+        if logged_in_mail:
+            log("  2FA: уже залогинен в Яндекс (профиль) — вход пропускаю")
+        else:
+            # 1) Click "Войти" — ONLY the specific header button (a loose
+            #    text match grabs a stray «Войти» ad/footer link → breaks flow).
+            await _click_any(['#header-login-button'], "нажал «Войти»")
+            await asyncio.sleep(2)
+
+            # 2) Enter email/username (wait for passport page to render)
+            await _fill_any(
+                ['input[data-testid="text-field-input"][autocomplete="username"]',
+                 'input[autocomplete="username"]',
+                 'input[name="login"]', '#passp-field-login'],
+                mail_email, f"логин {mail_email}", wait=15000)
+
+            # 3) Click "Next"
+            await _click_any(['button[data-testid="add-user-next"]',
+                              'button:has-text("Next")', 'button:has-text("Далее")'],
+                             "нажал Next")
+            await asyncio.sleep(2)
+
+            # 4) Choose "Log in with your password" (skip the one-time-code step)
+            await _click_any(['span:has-text("Log in with your password")',
+                              'button:has-text("Log in with your password")',
+                              'span:has-text("Войти с паролем")',
+                              'button:has-text("Войти с паролем")'],
+                             "выбрал «Log in with your password»")
+            await asyncio.sleep(1.5)
+
+            # 5) Enter password
+            filled_pw = await _fill_any(
+                ['input[data-testid="text-field-input"][autocomplete="current-password"]',
+                 'input[autocomplete="current-password"]',
+                 'input[type="password"]', '#passp-field-passwd'],
+                mail_password, "пароль почты", wait=15000)
+            if filled_pw:
+                await page.keyboard.press("Enter")
+                await asyncio.sleep(1)
+                await _click_any(['button[data-testid="add-user-next"]',
+                                  'button:has-text("Sign in")',
+                                  'button:has-text("Войти")'],
+                                 "подтвердил вход", wait=4000)
+
+            # 6) Wait for the inbox to load after login
+            try:
+                await page.wait_for_url(
+                    lambda u: "mail.yandex" in u and "passport" not in u,
+                    timeout=25000)
+            except Exception:
+                await asyncio.sleep(5)
+        log("  2FA: в почте, ищу письма с кодами …")
 
         # MyHeritage sends TWO emails with DIFFERENT codes:
         #   B) "Ваш код подтверждения для входа в MyHeritage" / "verification
@@ -448,28 +595,99 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
         # We read BOTH from the inbox snippets and return them in priority
         # order so the caller can try B first, then A.
         async def _scan_codes():
+            # Read the code STRAIGHT FROM THE INBOX LIST (the email's row header
+            # + preview), WITHOUT opening the message — that is how it worked.
+            # CRUCIAL: match WHOLE message rows, not leaf elements. The 6-digit
+            # code sits in the PREVIEW while the «код подтверждения для входа»
+            # phrase is in the SUBJECT; with broad 'a,li,div' selectors they land
+            # in DIFFERENT elements, so neither matches both → nothing found.
+            # The MessageSnippet/li[data-id] container holds the whole row.
             return await page.evaluate(r"""() => {
                 const rows = Array.from(document.querySelectorAll(
-                    'a, li, div[role="listitem"], [class*="MessageSnippet"], '
-                    + '[class*="messageSnippet" i]'));
+                    '[class*="MessageSnippet" i], .mail-MessageSnippet, '
+                    + '[data-test-id="message-snippet"], li[data-id], '
+                    + 'div[role="listitem"], a[href*="#message"]'));
                 let verify = '', attempt = '';
-                for (const el of rows) {
-                    const t = (el.textContent || '');
+                for (const r of rows) {
+                    const t = (r.textContent || '');
                     if (!/myheritage/i.test(t)) continue;
                     const m = t.match(/\b(\d{6})\b/);
-                    if (!m) continue;
+                    if (!m) continue;                 // row with no 6-digit → skip
                     const code = m[1];
-                    if (!verify && /(код подтверждения для входа|верификацион|verification code)/i.test(t))
-                        verify = code;
-                    else if (!attempt && /(confirm a login attempt|confirmation code in the login screen|login attempt|попытк)/i.test(t))
-                        attempt = code;
+                    if (!verify && /(подтверждения для входа|верификацион|verification code|confirmation code)/i.test(t))
+                        verify = code;                // B — the one the field wants
+                    else if (!attempt && /(login attempt|confirm a login|попытк)/i.test(t))
+                        attempt = code;               // A — anti-fraud challenge
+                    else if (!verify)
+                        verify = code;                // MyHeritage + code, no clear phrase → treat as B
                 }
                 return {verify, attempt};
             }""")
 
+        async def _open_and_read():
+            """Snippet scan can miss the code (truncated/changed DOM) — so OPEN
+            the newest MyHeritage *verification* email and read the code from its
+            body. This is the step that used to work and was lost in a refactor.
+            We match MyHeritage + a verification phrase, so the hh.ru ad at the
+            very top is skipped (the lesson's «не открывать верхнее письмо»)."""
+            try:
+                marked = await page.evaluate(r"""() => {
+                    const norm = s => (s || '').toLowerCase();
+                    document.querySelectorAll('[data-pw-mail]').forEach(
+                        e => e.removeAttribute('data-pw-mail'));
+                    const rows = Array.from(document.querySelectorAll(
+                        '[class*="MessageSnippet"], .mail-MessageSnippet, '
+                        + '[data-test-id="message-snippet"], li[data-id], a'));
+                    for (const r of rows) {                 // DOM order = newest first
+                        const t = norm(r.textContent);
+                        if (t.includes('myheritage') &&
+                            /(код подтверждения для входа|верификацион|verification code|confirmation code)/.test(t)) {
+                            r.setAttribute('data-pw-mail', '1');
+                            return true;
+                        }
+                    }
+                    return false;
+                }""")
+                if not marked:
+                    return ""
+                log("  2FA: открываю письмо MyHeritage с кодом …")
+                await page.locator('[data-pw-mail="1"]').first.click(timeout=6000)
+                await asyncio.sleep(2.5)
+                # Prefer the OPENED message's body container (so we don't pick an
+                # older code still shown in the inbox list); fall back to body.
+                body = await page.evaluate(r"""() => {
+                    const el = document.querySelector(
+                        '[class*="MessageBody" i], .mail-Message-Body, '
+                        + '[class*="message-body" i], [class*="msgBody" i], '
+                        + '[class*="MessageViewer" i]');
+                    return (el && el.innerText) || document.body.innerText || '';
+                }""")
+                m = (re.search(
+                        r"(?:странице входа в MyHeritage|login screen|"
+                        r"verification code|код подтверждения)[^\d]{0,40}(\d{6})",
+                        body or "", re.I)
+                     or re.search(r"\b(\d{6})\b", body or ""))
+                code = m.group(1) if m else ""
+                if code:
+                    log(f"  2FA: код из ОТКРЫТОГО письма: {code}")
+                # Return to the inbox so the next reload/scan keeps working.
+                try:
+                    await page.goto("https://mail.yandex.ru/",
+                                    wait_until="domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
+                return code
+            except Exception as e:
+                log(f"  2FA: !! не смог открыть письмо: {e}")
+                return ""
+
         deadline = asyncio.get_event_loop().time() + timeout
         last = {"verify": "", "attempt": ""}
         while asyncio.get_event_loop().time() < deadline:
+            # Stop if the mail tab was closed (don't spin on a dead page).
+            if page.is_closed():
+                log("  2FA: вкладка почты закрыта — прекращаю чтение")
+                break
             # Let the freshly-sent emails arrive, then reload to get them on top
             await asyncio.sleep(5)
             try:
@@ -481,6 +699,12 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
                 last = await _scan_codes()
             except Exception:
                 last = {"verify": "", "attempt": ""}
+            # Snippet scan missed the verification code (B) → OPEN the email and
+            # read the code from its body (the reliable path that used to work).
+            if not last.get("verify"):
+                opened = await _open_and_read()
+                if opened:
+                    last["verify"] = opened
             # We have at least the verification code (B) — good to go
             if last.get("verify") or last.get("attempt"):
                 codes = []
@@ -508,9 +732,13 @@ async def _browser_read_yandex_code(ctx, mail_email: str, mail_password: str,
         log(f"  2FA browser error: {e}")
         return []
     finally:
-        # Close the mail tab regardless of outcome
+        # Close the mail tab regardless of outcome, then re-enable the auto-closer
         try:
             await page.close()
+        except Exception:
+            pass
+        try:
+            ctx._mh_pause_autoclose = False
         except Exception:
             pass
 
@@ -968,8 +1196,9 @@ async def _find_form_root(page, sels, log, secs=25):
     polling up to `secs`. Detect by the first-name field OR the «Поиск» submit
     button (the form can be in the main frame or an iframe).
     """
-    btn_sels = ['button:has(span.button_content:has-text("Поиск"))',
-                'button:has-text("Поиск")', 'button:has-text("Search")']
+    _sw = _search_words()
+    btn_sels = ([f'button:has(span.button_content:has-text("{w}"))' for w in _sw]
+                + [f'button:has-text("{w}")' for w in _sw])
     for _t in range(secs):
         await asyncio.sleep(1)
         for fr in page.frames:
@@ -991,12 +1220,13 @@ async def _fill_research_basic(root, page, params, log) -> bool:
     container and TAG its text inputs (by data-automations / placeholder /
     order), then fill the tagged fields. Works in main frame or iframe.
     """
-    tagged = await root.evaluate(r"""() => {
+    tagged = await root.evaluate(r"""(searchWords) => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
         const vis = el => el && el.offsetParent !== null;
-        // find the search submit button
+        const isSearch = t => searchWords.some(w => norm(t).toLowerCase() === w.toLowerCase());
+        // find the search submit button (in the active site language)
         let btn = Array.from(document.querySelectorAll('button, [role=button], span'))
-            .find(b => /^(Поиск|Search|חיפוש)$/i.test(norm(b.textContent)));
+            .find(b => isSearch(b.textContent));
         // climb to a container that holds >= 2 visible text inputs (the form)
         let form = null, n = btn;
         for (let i = 0; i < 9 && n; i++) {
@@ -1020,7 +1250,7 @@ async def _fill_research_basic(root, page, params, log) -> bool:
         tag(first, 'first'); tag(last, 'last'); tag(year, 'year'); tag(place, 'place');
         return {first: !!first, last: !!last, year: !!year, place: !!place,
                 count: inputs.length};
-    }""")
+    }""", _search_words(params.get("lang")))
     log(f"  → Поля формы: {tagged}")
 
     async def _type(name, value, label):
@@ -1081,7 +1311,11 @@ async def _fill_advanced(root, page, params, log):
     ids; after filling we MUST click the «Применить» (apply) button.
     "+ Больше" opens extra event/relative/other tags + «Точное совпадение всех
     параметров».
+
+    On the EN/HE sites these pills carry English/Hebrew text — the site language
+    comes from params["lang"] and drives _ui_labels(concept, lang).
     """
+    lang = params.get("lang")
     async def _open_pill(texts, verify_auto_id):
         """REAL mouse-click the visible chip (JS .click() does NOT open the
         React popup), then confirm the popup opened by waiting for its input
@@ -1208,7 +1442,8 @@ async def _fill_advanced(root, page, params, log):
                 pass
         for fr in page.frames:
             for sel in ('button.search_form_apply_button',
-                        'button:has-text("Применить")', 'button:has-text("Apply")'):
+                        'button:has-text("Применить")', 'button:has-text("Apply")',
+                        'button:has-text("החל")'):
                 try:
                     b = fr.locator(sel).first
                     if await b.count() and await b.is_visible():
@@ -1221,11 +1456,11 @@ async def _fill_advanced(root, page, params, log):
 
     # ── Family members: pill → two name inputs → apply ──────────────────────
     fam = [
-        ("father", ["Отец", "Father"], "father_first_name_field",
+        ("father", _ui_labels("father", lang), "father_first_name_field",
          "father_last_name_field", "father_filter_apply_button"),
-        ("mother", ["Мать", "Mother"], "mother_first_name_field",
+        ("mother", _ui_labels("mother", lang), "mother_first_name_field",
          "mother_last_name_field", "mother_filter_apply_button"),
-        ("spouse", ["Супруг(-а)", "Супруг", "Spouse"], "spouse_first_name_field",
+        ("spouse", _ui_labels("spouse", lang), "spouse_first_name_field",
          "spouse_last_name_field", "spouse_filter_apply_button"),
     ]
     for key, tags, fa, la, apply_id in fam:
@@ -1243,7 +1478,7 @@ async def _fill_advanced(root, page, params, log):
 
     # ── Death: pill → year + place → apply ──────────────────────────────────
     if params.get("death_year") or params.get("death_place"):
-        if await _open_pill(["Смерть", "Death"], "death_year_field"):
+        if await _open_pill(_ui_labels("death", lang), "death_year_field"):
             log("  → открыл «Смерть»")
             await _fill_auto("death_year_field", params.get("death_year", ""))
             await _fill_auto("death_place_field", params.get("death_place", ""))
@@ -1260,11 +1495,19 @@ async def _fill_advanced(root, page, params, log):
         # Open the "+ Больше" panel and VERIFY it opened by waiting for one of
         # its hallmark texts to appear (the exact-match checkbox / event tags).
         async def _more_open():
+            # Hallmark texts of the open "+ More" panel in RU / EN / HE.
+            hallmark = re.compile(
+                r"Точное совпадение всех параметров|событие из жизни|"
+                r"Семейное положение|"
+                r"Exact match for all|life event|Marital status|"
+                r"התאמה מדויקת|אירוע|מצב משפחתי|"
+                r"Correspondance exacte|État civil|"          # fr
+                r"Genaue Übereinstimmung|Familienstand|"      # de
+                r"Coincidencia exacta|Estado civil|"          # es
+                r"Correspondência exata", re.I)               # pt
             for fr in page.frames:
                 try:
-                    el = fr.get_by_text(re.compile(
-                        r"Точное совпадение всех параметров|событие из жизни|"
-                        r"Семейное положение", re.I)).first
+                    el = fr.get_by_text(hallmark).first
                     if await el.count() and await el.is_visible():
                         return True
                 except Exception:
@@ -1278,17 +1521,17 @@ async def _fill_advanced(root, page, params, log):
             if await _more_open():
                 opened_more = True
                 break
-            await _open_pill(["Больше", "More"], "")
+            await _open_pill(_ui_labels("more", lang), "")
             await asyncio.sleep(1.0)
         log("  → панель «+ Больше» открыта" if opened_more
             else "  !! панель «+ Больше» не открылась")
 
         for key, tags, place_auto, apply_id in [
-            ("residence", ["Местожительство", "Residence"],
+            ("residence", _ui_labels("residence", lang),
              "residence_place_field", "residence_filter_apply_button"),
-            ("military", ["Вооруженные силы", "Military"],
+            ("military", _ui_labels("military", lang),
              "military_place_field", "military_filter_apply_button"),
-            ("immigration", ["Иммиграция", "Immigration"],
+            ("immigration", _ui_labels("immigration", lang),
              "immigration_place_field", "immigration_filter_apply_button"),
         ]:
             if params.get(key):
@@ -1297,20 +1540,25 @@ async def _fill_advanced(root, page, params, log):
                     await _apply(apply_id)
 
         if params.get("keywords"):
-            if await _open_pill(["Ключевые слова", "Keywords"], "keywords_field"):
+            if await _open_pill(_ui_labels("keywords", lang), "keywords_field"):
                 await _fill_auto("keywords_field", params["keywords"])
                 await _apply("keywords_filter_apply_button")
 
         g = params.get("gender", "Any")
         if g not in ("Any", "Любой"):
-            if await _open_pill(["Пол", "Gender"], ""):
-                ru = {"Male": "Мужчина", "Female": "Женщина"}.get(g, g)
-                try:
-                    opt = root.get_by_text(re.compile(rf"^{re.escape(ru)}$", re.I)).first
-                    if await opt.count():
-                        await opt.click(timeout=3000)
-                except Exception:
-                    pass
+            if await _open_pill(_ui_labels("gender", lang), ""):
+                # Click the gender value in the site language (try every variant;
+                # only the one rendered on the loaded site exists).
+                concept = "female" if g in ("Female", "Женщина") else "male"
+                for val in _ui_labels(concept, lang):
+                    try:
+                        opt = root.get_by_text(
+                            re.compile(rf"^{re.escape(val)}$", re.I)).first
+                        if await opt.count():
+                            await opt.click(timeout=3000)
+                            break
+                    except Exception:
+                        continue
                 await _apply("gender_filter_apply_button")
 
         # «Точное совпадение всех параметров». aria-checked never flips by
@@ -1433,9 +1681,13 @@ async def _search(page, search_url, params, has_cookies, log):
     rf = params.get("record_filter", "All Records")
     FILTER_MAP = {
         "Historical Records": ["Исторические записи", "Historical records",
-                               "Historical Records", "רשומות היסטוריות"],
+                               "Historical Records", "רשומות היסטוריות",
+                               "Documents historiques", "Historische Aufzeichnungen",
+                               "Registros históricos", "Registos históricos"],
         "Family Trees":       ["Семейные деревья",    "Family trees",
-                               "Family Trees",        "עצי משפחה"],
+                               "Family Trees",        "עצי משפחה",
+                               "Arbres généalogiques", "Stammbäume",
+                               "Árboles genealógicos", "Árvores genealógicas"],
     }
     if rf != "All Records":
         for label in FILTER_MAP.get(rf, [rf]):
@@ -1451,10 +1703,10 @@ async def _search(page, search_url, params, has_cookies, log):
     # Submit search — results usually open in a NEW TAB
     ctx = page.context
     results_page = None
-    submit_sels = ['span.button_content:has-text("Поиск")',
-                   'button:has-text("Поиск")', 'button:has-text("Search")',
-                   'button:has-text("חיפוש")', 'button[type="submit"]',
-                   'input[type="submit"]']
+    _sw = _search_words(params.get("lang"))
+    submit_sels = ([f'span.button_content:has-text("{w}")' for w in _sw]
+                   + [f'button:has-text("{w}")' for w in _sw]
+                   + ['button[type="submit"]', 'input[type="submit"]'])
     pages_before = set(ctx.pages)
     search_url_now = page.url
     clicked = False
@@ -1565,7 +1817,12 @@ async def _collect_one_page(page):
             if (t.length > 300 || t.length >= dlen) continue;
             const ru = /расширени/i.test(t) && /критери/i.test(t);
             const en = /expand/i.test(t) && /criteri/i.test(t);
-            if (ru || en) { divider = e; dlen = t.length; }
+            const he = /הרחב/.test(t) && /קריטריון|תנאי/.test(t);
+            const fr = /élarg/i.test(t)  && /critère/i.test(t);
+            const de = /erweiter/i.test(t) && /kriterien/i.test(t);
+            const es = /ampli/i.test(t)  && /criterio/i.test(t);
+            const pt = /expand|amplia/i.test(t) && /critério/i.test(t);
+            if (ru || en || he || fr || de || es || pt) { divider = e; dlen = t.length; }
         }
         const beforeDivider = (el) => {
             if (!divider) return true;
@@ -1674,8 +1931,9 @@ async def _diag_results(page, log):
                 anyRecord:   q('a[href*="record" i]'),
                 resultCards: q('[class*="result" i]'),
                 hasForm:     q('input[name*="first" i], input[name*="last" i]'),
-                divider: (/расширени|expand/i.test(bt) && /критери|criteri/i.test(bt)),
-                noResults: /(ничего не найдено|no results|0 результатов|не дал|nothing)/i.test(bt),
+                divider: ((/расширени|expand/i.test(bt) && /критери|criteri/i.test(bt))
+                          || (/הרחב/.test(bt) && /קריטריון|תנאי/.test(bt))),
+                noResults: /(ничего не найдено|no results|0 результатов|не дал|nothing|לא נמצאו)/i.test(bt),
                 bodyLen: bt.length,
                 sample
             };
@@ -1979,101 +2237,163 @@ def _hyperlink(para, text, url):
     t.set(qn("xml:space"), "preserve")
     run.append(t); hl.append(run); para._p.append(hl)
 
-def write_docx(path, records, qlines):
+def _docx_add_record(doc, i, rec):
+    """Render ONE record into an open Document (shared by fresh + append)."""
+    doc.add_heading(f"{i}. {rec.get('full_name','—')}", level=2)
+    p = doc.add_paragraph()
+    p.add_run("Category: ").bold = True
+    p.add_run(rec.get("category", "—"))
+    p2 = doc.add_paragraph()
+    p2.add_run("Match: ").bold = True
+    p2.add_run(f"{rec.get('score','?')}%")
+    # Source as TEXT (e.g. "Семейные деревья MyHeritage / Geni") — never a logo
+    if rec.get("source_text"):
+        ps = doc.add_paragraph()
+        ps.add_run("Источник: ").bold = True
+        ps.add_run(rec["source_text"])
+    if rec.get("url"):
+        p3 = doc.add_paragraph()
+        p3.add_run("Ссылка: ").bold = True
+        _hyperlink(p3, rec["url"], rec["url"])
+    td = rec.get("table_data", {})
+    if td:
+        tbl = doc.add_table(rows=1, cols=2)
+        tbl.style = "Table Grid"
+        hdr = tbl.rows[0].cells
+        hdr[0].text = "Field"; hdr[1].text = "Value"
+        for cell in hdr:
+            for run in cell.paragraphs[0].runs:
+                run.bold = True
+        for f, v in td.items():
+            row = tbl.add_row().cells
+            row[0].text = str(f); row[1].text = str(v)
+    # Photo thumbnail (small in Word; full-size saved to disk separately).
+    # Convert WEBP→PNG so python-docx can embed it.
+    tb = rec.get("thumb_bytes")
+    if tb:
+        png = _to_png(tb)
+        if png:
+            try:
+                doc.add_picture(io.BytesIO(png), width=Inches(2.2))
+            except Exception:
+                pass
+    # "View full profile on this site" link
+    if rec.get("profile_url"):
+        pp = doc.add_paragraph()
+        pp.add_run("Полный профиль: ").bold = True
+        _hyperlink(pp, "Посмотреть полный профиль на этом сайте",
+                   rec["profile_url"])
+    doc.add_paragraph("")
+
+
+def write_docx(path, records, qlines, append=False):
     if not _DOCX_OK:
         raise RuntimeError("python-docx not installed")
-    doc = Document()
-    sec = doc.sections[0]
-    sec.page_width = Mm(297); sec.page_height = Mm(210)
-    sec.left_margin = sec.right_margin = Mm(18)
-    sec.top_margin  = sec.bottom_margin = Mm(15)
-    h = doc.add_heading("MyHeritage Search Results", 0)
-    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph("Search parameters:")
-    for ln in qlines:
-        doc.add_paragraph(ln, style="List Bullet")
-    doc.add_paragraph(f"Records saved: {len(records)}  (match ≥ {MIN_MATCH_PCT}%)")
-    doc.add_paragraph("")
-    for i, rec in enumerate(records, 1):
-        doc.add_heading(f"{i}. {rec.get('full_name','—')}", level=2)
-        p = doc.add_paragraph()
-        p.add_run("Category: ").bold = True
-        p.add_run(rec.get("category", "—"))
-        p2 = doc.add_paragraph()
-        p2.add_run("Match: ").bold = True
-        p2.add_run(f"{rec.get('score','?')}%")
-        # Source as TEXT (e.g. "Семейные деревья MyHeritage / Geni") — never a logo
-        if rec.get("source_text"):
-            ps = doc.add_paragraph()
-            ps.add_run("Источник: ").bold = True
-            ps.add_run(rec["source_text"])
-        if rec.get("url"):
-            p3 = doc.add_paragraph()
-            p3.add_run("Ссылка: ").bold = True
-            _hyperlink(p3, rec["url"], rec["url"])
-        td = rec.get("table_data", {})
-        if td:
-            tbl = doc.add_table(rows=1, cols=2)
-            tbl.style = "Table Grid"
-            hdr = tbl.rows[0].cells
-            hdr[0].text = "Field"; hdr[1].text = "Value"
-            for cell in hdr:
-                for run in cell.paragraphs[0].runs:
-                    run.bold = True
-            for f, v in td.items():
-                row = tbl.add_row().cells
-                row[0].text = str(f); row[1].text = str(v)
-        # Photo thumbnail (small in Word; full-size saved to disk separately).
-        # Convert WEBP→PNG so python-docx can embed it.
-        tb = rec.get("thumb_bytes")
-        if tb:
-            png = _to_png(tb)
-            if png:
-                try:
-                    doc.add_picture(io.BytesIO(png), width=Inches(2.2))
-                except Exception:
-                    pass
-        # "View full profile on this site" link
-        if rec.get("profile_url"):
-            pp = doc.add_paragraph()
-            pp.add_run("Полный профиль: ").bold = True
-            _hyperlink(pp, "Посмотреть полный профиль на этом сайте",
-                       rec["profile_url"])
+    existing = append and Path(path).exists()
+    if existing:
+        # Open the existing document and append a clearly-marked new batch.
+        doc = Document(str(path))
+        doc.add_page_break()
+        sep = doc.add_heading(
+            f"➕ Appended {len(records)} more record(s) — "
+            f"{time.strftime('%Y-%m-%d %H:%M')}", level=1)
+        sep.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph("Search parameters:")
+        for ln in qlines:
+            doc.add_paragraph(ln, style="List Bullet")
         doc.add_paragraph("")
+    else:
+        doc = Document()
+        sec = doc.sections[0]
+        sec.page_width = Mm(297); sec.page_height = Mm(210)
+        sec.left_margin = sec.right_margin = Mm(18)
+        sec.top_margin  = sec.bottom_margin = Mm(15)
+        h = doc.add_heading("MyHeritage Search Results", 0)
+        h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph("Search parameters:")
+        for ln in qlines:
+            doc.add_paragraph(ln, style="List Bullet")
+        doc.add_paragraph(f"Records saved: {len(records)}  (match ≥ {MIN_MATCH_PCT}%)")
+        doc.add_paragraph("")
+    for i, rec in enumerate(records, 1):
+        _docx_add_record(doc, i, rec)
     doc.save(path)
 
-def write_xlsx(path, records, qlines):
+def write_xlsx(path, records, qlines, append=False):
     if not _OPENPYXL_OK:
         raise RuntimeError("openpyxl not installed")
-    wb = Workbook(); ws = wb.active; ws.title = "MyHeritage"
     HF = PatternFill("solid", fgColor="2A4A7F")
     HN = Font(bold=True, color="FFFFFF", size=11)
     TS = Side(style="thin", color="B0B8C8")
     T  = Border(left=TS, right=TS, top=TS, bottom=TS)
+    # Genealogy fields present across THESE records.
     aff = []
     for rec in records:
         for k in rec.get("table_data", {}):
             if k not in aff:
                 aff.append(k)
-    cols = ["#", "Full Name", "Category", "Match %", "URL"] + aff
-    for ci, cn in enumerate(cols, 1):
-        c = ws.cell(row=1, column=ci, value=cn)
-        c.font = HN; c.fill = HF; c.border = T
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    for ri, rec in enumerate(records, 2):
-        td   = rec.get("table_data", {})
-        vals = [ri-1, rec.get("full_name",""), rec.get("category",""),
-                rec.get("score",""), rec.get("url","")] + [td.get(f,"") for f in aff]
-        for ci, val in enumerate(vals, 1):
-            c = ws.cell(row=ri, column=ci, value=val)
-            c.border = T
-            c.alignment = Alignment(wrap_text=True, vertical="top")
-    for ci, cn in enumerate(cols, 1):
+    base_cols = ["#", "Full Name", "Category", "Match %", "URL"]
+
+    existing = append and Path(path).exists()
+    if existing:
+        # Append rows to the existing sheet, continuing the # numbering and
+        # adding columns for any genealogy fields not already present.
+        wb = load_workbook(str(path))
+        ws = wb.active
+        header = [ws.cell(row=1, column=c).value
+                  for c in range(1, ws.max_column + 1)]
+        for name in base_cols + aff:
+            if name not in header:
+                header.append(name)
+                c = ws.cell(row=1, column=len(header), value=name)
+                c.font = HN; c.fill = HF; c.border = T
+                c.alignment = Alignment(horizontal="center",
+                                        vertical="center", wrap_text=True)
+        col_idx = {name: i + 1 for i, name in enumerate(header)}
+        last_n = 0
+        for r in range(2, ws.max_row + 1):
+            try:
+                last_n = max(last_n, int(ws.cell(row=r, column=1).value))
+            except Exception:
+                pass
+        start_row = ws.max_row + 1
+        for off, rec in enumerate(records):
+            td = rec.get("table_data", {})
+            rowdata = {"#": last_n + off + 1,
+                       "Full Name": rec.get("full_name", ""),
+                       "Category":  rec.get("category", ""),
+                       "Match %":   rec.get("score", ""),
+                       "URL":       rec.get("url", "")}
+            for f in aff:
+                rowdata[f] = td.get(f, "")
+            for name, val in rowdata.items():
+                ci = col_idx.get(name)
+                if ci:
+                    c = ws.cell(row=start_row + off, column=ci, value=val)
+                    c.border = T
+                    c.alignment = Alignment(wrap_text=True, vertical="top")
+        cols = header
+    else:
+        wb = Workbook(); ws = wb.active; ws.title = "MyHeritage"
+        cols = base_cols + aff
+        for ci, cn in enumerate(cols, 1):
+            c = ws.cell(row=1, column=ci, value=cn)
+            c.font = HN; c.fill = HF; c.border = T
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for ri, rec in enumerate(records, 2):
+            td   = rec.get("table_data", {})
+            vals = [ri-1, rec.get("full_name",""), rec.get("category",""),
+                    rec.get("score",""), rec.get("url","")] + [td.get(f,"") for f in aff]
+            for ci, val in enumerate(vals, 1):
+                c = ws.cell(row=ri, column=ci, value=val)
+                c.border = T
+                c.alignment = Alignment(wrap_text=True, vertical="top")
+    # Auto-size every column.
+    for ci in range(1, len(cols) + 1):
         letter = get_column_letter(ci)
-        mw = max(len(str(cn)),
-                 *(len(str(ws.cell(row=r, column=ci).value or ""))
-                   for r in range(2, ws.max_row+1)), 8)
-        ws.column_dimensions[letter].width = min(mw+4, 60)
+        mw = max(8, *(len(str(ws.cell(row=r, column=ci).value or ""))
+                      for r in range(1, ws.max_row + 1)))
+        ws.column_dimensions[letter].width = min(mw + 4, 60)
     wb.save(path)
 
 # ── MAIN ENTRY POINT ─────────────────────────────────────────────────────── #
@@ -2091,8 +2411,8 @@ async def run_scraper(*,
     keywords       = "", gender        = "Any",
     exact_match    = False,
     record_filter  = "All Records",
-    record_type    = "Все записи",
-    category       = "Все коллекции",
+    record_type    = "All records",
+    category       = "All collections",
     output_format  = "both",
     output_folder  = Path("."),
     email          = None, password    = None,
@@ -2102,6 +2422,7 @@ async def run_scraper(*,
     ask_2fa_code   = None,   # callable() → str, fallback if IMAP auto-read fails
     imap_password  = None,   # mail password for MH account email (to auto-read 2FA code)
     family_site    = "",     # which family site to enter on select-site.php (name substring)
+    ask_file_conflict = None, # callable(list[str]) → "overwrite"/"append"/"skip"
 ) -> dict:
 
     def _prog(pct, txt):
@@ -2145,9 +2466,12 @@ async def run_scraper(*,
         immigration=immigration, keywords=keywords,
         gender=gender, exact_match=exact_match,
         record_filter=record_filter, category=category,
+        # Site language (ru/en/he) — drives which language's UI text the advanced
+        # search matches when locating pills/sections/buttons on the page.
+        lang=_site_lang(site_preset),
     )
     qlines = [f"{k}: {v}" for k, v in params.items()
-              if v and v not in ("Any", False, "All Records")]
+              if k != "lang" and v and v not in ("Any", False, "All Records")]
     summary = {"ok": False}
 
     _prog(0, "Launching browser…")
@@ -2219,7 +2543,17 @@ async def run_scraper(*,
                     # Poll the tab's URL for up to 3s: close the instant it is
                     # (or becomes) Facebook/blank-junk; keep MyHeritage tabs.
                     for _ in range(10):
+                        # NEVER close a tab the scraper opened on purpose (the
+                        # 2FA mail-reading tab) — guarded by a context flag and a
+                        # per-page mark set in _browser_read_yandex_code.
+                        if (getattr(ctx, "_mh_pause_autoclose", False)
+                                or getattr(p, "_mh_protected", False)):
+                            return
                         u = (p.url or "").lower()
+                        # Keep mail / login-passport tabs used to read the code.
+                        if any(s in u for s in ("yandex", "passport", "mail.",
+                                                "/mail", "outlook.", "office365")):
+                            return
                         if any(s in u for s in ("facebook", "fbcdn",
                                                 "accounts.google", "apple.com")):
                             await p.close()
@@ -2228,7 +2562,9 @@ async def run_scraper(*,
                             return                      # real results tab — keep
                         await asyncio.sleep(0.3)
                     # Still blank after 3s and not MyHeritage → junk, close it
-                    if "myheritage" not in (p.url or "").lower():
+                    if ("myheritage" not in (p.url or "").lower()
+                            and not getattr(ctx, "_mh_pause_autoclose", False)
+                            and not getattr(p, "_mh_protected", False)):
                         await p.close()
                 except Exception:
                     pass
@@ -2389,15 +2725,39 @@ async def run_scraper(*,
             base   = safe_fn(f"myheritage_{qname}") or "myheritage_results"
             docx_p = output_folder / f"{base}.docx"
             xlsx_p = output_folder / f"{base}.xlsx"
+
+            # If output files already exist, ask the user what to do: overwrite,
+            # append the new records, or skip saving. Default (no callback / no
+            # conflict) is a plain overwrite — the previous behaviour.
+            existing_names = [p.name for p, want in
+                              ((docx_p, want_docx), (xlsx_p, want_xlsx))
+                              if want and records and p.exists()]
+            decision = "overwrite"
+            if existing_names and ask_file_conflict:
+                try:
+                    decision = (ask_file_conflict(existing_names)
+                                or "overwrite").lower()
+                except Exception as _e:
+                    log(f"  !! file-conflict dialog error: {_e}")
+                    decision = "overwrite"
+                log(f"  → Файл(ы) уже существуют {existing_names} → выбор: {decision}")
+            append = (decision == "append")
+
             sd = sx = False
-            if want_docx and records:
-                write_docx(docx_p, records, qlines)
-                sd = True
-                log(f"  → Word: {docx_p.name}")
-            if want_xlsx and records:
-                write_xlsx(xlsx_p, records, qlines)
-                sx = True
-                log(f"  → Excel: {xlsx_p.name}")
+            if decision == "skip":
+                log("  → Сохранение пропущено по выбору пользователя "
+                    "(существующие файлы не тронуты).")
+            else:
+                if want_docx and records:
+                    write_docx(docx_p, records, qlines, append=append)
+                    sd = True
+                    log(f"  → Word: {docx_p.name}"
+                        f"{' (дополнен)' if append and docx_p.name in existing_names else ''}")
+                if want_xlsx and records:
+                    write_xlsx(xlsx_p, records, qlines, append=append)
+                    sx = True
+                    log(f"  → Excel: {xlsx_p.name}"
+                        f"{' (дополнен)' if append and xlsx_p.name in existing_names else ''}")
 
             _prog(100, f"Done — {len(records)} record(s).")
             summary.update({

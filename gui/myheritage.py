@@ -63,23 +63,25 @@ except ImportError:
 FILTER_OPTIONS = ["All Records", "Historical Records", "Family Trees"]
 GENDER_OPTIONS = ["Any", "Male", "Female"]
 
-# Record-type radio options (refine by record type)
-RECORD_TYPE_OPTIONS = ["Все записи", "Исторические записи", "Семейные деревья"]
+# Record-type radio options (refine by record type). The GUI is ALWAYS English;
+# the scraper translates these canonical values to the SITE language (RU/EN/HE)
+# chosen in the "Site / Language" selector before sending them to MyHeritage.
+RECORD_TYPE_OPTIONS = ["All records", "Historical records", "Family trees"]
 
-# Category filter (restrict search by category)
+# Category filter (restrict search by category) — canonical English labels.
 CATEGORY_OPTIONS = [
-    "Все коллекции",
-    "Публичные отчеты",
-    "Школы и университеты",
-    "Перепись и списки избирателей",
-    "Истории, мемуары и биографии",
-    "Реестры рождения, браков и смерти",
-    "Иммиграция и путешествия",
-    "Книги и публикации",
-    "Фото",
-    "Семейные деревья",
-    "Газеты",
-    "Правительство, земля, суды и завещания",
+    "All collections",
+    "Public records",
+    "Schools & universities",
+    "Census & voter lists",
+    "Stories, memories & histories",
+    "Birth, marriage & death",
+    "Immigration & travel",
+    "Books & publications",
+    "Photos",
+    "Family trees",
+    "Newspapers",
+    "Government, land, court & wills",
 ]
 
 STYLE = """
@@ -137,6 +139,7 @@ class Worker(QThread):
     progress    = Signal(int, str)
     finished    = Signal(dict)
     request_2fa = Signal()          # emitted when scraper needs the 2FA code
+    request_file = Signal(str)      # emitted when output files already exist
 
     def __init__(self, payload, window):
         super().__init__()
@@ -144,11 +147,18 @@ class Worker(QThread):
         self._window  = window
         self._code    = None
         self._code_ev = threading.Event()
+        self._file_choice = "overwrite"
+        self._file_ev = threading.Event()
 
     def provide_code(self, code: str):
         """Called from main thread after user enters code."""
         self._code = code
         self._code_ev.set()
+
+    def provide_file_choice(self, choice: str):
+        """Called from main thread after the user chooses overwrite/append/skip."""
+        self._file_choice = choice
+        self._file_ev.set()
 
     def run(self):
         import asyncio
@@ -168,6 +178,18 @@ class Worker(QThread):
             return self._code or ""
 
         self.payload["ask_2fa_code"] = ask_2fa
+
+        def ask_file_conflict(names):
+            """Called from the scraper when output files already exist.
+            Emits request_file → main thread shows a dialog; blocks for the
+            choice ("overwrite" / "append" / "skip")."""
+            self._file_choice = "overwrite"
+            self._file_ev.clear()
+            self.request_file.emit("\n".join(names))
+            self._file_ev.wait(timeout=300)   # wait up to 5 min for the choice
+            return self._file_choice or "overwrite"
+
+        self.payload["ask_file_conflict"] = ask_file_conflict
 
         try:
             result = asyncio.run(_scraper.run_scraper(**self.payload))
@@ -235,8 +257,8 @@ class MyHeritageApp(QMainWindow):
         mg = QGridLayout(ms); mg.setSpacing(8)
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
-        self.f_first_strict = QCheckBox("Искать совпадение строго по имени")
-        self.f_last_strict  = QCheckBox("Искать совпадение строго по фамилии")
+        self.f_first_strict = QCheckBox("Exact match for first name")
+        self.f_last_strict  = QCheckBox("Exact match for surname")
         mg.addWidget(QLabel("First name / Patronymic:"), 0, 0)
         mg.addWidget(self.f_first,        0, 1)
         mg.addWidget(self.f_first_strict, 0, 2)
@@ -273,7 +295,7 @@ class MyHeritageApp(QMainWindow):
         self.f_imm = QLineEdit(); self.f_imm.setPlaceholderText("Destination / year")
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
-        self.f_ex  = QCheckBox("Точное совпадение всех параметров")
+        self.f_ex  = QCheckBox("Exact match for all parameters")
         af.addRow("Birth year:",  self.f_by)
         af.addRow("Birth place:", self.f_bp)
         af.addRow("Father (name):",    self.f_fa)
@@ -300,7 +322,7 @@ class MyHeritageApp(QMainWindow):
         self._outer.addWidget(self._adv_scroll)
 
         # ── Refine by record type (radio buttons) ────────────────────────── #
-        fg = QGroupBox("Уточнить по типу записи")
+        fg = QGroupBox("Refine by record type")
         fl = QHBoxLayout(fg); fl.setSpacing(12)
         self._rt_group = QButtonGroup(self)
         self._rt_buttons = {}
@@ -314,12 +336,12 @@ class MyHeritageApp(QMainWindow):
         self._outer.addWidget(fg)
 
         # ── Restrict by category (combo) ─────────────────────────────────── #
-        cgb = QGroupBox("Ограничить поиск по категории")
+        cgb = QGroupBox("Restrict search by category")
         cgl = QHBoxLayout(cgb); cgl.setSpacing(10)
         self.f_category = QComboBox(); self.f_category.addItems(CATEGORY_OPTIONS)
-        note2 = QLabel("Сохраняются только результаты с совпадением ≥ 80 %.")
+        note2 = QLabel("Only results with ≥ 80 % match are saved.")
         note2.setObjectName("note")
-        cgl.addWidget(QLabel("Категория:")); cgl.addWidget(self.f_category)
+        cgl.addWidget(QLabel("Category:")); cgl.addWidget(self.f_category)
         cgl.addStretch(); cgl.addWidget(note2)
         self._outer.addWidget(cgb)
 
@@ -558,6 +580,28 @@ class MyHeritageApp(QMainWindow):
         else:
             self._worker.provide_code("")   # cancelled → scraper will abort
 
+    # ── File-conflict dialog (existing output files) ──────────────────────── #
+    def _show_file_conflict_dialog(self, names: str):
+        """Existing Word/Excel files were found — ask what to do."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("File already exists")
+        box.setText("These output file(s) already exist:\n\n"
+                    f"{names}\n\nWhat would you like to do?")
+        b_over = box.addButton("Overwrite", QMessageBox.DestructiveRole)
+        b_app  = box.addButton("Append new results", QMessageBox.AcceptRole)
+        b_skip = box.addButton("Skip (don't save)", QMessageBox.RejectRole)
+        box.setDefaultButton(b_app)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is b_app:
+            choice = "append"
+        elif clicked is b_skip:
+            choice = "skip"
+        else:
+            choice = "overwrite"
+        self._worker.provide_file_choice(choice)
+
     # ── Start / finish ────────────────────────────────────────────────────── #
     def _start(self):
         if not self._validate():
@@ -570,6 +614,7 @@ class MyHeritageApp(QMainWindow):
             lambda v, t: (self.pbar.setValue(v), self.stlbl.setText(t)))
         self._worker.finished.connect(self._done)
         self._worker.request_2fa.connect(self._show_2fa_dialog)
+        self._worker.request_file.connect(self._show_file_conflict_dialog)
         self._worker.start()
 
     def _done(self, r):
