@@ -64,22 +64,22 @@ FILTER_OPTIONS = ["All Records", "Historical Records", "Family Trees"]
 GENDER_OPTIONS = ["Any", "Male", "Female"]
 
 # Record-type radio options (refine by record type)
-RECORD_TYPE_OPTIONS = ["Все записи", "Исторические записи", "Семейные деревья"]
+RECORD_TYPE_OPTIONS = ["All records", "Historical records", "Family trees"]
 
 # Category filter (restrict search by category)
 CATEGORY_OPTIONS = [
-    "Все коллекции",
-    "Публичные отчеты",
-    "Школы и университеты",
-    "Перепись и списки избирателей",
-    "Истории, мемуары и биографии",
-    "Реестры рождения, браков и смерти",
-    "Иммиграция и путешествия",
-    "Книги и публикации",
-    "Фото",
-    "Семейные деревья",
-    "Газеты",
-    "Правительство, земля, суды и завещания",
+    "All collections",
+    "Public records",
+    "Schools & universities",
+    "Census & voter lists",
+    "Stories, memories & histories",
+    "Birth, marriage & death",
+    "Immigration & travel",
+    "Books & publications",
+    "Photos",
+    "Family trees",
+    "Newspapers",
+    "Government, land, court & wills",
 ]
 
 STYLE = """
@@ -235,8 +235,8 @@ class MyHeritageApp(QMainWindow):
         mg = QGridLayout(ms); mg.setSpacing(8)
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
-        self.f_first_strict = QCheckBox("Искать совпадение строго по имени")
-        self.f_last_strict  = QCheckBox("Искать совпадение строго по фамилии")
+        self.f_first_strict = QCheckBox("Exact match for first name")
+        self.f_last_strict  = QCheckBox("Exact match for surname")
         mg.addWidget(QLabel("First name / Patronymic:"), 0, 0)
         mg.addWidget(self.f_first,        0, 1)
         mg.addWidget(self.f_first_strict, 0, 2)
@@ -273,7 +273,7 @@ class MyHeritageApp(QMainWindow):
         self.f_imm = QLineEdit(); self.f_imm.setPlaceholderText("Destination / year")
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
-        self.f_ex  = QCheckBox("Точное совпадение всех параметров")
+        self.f_ex  = QCheckBox("Exact match for all parameters")
         af.addRow("Birth year:",  self.f_by)
         af.addRow("Birth place:", self.f_bp)
         af.addRow("Father (name):",    self.f_fa)
@@ -300,7 +300,7 @@ class MyHeritageApp(QMainWindow):
         self._outer.addWidget(self._adv_scroll)
 
         # ── Refine by record type (radio buttons) ────────────────────────── #
-        fg = QGroupBox("Уточнить по типу записи")
+        fg = QGroupBox("Refine by record type")
         fl = QHBoxLayout(fg); fl.setSpacing(12)
         self._rt_group = QButtonGroup(self)
         self._rt_buttons = {}
@@ -314,12 +314,12 @@ class MyHeritageApp(QMainWindow):
         self._outer.addWidget(fg)
 
         # ── Restrict by category (combo) ─────────────────────────────────── #
-        cgb = QGroupBox("Ограничить поиск по категории")
+        cgb = QGroupBox("Restrict search by category")
         cgl = QHBoxLayout(cgb); cgl.setSpacing(10)
         self.f_category = QComboBox(); self.f_category.addItems(CATEGORY_OPTIONS)
-        note2 = QLabel("Сохраняются только результаты с совпадением ≥ 80 %.")
+        note2 = QLabel("Only results with ≥ 80 % match are saved.")
         note2.setObjectName("note")
-        cgl.addWidget(QLabel("Категория:")); cgl.addWidget(self.f_category)
+        cgl.addWidget(QLabel("Category:")); cgl.addWidget(self.f_category)
         cgl.addStretch(); cgl.addWidget(note2)
         self._outer.addWidget(cgb)
 

@@ -51,6 +51,32 @@ try:
 except ImportError:
     _OPENPYXL_OK = False
 
+try:
+    from PIL import Image
+    _PIL_OK = True
+except ImportError:
+    _PIL_OK = False
+
+
+def _to_png(data: bytes):
+    """Return PNG bytes for any image (WEBP/JPEG/…) so python-docx can embed
+    it. MyHeritage serves photos as WEBP which docx can't read directly."""
+    if not data:
+        return None
+    # already a docx-friendly format? (JPEG/PNG/GIF/BMP magic)
+    if (data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n"
+            or data[:4] == b"GIF8" or data[:2] == b"BM"):
+        return data
+    if _PIL_OK:
+        try:
+            im = Image.open(io.BytesIO(data)).convert("RGB")
+            out = io.BytesIO()
+            im.save(out, format="PNG")
+            return out.getvalue()
+        except Exception:
+            return None
+    return None
+
 # ── Constants ─────────────────────────────────────────────────────────────── #
 MIN_MATCH_PCT = 80
 HYPERLINK_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
@@ -1934,13 +1960,16 @@ def write_docx(path, records, qlines):
             for f, v in td.items():
                 row = tbl.add_row().cells
                 row[0].text = str(f); row[1].text = str(v)
-        # Photo thumbnail (historical records: preview only — full needs Omni)
+        # Photo thumbnail (small in Word; full-size saved to disk separately).
+        # Convert WEBP→PNG so python-docx can embed it.
         tb = rec.get("thumb_bytes")
         if tb:
-            try:
-                doc.add_picture(io.BytesIO(tb), width=Inches(2.2))
-            except Exception:
-                pass
+            png = _to_png(tb)
+            if png:
+                try:
+                    doc.add_picture(io.BytesIO(png), width=Inches(2.2))
+                except Exception:
+                    pass
         # "View full profile on this site" link
         if rec.get("profile_url"):
             pp = doc.add_paragraph()
@@ -1999,7 +2028,7 @@ async def run_scraper(*,
     keywords       = "", gender        = "Any",
     exact_match    = False,
     record_filter  = "All Records",
-    record_type    = "Все записи",
+    record_type    = "All records",
     category       = "Все коллекции",
     output_format  = "both",
     output_folder  = Path("."),
@@ -2030,9 +2059,9 @@ async def run_scraper(*,
     output_folder.mkdir(parents=True, exist_ok=True)
 
     qname  = " ".join(p for p in (first_name, surname) if p)
-    # Map the GUI record-type (Russian) onto the internal record_filter values
-    _RT_MAP = {"Исторические записи": "Historical Records",
-               "Семейные деревья": "Family Trees", "Все записи": "All Records"}
+    # Map the GUI record-type onto the internal record_filter values
+    _RT_MAP = {"Historical records": "Historical Records",
+               "Family trees": "Family Trees", "All records": "All Records"}
     if record_type in _RT_MAP:
         record_filter = _RT_MAP[record_type]
     params = dict(
