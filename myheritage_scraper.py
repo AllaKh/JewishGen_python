@@ -1809,17 +1809,64 @@ async def _detail(page, url, has_cookies, log):
             td[str(pair[0])] = str(pair[1])
     d["table_data"] = td
 
-    # Photo thumbnail for Word — fetch via the page's request context (NO new
-    # tab; opening a tab per record exhausted the browser and crashed it).
-    photo = info.get("photo") or ""
+    # ── Photo: click the magnifier (лупа) to open the FULL-size photo ───────
+    # The record card shows a small thumbnail with a zoom control
+    # <div class="... main_record_image_zoom">. Clicking it opens a popup with
+    # the large image. We download the FULL photo (saved to disk by the caller)
+    # and embed a SMALL copy in Word.
+    full_url = ""
+    try:
+        zoom = page.locator(
+            '.main_record_image_zoom, .imageZoom, [class*="image_zoom" i], '
+            '[class*="record_image" i] [class*="zoom" i]').first
+        if await zoom.count():
+            await zoom.scroll_into_view_if_needed(timeout=3000)
+            await zoom.click(timeout=4000)
+            await asyncio.sleep(1.5)
+            full_url = await page.evaluate(r"""() => {
+                // largest image inside the opened lightbox/modal
+                const SKIP = /sprite|icon|logo|geni|brand|\.svg|avatar|badge/i;
+                let best = '', area = 0;
+                const scope = document.querySelector(
+                    '[class*="modal" i], [role="dialog"], [class*="lightbox" i], '
+                    + '[class*="overlay" i], [class*="popup" i]') || document;
+                for (const im of scope.querySelectorAll('img')) {
+                    const s = im.src || im.getAttribute('data-src') || '';
+                    if (!s || SKIP.test(s)) continue;
+                    const r = im.getBoundingClientRect();
+                    const a = (r.width || im.naturalWidth || 0) *
+                              (r.height || im.naturalHeight || 0);
+                    if (a > area) { area = a; best = s; }
+                }
+                return best;
+            }""")
+            # close the popup
+            try:
+                closer = page.locator(
+                    '[class*="modal" i] [class*="close" i], [role="dialog"] '
+                    '[aria-label*="Close" i], [class*="lightbox" i] [class*="close" i]'
+                ).first
+                if await closer.count():
+                    await closer.click(timeout=2000)
+                else:
+                    await page.keyboard.press("Escape")
+            except Exception:
+                await page.keyboard.press("Escape")
+            await asyncio.sleep(0.4)
+    except Exception:
+        pass
+
+    # download the photo (full from the zoom popup, else the card thumbnail)
+    photo = full_url or info.get("photo") or ""
     if photo:
         try:
             r = await page.request.get(photo, timeout=15000)
             if r.ok:
                 body = await r.body()
                 if len(body) > 1000:
-                    d["thumb_bytes"] = body
-                    log(f"    📷 фото {len(body)//1024}KB")
+                    d["thumb_bytes"] = body          # bytes for Word (scaled) + disk
+                    log(f"    📷 фото {len(body)//1024}KB"
+                        f"{' (из лупы)' if full_url else ' (превью)'}")
                 else:
                     log("    📷 фото слишком маленькое — пропуск")
             else:
@@ -2181,6 +2228,9 @@ async def run_scraper(*,
                                 "message": f"No records with match ≥{MIN_MATCH_PCT}%."})
                 return summary
 
+            # Folder for the full-size photos
+            images_dir = output_folder / "images" / (safe_fn(qname) or "myheritage")
+
             records = []
             n = len(qualified)
             for i, r in enumerate(qualified, 1):
@@ -2194,6 +2244,14 @@ async def run_scraper(*,
                     det["score"] = r["score"]
                     if not det.get("full_name"):
                         det["full_name"] = r["name_text"]
+                    # Save the FULL photo to disk (Word keeps a small copy)
+                    if det.get("thumb_bytes"):
+                        try:
+                            images_dir.mkdir(parents=True, exist_ok=True)
+                            fn = safe_fn(det.get("full_name") or f"record_{i}") + ".jpg"
+                            (images_dir / fn).write_bytes(det["thumb_bytes"])
+                        except Exception:
+                            pass
                     records.append(det)
                     log(f"    ✓ {det['full_name']} — {det['score']}%")
                 except Exception as _exc:
