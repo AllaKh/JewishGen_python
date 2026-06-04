@@ -1510,6 +1510,9 @@ async def _search(page, search_url, params, has_cookies, log):
     # param. If exact was requested, set it and reload.
     if params.get("exact_match") and not params.get("_exact_ok"):
         u = results_page.url
+        # Remember the plain (non-exact) results URL so run_scraper can fall
+        # back to it if exactSearch turns out to be too strict (0 records).
+        params["_noexact_url"] = u
         if re.search(r"[?&]exactSearch=", u):
             new_u = re.sub(r"([?&]exactSearch=)[^&]*", r"\g<1>1", u)
         else:
@@ -1519,9 +1522,23 @@ async def _search(page, search_url, params, has_cookies, log):
                 log("  → Применяю точное совпадение через URL (exactSearch=1)…")
                 await results_page.goto(new_u, wait_until="domcontentloaded",
                                         timeout=30000)
-                await results_page.wait_for_load_state("networkidle", timeout=20000)
+                # WAIT for the exact results to actually render (the SPA may
+                # show a loader first). Poll up to 30s for record links so we
+                # never collect an empty page just because it was still loading.
+                got = 0
+                for _ in range(30):
+                    await asyncio.sleep(1)
+                    try:
+                        got = await results_page.evaluate(
+                            "() => document.querySelectorAll("
+                            "'a[href*=\"showRecord\"], a[href*=\"recordTitle\"]').length")
+                    except Exception:
+                        got = 0
+                    if got > 0:
+                        break
                 params["_exact_ok"] = True
-                log(f"  ✓ Точный поиск: {results_page.url[:90]}")
+                log(f"  ✓ Точный поиск ({got} ссылок на странице): "
+                    f"{results_page.url[:80]}")
             except Exception as _e:
                 log(f"  !! exactSearch через URL не вышел: {_e}")
 
@@ -1638,6 +1655,48 @@ async def _goto_next_results(page, log):
 
 
 # ── COLLECT RESULTS (exact matches across pages) ──────────────────────────── #
+async def _diag_results(page, log):
+    """One-shot dump of what the results page actually contains, so we can fix
+    a 0-results run precisely instead of guessing (the live site can't be
+    inspected directly)."""
+    try:
+        info = await page.evaluate(r"""() => {
+            const q = s => { try { return document.querySelectorAll(s).length; }
+                             catch(e){ return -1; } };
+            const sample = Array.from(document.querySelectorAll('a[href*="record" i]'))
+                .slice(0, 6).map(a => (a.getAttribute('href') || '').slice(0, 130));
+            const bt = (document.body && document.body.innerText) || '';
+            return {
+                url: location.href,
+                title: document.title,
+                showRecord:  q('a[href*="showRecord"]'),
+                recordTitle: q('a[href*="recordTitle"]'),
+                anyRecord:   q('a[href*="record" i]'),
+                resultCards: q('[class*="result" i]'),
+                hasForm:     q('input[name*="first" i], input[name*="last" i]'),
+                divider: (/расширени|expand/i.test(bt) && /критери|criteri/i.test(bt)),
+                noResults: /(ничего не найдено|no results|0 результатов|не дал|nothing)/i.test(bt),
+                bodyLen: bt.length,
+                sample
+            };
+        }""")
+        log("  🔎 ДИАГНОСТИКА страницы результатов:")
+        log(f"     url:   {info.get('url','')[:160]}")
+        log(f"     title: {info.get('title','')}")
+        log(f"     showRecord={info.get('showRecord')} "
+            f"recordTitle={info.get('recordTitle')} "
+            f"anyRecord={info.get('anyRecord')} "
+            f"resultCards={info.get('resultCards')} "
+            f"formInputs={info.get('hasForm')}")
+        log(f"     divider≈{info.get('divider')} "
+            f"noResultsText≈{info.get('noResults')} "
+            f"bodyLen={info.get('bodyLen')}")
+        for s in (info.get("sample") or []):
+            log(f"     ↪ {s}")
+    except Exception as e:
+        log(f"  🔎 диагностика не вышла: {e}")
+
+
 async def _collect(page, log, max_pages=30):
     # Wait for result cards to render
     results, seen_urls = [], set()
@@ -1686,6 +1745,10 @@ async def _collect(page, log, max_pages=30):
         except Exception:
             await asyncio.sleep(2)
     log(f"  → Всего точных записей: {len(results)}")
+    # Nothing collected → dump the page so the log tells us why (right page? any
+    # record links at all? a "no results" message? still showing the form?).
+    if not results:
+        await _diag_results(page, log)
     return results
 
 # ── DETAIL PAGE ───────────────────────────────────────────────────────────── #
@@ -2028,7 +2091,7 @@ async def run_scraper(*,
     keywords       = "", gender        = "Any",
     exact_match    = False,
     record_filter  = "All Records",
-    record_type    = "All records",
+    record_type    = "Все записи",
     category       = "Все коллекции",
     output_format  = "both",
     output_folder  = Path("."),
@@ -2059,9 +2122,15 @@ async def run_scraper(*,
     output_folder.mkdir(parents=True, exist_ok=True)
 
     qname  = " ".join(p for p in (first_name, surname) if p)
-    # Map the GUI record-type onto the internal record_filter values
-    _RT_MAP = {"Historical records": "Historical Records",
-               "Family trees": "Family Trees", "All records": "All Records"}
+    # Map the GUI record-type onto the internal record_filter values. Accept the
+    # site-language label the GUI actually sends — Russian now; other languages
+    # to be added tomorrow. (English aliases kept so nothing regresses.)
+    _RT_MAP = {"Все записи": "All Records",
+               "Исторические записи": "Historical Records",
+               "Семейные деревья": "Family Trees",
+               "All records": "All Records",
+               "Historical records": "Historical Records",
+               "Family trees": "Family Trees"}
     if record_type in _RT_MAP:
         record_filter = _RT_MAP[record_type]
     params = dict(
@@ -2225,6 +2294,27 @@ async def run_scraper(*,
             _prog(30, "Collecting results…")
             raw = await _collect(page, log)
             log(f"  Candidates: {len(raw)}")
+
+            # Fallback: exactSearch=1 narrows on ALL fields at once, so a
+            # many-field query (father + spouse + death year …) can legitimately
+            # return zero exact matches. Rather than report "nothing found",
+            # drop back to the plain results (still bounded by the «expanded
+            # criteria» divider) so the user always gets the relevant records.
+            if (params.get("exact_match") and params.get("_exact_ok")
+                    and not raw and params.get("_noexact_url")):
+                log("  !! Точный поиск (exactSearch=1) дал 0 записей — "
+                    "слишком строго; откатываюсь к обычным результатам")
+                try:
+                    await page.goto(params["_noexact_url"],
+                                    wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    params["_exact_ok"] = False
+                    # Only the first page — MyHeritage sorts by relevance, so the
+                    # top results are the right person; deeper pages are noise.
+                    raw = await _collect(page, log, max_pages=1)
+                    log(f"  Candidates (без exactSearch, 1 стр.): {len(raw)}")
+                except Exception as _e:
+                    log(f"  !! откат к обычным результатам не вышел: {_e}")
 
             # Results collected are MyHeritage's matches (everything BEFORE the
             # «expanded criteria» divider). Keep them all: use the card's match
