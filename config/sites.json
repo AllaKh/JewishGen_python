@@ -42,11 +42,11 @@
     "url": "https://gwar.mil.ru"
   },
   {
-    "key": "memorial",
-    "name": "Мемориал",
-    "subtitle": "База данных жертв политических репрессий — memsearch.org/ru",
-    "action": "open_url",
-    "url": "https://memsearch.org/ru"
+    "key": "Memlogo",
+    "name": "Memsearch",
+    "subtitle": "Soviet repression victim databases (Memorial / GULAG.CZ) — memsearch.org",
+    "action": "open_window",
+    "window_cls": "gui.memsearch.MemsearchApp"
   },
   {
     "key": "hryc",

@@ -56,8 +56,8 @@ class SiteCard(QFrame):
     """One row in the launcher list."""
 
     # Fixed geometry — used to calculate the exact window height.
-    CARD_HEIGHT    = 76    # px  (including border)
-    CARD_SPACING   = 8     # px  (spacing between cards in the layout)
+    CARD_HEIGHT    = 60    # px  (including border)
+    CARD_SPACING   = 6     # px  (spacing between cards in the layout)
 
     def __init__(self, site: dict, parent=None):
         super().__init__(parent)
@@ -66,17 +66,17 @@ class SiteCard(QFrame):
         self._win = None      # keep a reference so the child window isn't GC'd
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(14)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(12)
 
         # ── Logo ─────────────────────────────────────────────────────────── #
         logo_lbl = QLabel()
-        logo_lbl.setFixedSize(QSize(120, 56))
+        logo_lbl.setFixedSize(QSize(104, 44))
         logo_lbl.setAlignment(Qt.AlignCenter)
         pix = QPixmap(str(_CONFIG / f"{site['key']}.png"))
         if not pix.isNull():
             logo_lbl.setPixmap(
-                pix.scaled(120, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pix.scaled(104, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             )
         else:
             logo_lbl.setText(site["name"])
@@ -143,9 +143,9 @@ class SiteCard(QFrame):
 class LauncherWindow(QMainWindow):
 
     # Chrome around the card list (margins + header block + footer)
-    _OUTER_V_MARGINS  = 18 + 18          # top + bottom outer margins
-    _HEADER_BLOCK_H   = 22 + 6 + 12 + 8 + 1 + 10  # hdr + spacing + sub + spacing + divider + spacing
-    _FOOTER_BLOCK_H   = 10 + 10          # footer label + bottom spacing
+    _OUTER_V_MARGINS  = 10 + 10          # top + bottom outer margins
+    _HEADER_BLOCK_H   = 16 + 4 + 8 + 6 + 1 + 8  # hdr + spacing + sub + spacing + divider + spacing
+    _FOOTER_BLOCK_H   = 10 + 8           # footer label + bottom spacing
     _CARDS_TOP_PAD    = 4
     _CARDS_BOT_PAD    = 4
 
@@ -156,11 +156,20 @@ class LauncherWindow(QMainWindow):
         self.setStyleSheet(STYLES["launcher"])
         self.setWindowIcon(app_icon())
         self._build_ui()
-        # Give the window a sensible starting size right away so it never opens
-        # half-collapsed, then snap to the exact fit AFTER the layout/show pass
-        # (calling fit before the first layout leaves a wrong size until moved).
-        self.resize(920, 760)
-        QTimer.singleShot(0, self._fit_to_cards)
+        # Sensible starting size; the real fit happens in showEvent (the layout
+        # is only live once the window is actually shown — fitting before that
+        # leaves the cards un-stretched → empty band on the right until you
+        # nudge the window).
+        self.resize(900, 660)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if not getattr(self, "_fitted_once", False):
+            self._fitted_once = True
+            # Fit now and again next tick, after the shown layout has settled.
+            self._fit_to_cards()
+            QTimer.singleShot(0,   self._fit_to_cards)
+            QTimer.singleShot(120, self._fit_to_cards)
 
     # ------------------------------------------------------------------
     def _build_ui(self):
@@ -169,45 +178,45 @@ class LauncherWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self._outer = QVBoxLayout(root)
-        self._outer.setContentsMargins(24, 18, 24, 18)
-        self._outer.setSpacing(10)
+        self._outer.setContentsMargins(22, 10, 22, 10)
+        self._outer.setSpacing(8)
 
         # Header: logo flush to the LEFT edge; bilingual title centred in the
         # space between the logo and the right edge (stretch on both sides).
         hdr_row = QHBoxLayout()
-        hdr_row.setSpacing(20)
-        hdr_row.setContentsMargins(0, 4, 0, 4)
+        hdr_row.setSpacing(16)
+        hdr_row.setContentsMargins(0, 2, 0, 2)
 
         _logo_pix = QPixmap(str(_CONFIG / "app_logo.png"))
         if not _logo_pix.isNull():
             logo_lbl = QLabel()
             logo_lbl.setPixmap(
-                _logo_pix.scaledToWidth(190, Qt.SmoothTransformation))
+                _logo_pix.scaledToWidth(196, Qt.SmoothTransformation))
             logo_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             hdr_row.addWidget(logo_lbl)     # flush left, no spring before it
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(6)
+        title_col.setSpacing(3)
         title_col.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
 
         en_lbl = QLabel("Genealogy Search")
         en_lbl.setAlignment(Qt.AlignHCenter)
         en_lbl.setStyleSheet(
-            "font-size:40px;font-weight:bold;color:#2a4a2a;"
+            "font-size:36px;font-weight:bold;color:#2a4a2a;"
             "font-family:'Palatino Linotype',Palatino,Georgia,serif;"
             "letter-spacing:1px;")
 
         ru_lbl = QLabel("Генеалогический поиск")
         ru_lbl.setAlignment(Qt.AlignHCenter)
         ru_lbl.setStyleSheet(
-            "font-size:24px;font-weight:600;color:#5a7a4a;"
+            "font-size:22px;font-weight:600;color:#5a7a4a;"
             "font-family:'Segoe UI',Arial,sans-serif;letter-spacing:0.5px;")
 
         sub_lbl = QLabel("Select a database  ·  Выберите базу данных")
         sub_lbl.setAlignment(Qt.AlignHCenter)
         sub_lbl.setStyleSheet(
-            "font-size:16px;color:#777;font-style:italic;"
-            "font-family:'Segoe UI',Arial,sans-serif;margin-top:2px;")
+            "font-size:12px;color:#777;font-style:italic;"
+            "font-family:'Segoe UI',Arial,sans-serif;margin-top:1px;")
 
         title_col.addWidget(en_lbl)
         title_col.addWidget(ru_lbl)
@@ -237,37 +246,35 @@ class LauncherWindow(QMainWindow):
         self._outer.addWidget(self._card_container)
 
         # Footer
-        footer = QLabel("© 2026 Alla Khananashvili")
-        footer.setAlignment(Qt.AlignRight)
-        footer.setStyleSheet(STYLES["footer"])
-        self._outer.addWidget(footer)
+        self._footer = QLabel("© 2026 Alla Khananashvili")
+        self._footer.setAlignment(Qt.AlignRight)
+        self._footer.setStyleSheet(STYLES["footer"])
+        self._outer.addWidget(self._footer)
 
     # ------------------------------------------------------------------
     def _fit_to_cards(self):
-        """Resize the window so all cards are visible without scrolling."""
-        n          = len(SITES)
-        cards_h    = (
-            n * SiteCard.CARD_HEIGHT
-            + max(n - 1, 0) * SiteCard.CARD_SPACING
-            + self._CARDS_TOP_PAD
-            + self._CARDS_BOT_PAD
-        )
-        total_h = (
-            self._OUTER_V_MARGINS
-            + self._HEADER_BLOCK_H
-            + cards_h
-            + self._FOOTER_BLOCK_H
-        )
-        # Let Qt do one pass so sizeHint() is accurate, then snap to it.
+        """Resize the window so all cards are visible, with NO empty gap and the
+        cards stretched to the full width."""
+        # Unlock any previously-pinned size so the layout can report its true,
+        # fully-settled size (a stale fixed size would otherwise stick).
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
+        final_w = 920                       # snug width; cards fill it
+        self.setFixedWidth(final_w)
+        self.centralWidget().resize(final_w, self.centralWidget().height())
         self._card_container.adjustSize()
         self.centralWidget().adjustSize()
-        hint = self.sizeHint()
-        # Use the larger of our calculated height and Qt's own hint.
-        final_h = max(total_h, hint.height())
-        # Width: at least 920, or whatever the (wide) header needs.
-        final_w = max(920, hint.width())
+        self._outer.activate()
+        # Trim to the REAL bottom of the footer (sizeHint slightly over-reports,
+        # leaving an empty band). footer.geometry() is in central-widget coords;
+        # the central widget fills the window (no menu/tool/status bar).
+        fb = self._footer.geometry().bottom()
+        final_h = (fb + self._outer.contentsMargins().bottom() + 2) if fb > 50 \
+            else max(self.centralWidget().sizeHint().height(), 360)
         self.resize(final_w, final_h)
-        self.setFixedHeight(final_h)   # prevent vertical resizing
+        self.setFixedHeight(final_h)        # prevent vertical resizing
+        self.centralWidget().resize(final_w, final_h)
+        self._outer.activate()
 
 
 # ---------------------------------------------------------------------------
