@@ -11,7 +11,7 @@ Changes:
 * Autosave / restore all fields including site selection.
 """
 
-import json, sys, threading
+import json, re, sys, threading
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -22,8 +22,25 @@ from PySide6.QtWidgets import (
     QScrollArea, QRadioButton, QButtonGroup, QFrame, QGridLayout,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtGui import QPixmap, QIcon, QValidator
 from gui._app_icon import app_icon, make_header
+
+
+class _YearSpin(QSpinBox):
+    """Year field that can be CLEARED back to empty (value 0 → «—»).
+
+    A plain QSpinBox refuses empty text and reverts to the last value, so an
+    entered year could only be *changed*, never *deleted* (user-reported bug).
+    Accepting empty/«—» as valid lets the user backspace the field to clear it.
+    """
+    def validate(self, text, pos):
+        if text.strip() in ("", "—"):
+            return (QValidator.Acceptable, text, pos)
+        return super().validate(text, pos)
+
+    def valueFromText(self, text):
+        digits = re.sub(r"\D", "", text or "")
+        return int(digits) if digits else 0
 
 _EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
   fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -253,19 +270,23 @@ class MyHeritageApp(QMainWindow):
         self._outer.addWidget(cg)
 
         # ── Basic search (always visible) ────────────────────────────────── #
+        # Each row is a HBox: fixed-width label | stretching input | checkbox.
+        # The stretching input absorbs the slack so the checkbox always stays
+        # INSIDE the group border (the old QGridLayout let them spill past it).
         ms = QGroupBox("Basic Search")
-        mg = QGridLayout(ms); mg.setSpacing(8)
+        mv = QVBoxLayout(ms); mv.setSpacing(10); mv.setContentsMargins(12, 10, 12, 10)
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
         self.f_first_strict = QCheckBox("Exact match for first name")
         self.f_last_strict  = QCheckBox("Exact match for surname")
-        mg.addWidget(QLabel("First name / Patronymic:"), 0, 0)
-        mg.addWidget(self.f_first,        0, 1)
-        mg.addWidget(self.f_first_strict, 0, 2)
-        mg.addWidget(QLabel("Surname:"),  1, 0)
-        mg.addWidget(self.f_surname,      1, 1)
-        mg.addWidget(self.f_last_strict,  1, 2)
-        mg.setColumnStretch(1, 1)
+        _LBLW = 170
+        r1 = QHBoxLayout(); r1.setSpacing(8)
+        _l1 = QLabel("First name / Patronymic:"); _l1.setFixedWidth(_LBLW)
+        r1.addWidget(_l1); r1.addWidget(self.f_first, 1); r1.addWidget(self.f_first_strict)
+        r2 = QHBoxLayout(); r2.setSpacing(8)
+        _l2 = QLabel("Surname:"); _l2.setFixedWidth(_LBLW)
+        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1); r2.addWidget(self.f_last_strict)
+        mv.addLayout(r1); mv.addLayout(r2)
         self._outer.addWidget(ms)
 
         # ── Advanced toggle ──────────────────────────────────────────────── #
@@ -278,7 +299,7 @@ class MyHeritageApp(QMainWindow):
         # Advanced panel — wrapped in a QScrollArea (like FamilySearch)
         self._adv = QGroupBox()
         af = QFormLayout(self._adv); af.setSpacing(8)
-        self.f_by  = QSpinBox(); self.f_by.setRange(0,2025); self.f_by.setValue(0)
+        self.f_by  = _YearSpin(); self.f_by.setRange(0,2025); self.f_by.setValue(0)
         self.f_by.setSpecialValueText("—"); self.f_by.setFixedWidth(110)
         self.f_bp  = QLineEdit(); self.f_bp.setPlaceholderText("City, country…")
         self.f_fa  = QLineEdit(); self.f_fa.setPlaceholderText("Father's name")
@@ -287,7 +308,7 @@ class MyHeritageApp(QMainWindow):
         self.f_mo_last = QLineEdit(); self.f_mo_last.setPlaceholderText("Mother's surname")
         self.f_sp  = QLineEdit(); self.f_sp.setPlaceholderText("Spouse's name")
         self.f_sp_last = QLineEdit(); self.f_sp_last.setPlaceholderText("Spouse's surname")
-        self.f_dy  = QSpinBox(); self.f_dy.setRange(0,2025); self.f_dy.setValue(0)
+        self.f_dy  = _YearSpin(); self.f_dy.setRange(0,2025); self.f_dy.setValue(0)
         self.f_dy.setSpecialValueText("—"); self.f_dy.setFixedWidth(110)
         self.f_dp  = QLineEdit(); self.f_dp.setPlaceholderText("City, country…")
         self.f_res = QLineEdit(); self.f_res.setPlaceholderText("City / region")
@@ -397,8 +418,17 @@ class MyHeritageApp(QMainWindow):
         self._fit()
 
     def _fit(self):
-        self.adjustSize()
-        self.setFixedHeight(self.sizeHint().height())
+        # Unlock height, force the layout to RECOMPUTE synchronously, then lock to
+        # the fresh size. Without invalidate()/activate() the sizeHint right after
+        # collapsing the Advanced panel is still the old (taller) value, so the
+        # window keeps an empty «подвал» whose extra height inflates the groups.
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
+        self._outer.invalidate()
+        self._outer.activate()
+        h = self.sizeHint().height()
+        self.resize(self.width(), h)
+        self.setFixedHeight(h)
 
     def _record_type(self) -> str:
         for opt, rb in self._rt_buttons.items():

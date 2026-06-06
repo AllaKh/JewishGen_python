@@ -306,12 +306,16 @@ class JewishGenApp(QMainWindow):
         mr.addWidget(QLabel("Match mode:"))
         self.mode_or  = QPushButton("OR");  self.mode_or.setCheckable(True)
         self.mode_and = QPushButton("AND"); self.mode_and.setCheckable(True)
+        # Default OR. With ONE keyword (e.g. a town «Bendery») OR and AND are
+        # identical — that is the way to keep ALL records of that town. Use AND
+        # only to require SEVERAL words in the same row (narrows hard).
         self.mode_or.setChecked(True)
         self.mode_or.setFixedWidth(54); self.mode_and.setFixedWidth(54)
         self.mode_or.clicked.connect( lambda: self._set_mode("OR"))
         self.mode_and.clicked.connect(lambda: self._set_mode("AND"))
         mr.addWidget(self.mode_or); mr.addWidget(self.mode_and)
-        mr.addWidget(QLabel("  OR = any keyword matches,   AND = all must match"))
+        mr.addWidget(QLabel("  OR = any keyword matches,   "
+                            "AND = all keywords must be in the same row (narrows)"))
         mr.addStretch()
         fl.addLayout(mr)
 

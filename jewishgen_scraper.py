@@ -1378,78 +1378,72 @@ _JS_EXTRACT = r"""
         .filter(function(g) { return !NOISE_RE.test(gridRowText(g.cells)); })
         .filter(function(g) { return !isRepeatedCells(g.cells); });
 
-    // ── family grouping ───────────────────────────────────────────────── //
-    var families = [];
-    var curFamily = null, curKey = null;
-    dataGrid.forEach(function(g) {
-        if (!rowHasContent(g.cells)) return;
-        var c0 = g.cells[0];
-        var key;
-        if (c0 === null) {
-            key = curKey === null ? '' : curKey;
-        } else {
-            key = gridCellText(c0);
-            if (key === '' && curKey !== null) key = curKey;
-        }
-        if (curFamily !== null && key === curKey) {
-            curFamily.push(g);
-        } else {
-            curFamily = [g];
-            curKey = key;
-            families.push(curFamily);
-        }
-    });
-
-    // ── matching ─────────────────────────────────────────────────────── //
+    // ── STRICT per-row matching ───────────────────────────────────────── //
+    // EVERY output row must itself satisfy the filter — a row that does not
+    // match is never included (no family/group can drag a non-matching row in;
+    // that was the leak). Each row also INHERITS the values of cells that a
+    // rowspan above spans into it, so a person listed under a rowspanned
+    // Town/Year column is still judged WITH that town/year. Net effect: a word
+    // filter is strict — e.g. people filed under Odessa are dropped by a
+    // «Bendery» filter, while everyone genuinely under a rowspanned «Bendery»
+    // cell is kept. With no keywords nothing is kept (the GUI requires one).
     var seenKeys = new Set();
     var matched = [];
+    var inherited = [];   // per-column text currently spanning down from above
 
-    families.forEach(function(fam) {
-        var hit = false;
-        fam.forEach(function(g) {
-            if (hit) return;
-            var rowText = '';
-            g.cells.forEach(function(c) { if (c) rowText += ' ' + (c.textContent || ''); });
-            var matches = mode === 'AND'
-                ? regexes.every(function(re) { return re.test(rowText); })
-                : regexes.some(function(re) { return re.test(rowText); });
-            if (matches) hit = true;
-        });
+    dataGrid.forEach(function(g) {
+        if (!rowHasContent(g.cells)) return;
+
+        // Full logical text of THIS row = own cells + inherited (covered) cells.
+        var fullParts = [];
+        for (var ci = 0; ci < g.cells.length; ci++) {
+            var c = g.cells[ci];
+            if (c) {
+                var ctext = (c.textContent || '');
+                fullParts.push(ctext);
+                inherited[ci] = ctext;            // this cell spans down from here
+            } else if (inherited[ci]) {
+                fullParts.push(inherited[ci]);    // covered by a rowspan above
+            }
+        }
+        var rowText = fullParts.join(' ');
+
+        if (!regexes.length) return;
+        var hit = mode === 'AND'
+            ? regexes.every(function(re) { return re.test(rowText); })
+            : regexes.some(function(re) { return re.test(rowText); });
         if (!hit) return;
 
-        fam.forEach(function(g) {
-            if (!rowHasContent(g.cells)) return;
-            var cellsSegs = g.cells.map(function(c) {
-                return c ? jg.getCellSegments(c) : [];
-            });
-            var total = 0;
-            cellsSegs.forEach(function(cell) {
-                cell.forEach(function(line) {
-                    line.forEach(function(s) { total += (s.t || '').length; });
-                });
-            });
-            // Drop single-cell noise rows
-            if (cellsSegs.length === 1 && total > 200) return;
-            var rowFlat = '';
-            cellsSegs.forEach(function(cell) {
-                cell.forEach(function(line) {
-                    line.forEach(function(s) { rowFlat += ' ' + (s.t || ''); });
-                });
-            });
-            if (NOISE_RE.test(rowFlat)) return;
-
-            // JS-side deduplication by row content key
-            var rowKey = rowFlat.replace(/\s+/g, ' ').trim().slice(0, 500);
-            if (seenKeys.has(rowKey)) return;
-            seenKeys.add(rowKey);
-
-            if (!matched.length) {
-                debug.firstRowHTML = g.cells.slice(0, 12).map(function(c) {
-                    return c ? c.outerHTML.slice(0, 500) : '<covered/>';
-                });
-            }
-            matched.push(cellsSegs);
+        var cellsSegs = g.cells.map(function(c) {
+            return c ? jg.getCellSegments(c) : [];
         });
+        var total = 0;
+        cellsSegs.forEach(function(cell) {
+            cell.forEach(function(line) {
+                line.forEach(function(s) { total += (s.t || '').length; });
+            });
+        });
+        // Drop single-cell noise rows
+        if (cellsSegs.length === 1 && total > 200) return;
+        var rowFlat = '';
+        cellsSegs.forEach(function(cell) {
+            cell.forEach(function(line) {
+                line.forEach(function(s) { rowFlat += ' ' + (s.t || ''); });
+            });
+        });
+        if (NOISE_RE.test(rowFlat)) return;
+
+        // JS-side deduplication by row content key
+        var rowKey = rowFlat.replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (seenKeys.has(rowKey)) return;
+        seenKeys.add(rowKey);
+
+        if (!matched.length) {
+            debug.firstRowHTML = g.cells.slice(0, 12).map(function(c) {
+                return c ? c.outerHTML.slice(0, 500) : '<covered/>';
+            });
+        }
+        matched.push(cellsSegs);
     });
 
     if (!columns.length && matched.length) {
@@ -1472,7 +1466,6 @@ _JS_EXTRACT = r"""
         debug: debug,
         totalLeafRows: leafTrs.length,
         totalDataRows: dataGrid.length,
-        totalFamilies: families.length,
     };
 }
 """
@@ -1575,7 +1568,6 @@ async def follow_next_pages(page, keywords, acc, keyword_mode="OR",
         print(f"    [page {page_idx}] scanned: "
               f"{result.get('totalLeafRows','?')} leaf rows, "
               f"{result.get('totalDataRows','?')} data rows, "
-              f"{result.get('totalFamilies','?')} families, "
               f"{len(result['rows'])} matches")
 
         if result["rows"]:
@@ -1775,6 +1767,32 @@ def _row_image_tasks(row):
 
     tasks = []
 
+    # ── JOWBR cemetery record → the gravestone PHOTO lives on its detail page
+    # (…/cemetery/jowbr.php?rec=…), which the row's name links to. That link is
+    # neither a number nor an «Image» word, so it was ignored and the photo was
+    # never saved. Route it through the «direct» handler, which opens the page
+    # and grabs the largest image (the tombstone). ──
+    # Also: ANY link whose href OR text ends in an image extension (e.g. a grave
+    # photo shown as «IMG_5963.JPG»). The «direct» handler opens it and saves it.
+    _img_ext = re.compile(r"\.(jpe?g|png|gif|tiff?)(\?|$)", re.I)
+    _seen_jowbr = set()
+    for cell in (row or []):
+        for line in (cell or []):
+            for seg in (line or []):
+                if not isinstance(seg, dict):
+                    continue
+                h = (seg.get("h") or "")
+                if not h:
+                    continue
+                hl = h.lower()
+                t = (seg.get("t") or "")
+                if h in _seen_jowbr:
+                    continue
+                if ("jowbr.php" in hl or "/cemetery/" in hl
+                        or _img_ext.search(hl) or _img_ext.search(t)):
+                    _seen_jowbr.add(h)
+                    tasks.append({"type": "direct", "url": h, "img_num": None})
+
     # ── second-to-last column: look for clickable word "Image" ────── #
     if len(row) >= 2:
         for text, href in _cell_links(row[-2]):
@@ -1831,16 +1849,95 @@ def _row_image_tasks(row):
     return tasks
 
 
+# JS: src of the largest content <img> on the page (skip chrome/logos/thumbs).
+_BEST_IMG_JS = r"""() => {
+    const SKIP = ['icon','logo','sprite','avatar','pixel','placeholder','.svg',
+                  'fscdn.org','thumb'];
+    let best = '', area = 0;
+    for (const im of document.querySelectorAll('img[src]')) {
+        const src = (im.src || '').trim();
+        if (!/^https?:/i.test(src)) continue;
+        const low = src.toLowerCase();
+        if (SKIP.some(b => low.includes(b))) continue;
+        const a = (im.naturalWidth || 0) * (im.naturalHeight || 0);
+        if (a > area) { area = a; best = src; }
+    }
+    return best;
+}"""
+
+# JS: every *.jpg/png/gif/tif the page LINKS to — via href OR via the link's text
+# (JOWBR grave photos appear as a link whose text is «IMG_5963.JPG»). De-duped.
+_IMG_LINKS_JS = r"""() => {
+    const ext = /\.(jpe?g|png|gif|tiff?)(\?|$)/i;
+    const bad = /\.svg|sprite|logo|icon|thumb/i;
+    const out = [], seen = new Set();
+    for (const a of document.querySelectorAll('a[href]')) {
+        const h = a.href || '';
+        const t = (a.textContent || '').trim();
+        let u = '';
+        if (ext.test(h)) u = h;
+        else if (ext.test(t)) u = h;     // text «IMG_5963.JPG» → file is in href
+        if (u && /^https?:/i.test(u) && !bad.test(u) && !seen.has(u)) {
+            seen.add(u); out.push(u);
+        }
+    }
+    return out;
+}"""
+
+
+async def _save_image_url(context, url, dest, log) -> bool:
+    """Open an image URL in a throwaway tab; if it IS an image save its body, else
+    save the largest image on the page it opened. Returns True on success."""
+    p = await context.new_page()
+    try:
+        r = await p.goto(url, timeout=20000, wait_until="domcontentloaded")
+        ct = (r.headers.get("content-type", "") if r else "")
+        if r and r.ok and "image" in ct:
+            body = await r.body()
+            if len(body) > 3000:
+                dest.write_bytes(body)
+                log(f"    Сохранено: {dest.name} ({len(body)//1024}KB)")
+                return True
+        await asyncio.sleep(1)
+        best = await p.evaluate(_BEST_IMG_JS)
+        if best:
+            r2 = await context.request.get(best, timeout=15000)
+            if r2.ok:
+                body = await r2.body()
+                if len(body) > 3000:
+                    dest.write_bytes(body)
+                    log(f"    Сохранено: {dest.name} ({len(body)//1024}KB)")
+                    return True
+    except Exception:
+        pass
+    finally:
+        try:
+            await p.close()
+        except Exception:
+            pass
+    return False
+
+
 async def _do_direct_download(context, url, dest, log):
-    """Open url in a new page, find the largest image, save it."""
+    """Open url and save the image(s) it leads to:
+      1) the URL itself if it is an image;
+      2) otherwise EVERY *.jpg/png/gif the page LINKS to (e.g. JOWBR grave photos
+         «IMG_5963.JPG») — one file each (dest, dest_2, …);
+      3) failing that, the largest image on the page."""
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     page = await context.new_page()
+    saved_paths = []
+
+    def _nth_dest():
+        n = len(saved_paths)
+        return dest if n == 0 else dest.with_name(f"{dest.stem}_{n+1}{dest.suffix}")
+
     try:
         resp = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(2)
 
-        # If the URL itself is an image resource, save the body directly
+        # 1) the URL itself is an image
         ct = (resp.headers.get("content-type", "") if resp else "")
         if resp and "image" in ct:
             body = await resp.body()
@@ -1849,36 +1946,22 @@ async def _do_direct_download(context, url, dest, log):
                 log(f"    Сохранено: {dest.name} ({len(body)//1024}KB)")
                 return str(dest)
 
-        # Otherwise find the largest visible image on the page
-        _SKIP = ("icon", "logo", "sprite", "avatar", "pixel",
-                 "placeholder", ".svg", "fscdn.org")
-        best, area = "", 0
-        for el in await page.query_selector_all("img[src]"):
-            try:
-                src = (await el.get_attribute("src") or "").strip()
-                if not src.startswith("http"):
-                    continue
-                if any(b in src.lower() for b in _SKIP):
-                    continue
-                w = int(await el.evaluate("e => e.naturalWidth") or 0)
-                h = int(await el.evaluate("e => e.naturalHeight") or 0)
-                if w * h > area:
-                    area, best = w * h, src
-            except Exception:
-                continue
+        # 2) every *.jpg/png the page links to (grave photos etc.)
+        try:
+            links = await page.evaluate(_IMG_LINKS_JS)
+        except Exception:
+            links = []
+        for u in links[:12]:
+            d = _nth_dest()
+            if await _save_image_url(context, u, d, log):
+                saved_paths.append(str(d))
+        if saved_paths:
+            return saved_paths[0]
 
-        if best:
-            img_page = await context.new_page()
-            try:
-                r2 = await img_page.goto(best, timeout=15000)
-                if r2 and r2.ok:
-                    body = await r2.body()
-                    if len(body) > 5000:
-                        dest.write_bytes(body)
-                        log(f"    Сохранено: {dest.name} ({len(body)//1024}KB)")
-                        return str(dest)
-            finally:
-                await img_page.close()
+        # 3) fallback: the largest image on the page itself
+        best = await page.evaluate(_BEST_IMG_JS)
+        if best and await _save_image_url(context, best, dest, log):
+            return str(dest)
 
         log(f"    !! direct: изображение не найдено ({url[:60]})")
         return None
@@ -2327,6 +2410,7 @@ async def run_scraper(
             used_filenames = set()
             databases_for_xlsx = []  # one entry per DB that produced matches
             n_items = len(items)
+            consecutive_unavailable = 0   # run of DBs that all 503'd → give up
             for i, item in enumerate(items, 1):
                 if _cancelled():
                     log("Cancelled by user.")
@@ -2346,7 +2430,9 @@ async def run_scraper(
 
                 # Open database page with 524 retry.
                 result_page = None
-                for attempt in range(4):
+                open_error = None
+                browser_dead = False
+                for attempt in range(3):
                     try:
                         result_page = await click_list_button_open_new_page(
                             context, page, label
@@ -2354,8 +2440,9 @@ async def run_scraper(
                         await ensure_not_503(result_page)
                         break
                     except TemporaryServerError:
-                        wait_s = 30 * (attempt + 1)  # 30, 60, 90, 120 s
-                        log(f"    524/503 opening database (attempt {attempt+1}/4) "
+                        open_error = "503"
+                        wait_s = 20 * (attempt + 1)  # 20, 40, 60 s
+                        log(f"    524/503 opening database (attempt {attempt+1}/3) "
                             f"— waiting {wait_s}s…")
                         if result_page and result_page is not page:
                             try:
@@ -2365,13 +2452,39 @@ async def run_scraper(
                         result_page = None
                         await asyncio.sleep(wait_s)
                     except Exception as exc:
-                        log(f"    skipped (could not open): {exc}")
+                        msg = str(exc)
+                        open_error = msg
+                        # Browser / context gone → nothing more will open; abort
+                        # the whole run instead of churning through every DB.
+                        if ("has been closed" in msg.lower()
+                                or "target page" in msg.lower()
+                                or "target closed" in msg.lower()):
+                            browser_dead = True
+                        else:
+                            log(f"    skipped (could not open): {exc}")
                         result_page = None
                         break
 
+                if browser_dead:
+                    log("    !! браузер/вкладка закрыты — прекращаю прогон "
+                        "(дальше ничего не откроется); сохраняю собранное.")
+                    break
+
                 if result_page is None:
-                    log(f"    skipped — could not open after retries.")
+                    if open_error == "503":
+                        consecutive_unavailable += 1
+                        log(f"    skipped — сервер недоступен (503/524) "
+                            f"[{consecutive_unavailable} подряд].")
+                        if consecutive_unavailable >= 3:
+                            log("    !! сервер стабильно отдаёт 503/524 — "
+                                "прекращаю прогон, попробуйте позже; "
+                                "сохраняю собранное.")
+                            break
+                    else:
+                        log("    skipped — could not open after retries.")
                     continue
+
+                consecutive_unavailable = 0   # opened OK → reset the 503 run
 
                 log(f"     -> opened: {result_page.url}")
                 acc = {"headerLines": [], "columns": [], "rows": []}

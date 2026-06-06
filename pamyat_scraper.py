@@ -513,22 +513,14 @@ async def _tab_block(page, words, wait_secs, log):
 # JS: the scan is shown as an IMAGE-MAP image — «<img usemap=…>» with clickable
 # <area> rows. Return its src (or, failing that, the largest loaded content img).
 _SCAN_IMG_JS = r"""() => {
+    // ONLY the image-map scan (what the «Документы» viewer actually shows). The
+    // old "largest image" fallback grabbed the PORTRAIT when no real document
+    // loaded → it ended up embedded huge as a fake "document". No fallback now:
+    // no image-map → no scan (better nothing than the portrait).
     const ok = im => im && im.complete && im.naturalWidth > 150;
-    // 1) the image-map scan (what the «Документы» viewer actually shows)
     for (const im of document.querySelectorAll('img[usemap], img[ismap]'))
         if (ok(im)) return im.src;
-    // 2) fallback: the largest loaded content image (skip banner / chrome)
-    let best = '', area = 0;
-    for (const im of document.querySelectorAll('img[src]')) {
-        if (!ok(im)) continue;
-        const s = (im.src || '').toLowerCase();
-        if (/\.svg|sprite|logo|icon|placeholder|data:|booklet|urok|avatar/i.test(s)) continue;
-        const r = im.getBoundingClientRect();
-        if (r.top < 200 && r.width < 320) continue;     // top banner thumbnails
-        const a = im.naturalWidth * im.naturalHeight;
-        if (a > 150000 && a > area) { area = a; best = im.src; }
-    }
-    return best;
+    return '';
 }"""
 
 
@@ -562,9 +554,24 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
             await cards.nth(k).click(timeout=2500)
         except Exception:
             continue
-        # wait briefly for THIS card's document (image-map + save button) to load
-        ready = False
-        for _ in range(6):
+        # Does this card actually carry a document? The save button appears in the
+        # DOM only then — no button after a few seconds → no document → skip fast
+        # (this is what stops the minute-long hang on document-less cards).
+        has_btn = False
+        for _ in range(4):
+            await asyncio.sleep(1)
+            try:
+                has_btn = await page.evaluate(
+                    "() => !!document.querySelector('#btnSaveLocalImage')")
+            except Exception:
+                has_btn = False
+            if has_btn:
+                break
+        if not has_btn:
+            continue                        # no document on this card → skip fast
+        # It HAS a document → it loads SLOWLY, so wait (much longer than before) for
+        # the image-map scan to finish AND the button to become visible.
+        for _ in range(14):
             await asyncio.sleep(1)
             try:
                 ready = await page.evaluate(
@@ -575,8 +582,24 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
                 ready = False
             if ready:
                 break
-        if not ready:
-            continue                        # no document on this card → skip fast
+        # Whether or not the strict image-map check passed, a button exists here →
+        # attempt the save anyway (some documents may not be image-maps).
+        # talking filename built from THIS card's own document name
+        label = ""
+        try:
+            ne = cards.nth(k).locator(".hero-card-docs-item__name").first
+            if await ne.count():
+                label = safe_fn(re.sub(r"\s+", " ", await ne.inner_text()).strip())[:60]
+        except Exception:
+            label = ""
+        label = label or f"документ {saved + 1}"
+
+        def _dest(suffix):
+            d = images_dir / f"{base}_{label}{suffix}"
+            if d.exists():
+                d = images_dir / f"{base}_{label}_{saved + 1}{suffix}"
+            return d
+
         # click «Сохранить изображение» → capture the download
         try:
             btn = page.locator("#btnSaveLocalImage").first
@@ -584,7 +607,7 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
                 await btn.click(timeout=4000)
             d = await dl.value
             suf = Path(d.suggested_filename or "scan.jpg").suffix or ".jpg"
-            dest = images_dir / f"{base}_doc{saved + 1}{suf}"
+            dest = _dest(suf)
             await d.save_as(str(dest))
             rec["scans"].append(str(dest)); saved += 1
             log(f"      🖼 документ сохранён: {dest.name}")
@@ -597,51 +620,186 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
                     if r.ok:
                         body = await r.body()
                         if len(body) > 15000:
-                            dest = images_dir / f"{base}_doc{saved + 1}.jpg"
+                            dest = _dest(".jpg")
                             dest.write_bytes(body)
                             rec["scans"].append(str(dest)); saved += 1
-                            log(f"      🖼 документ сохранён (img): {len(body)//1024}KB")
+                            log(f"      🖼 документ сохранён (img): {dest.name}")
             except Exception:
                 pass
     return saved > 0
 
 
+async def _save_img_url(page, url, dest) -> bool:
+    """Download an image URL and write it to dest. A REFERER is essential — the
+    pamyat CDN blocks hot-linking, so a plain fetch returns 403 (this is exactly
+    why the photo silently never saved). Returns True on success."""
+    if not url or not url.startswith("http"):
+        return False
+    try:
+        r = await page.request.get(url, headers={"referer": page.url}, timeout=20000)
+        if not r.ok:
+            return False
+        body = await r.body()
+        if len(body) < 2000:
+            return False
+        dest.write_bytes(body)
+        return True
+    except Exception:
+        return False
+
+
+async def _img_bytes_via_goto(context, url, referer) -> bytes:
+    """Fetch image bytes by NAVIGATING a throwaway tab to the URL. This uses the
+    REAL browser (its cookies + a referer), which is what the pamyat CDN requires:
+    a plain APIRequest gets 403, and a cross-origin fetch() is blocked by CORS, so
+    both failed before. A browser navigation to the image works. Returns b'' on
+    failure. Never raises."""
+    p = await context.new_page()
+    try:
+        try:
+            await p.set_extra_http_headers({"referer": referer})
+        except Exception:
+            pass
+        resp = await p.goto(url, timeout=20000, wait_until="commit")
+        if resp and resp.ok:
+            body = await resp.body()
+            if body and len(body) > 2000:
+                return body
+    except Exception:
+        pass
+    finally:
+        try:
+            await p.close()
+        except Exception:
+            pass
+    return b""
+
+
+async def _grab_photos(page, images_dir, base, rec, log):
+    """Person photo(s): «<a class="hero-card-person-photo__item" href="…_photo.jpg"
+    style="background-image:url(…)">». No save arrow — you click the photo and save
+    it. The same portrait can repeat across cards → de-dupe by URL. Download via a
+    real browser navigation (the CDN blocks plain fetches); if that fails, SCREENSHOT
+    the photo element itself (its background-image renders the portrait). Saved to
+    disk AND kept for Word. Never raises."""
+    # We run BEFORE _save_media creates images_dir, so create it here too —
+    # otherwise write_bytes() throws FileNotFoundError and the photo is lost
+    # silently (this is exactly why the portrait never saved).
+    try:
+        images_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    try:
+        n = await page.evaluate(r"""() => {
+            const sel = '.hero-card-person-photo__item, .js-hero-person-card-photo,'
+                + ' a[rel="hero-card-photo"], a[class*="person-photo" i]';
+            const els = [...document.querySelectorAll(sel)];
+            els.forEach((a, i) => a.setAttribute('data-pw-photo', i));
+            return els.length;
+        }""")
+        if not n:
+            log("      (фото на странице не найдено)")
+            return
+        seen = set()
+        for i in range(min(n, 12)):
+            a = page.locator(f'[data-pw-photo="{i}"]').first
+            if not await a.count():
+                continue
+            try:
+                url = await a.evaluate(r"""el => {
+                    let u = el.getAttribute('href') || el.href || '';
+                    if (!/\.(jpe?g|png|webp|gif)/i.test(u)) {
+                        const bg = (el.style && el.style.backgroundImage) || '';
+                        const m = bg.match(/url\(["']?(.*?)["']?\)/);
+                        if (m) u = m[1];
+                    }
+                    return u || '';
+                }""")
+            except Exception:
+                url = ""
+            if url and url in seen:
+                continue
+            if url:
+                seen.add(url)
+            nidx = len(rec["photos"]) + 1
+            tag = "_фото" if nidx == 1 else f"_фото{nidx}"
+            saved = False
+
+            # 1) real-browser navigation → original image bytes
+            if url:
+                body = await _img_bytes_via_goto(page.context, url, page.url)
+                if body:
+                    suf = Path(urlparse(url).path).suffix.lower()
+                    if suf not in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"):
+                        suf = ".jpg"
+                    dest = images_dir / f"{base}{tag}{suf}"
+                    try:
+                        dest.write_bytes(body)
+                        rec["photos"].append(str(dest)); saved = True
+                        log(f"      📷 фото сохранено: {dest.name}")
+                    except Exception as e:
+                        log(f"      !! фото: не записалось на диск ({type(e).__name__})")
+
+            # 2) screenshot the photo element itself (renders its background image)
+            if not saved:
+                try:
+                    await a.scroll_into_view_if_needed(timeout=2000)
+                    shot = await a.screenshot(timeout=6000)
+                    if shot and len(shot) > 1000:
+                        dest = images_dir / f"{base}{tag}.png"
+                        dest.write_bytes(shot)
+                        rec["photos"].append(str(dest)); saved = True
+                        log(f"      📷 фото сохранено (снимок): {dest.name}")
+                except Exception as e:
+                    log(f"      !! фото-снимок не вышел ({type(e).__name__})")
+
+            if not saved:
+                log("      !! фото найдено, но не скачалось")
+    except Exception as e:
+        log(f"      !! фото: ошибка ({type(e).__name__})")
+
+
 async def _save_media(page, rec, images_dir, base, log):
-    """Awards (order/medal images near «Орден/Медаль» text) → bytes for Word, NOT
-    saved. Document SCAN (large, slow-loading archival page in «Документы») →
-    waited for, refreshed if it stalls, then saved. Never touch «Скачать
-    документы» (the album/booklet). Never raises."""
+    """Person photo(s) → downloaded. Awards (order/medal images near «Орден/Медаль»
+    text) → bytes for Word, NOT saved. Document SCAN (large, slow-loading archival
+    page in «Документы») → waited for, refreshed if it stalls, then saved. Never
+    touch «Скачать документы» (the album/booklet). Never raises."""
     images_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Awards: only images that sit by «Орден/Медаль» text (not the banner). ──
+    # ── Awards (orders/medals): images associated with award text or an award
+    # container, ANYWHERE on the page. Exclude the portrait (src «_photo» / inside
+    # a person-photo box) and banners/logos. Downloaded through the browser (the
+    # CDN blocks plain requests, same as the photo). Kept as bytes for Word —
+    # NOT written to the images folder. ──
     try:
         award_srcs = await page.evaluate(r"""() => {
             const out = [], seen = new Set();
-            for (const e of document.querySelectorAll('div, li, span, td, p')) {
-                if (e.children.length > 4) continue;
-                if (!/орден|медал/i.test(e.textContent || '')) continue;
-                if ((e.textContent || '').length > 140) continue;
-                const scope = e.closest('[class*="award" i],[class*="nagrad" i],li,div') || e;
-                scope.querySelectorAll('img[src]').forEach(im => {
-                    const s = im.src || '';
-                    if (s && !seen.has(s) && !/\.svg|sprite|logo|icon|data:|booklet|urok/i.test(s)) {
-                        seen.add(s); out.push(s);
-                    }
-                });
+            const bad = /\.svg|sprite|logo|icon|placeholder|data:|booklet|urok|_photo|person|avatar|banner/i;
+            for (const im of document.querySelectorAll('img[src]')) {
+                const s = im.src || '';
+                if (!s || seen.has(s) || bad.test(s)) continue;
+                if (im.closest('[class*="person-photo" i],[class*="hero-card-person" i]')) continue;
+                // associated with an award? walk up a few ancestors (class or text)
+                let el = im, ok = false;
+                for (let up = 0; up < 5 && el; up++, el = el.parentElement) {
+                    const cls = (el.className && el.className.toString)
+                        ? el.className.toString() : '';
+                    if (/award|nagrad|orden|medal/i.test(cls)) { ok = true; break; }
+                    const t = el.textContent || '';
+                    if (t.length < 220 && /орден|медал|наград/i.test(t)) { ok = true; break; }
+                }
+                if (ok) { seen.add(s); out.push(s); }
             }
-            return out.slice(0, 6);
+            return out.slice(0, 8);
         }""")
         for src in award_srcs:
-            try:
-                r = await page.request.get(src, timeout=15000)
-                if r.ok:
-                    body = await r.body()
-                    if 1500 < len(body) < 900000:
-                        rec["awards"].append(body)
-            except Exception:
-                continue
+            body = await _img_bytes_via_goto(page.context, src, page.url)
+            if 1200 < len(body) < 1500000:
+                rec["awards"].append(body)
         if rec["awards"]:
             log(f"      🎖 орденов в Word (мелко): {len(rec['awards'])}")
+        else:
+            log("      (орденов-изображений на странице не найдено)")
     except Exception:
         pass
 
@@ -667,17 +825,20 @@ async def _save_media(page, rec, images_dir, base, log):
         pass
 
 
-async def _extract_person(page, url, images_dir, log) -> dict:
+async def _extract_person(page, url, images_dir, log, result_name="") -> dict:
     """Copy EVERYTHING from a person page: tabs (Сводная / Боевой путь / Доп.) in
-    the header + a structured table for EACH document card + the document scans."""
+    the header + a structured table for EACH document card + the document scans
+    + the person's photo(s)."""
     rec = {"name": "", "url": url, "summary": [], "combat": "", "additional": "",
-           "docs": [], "scans": [], "awards": []}
+           "docs": [], "scans": [], "awards": [], "photos": []}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(2.5)
         rec["name"] = await page.evaluate(
             "() => { const h=document.querySelector('h1');"
             " return h ? h.textContent.replace(/\\s+/g,' ').trim() : ''; }")
+        if not rec["name"]:
+            rec["name"] = result_name        # h1 missing → use the result-list name
 
         # ── Summary (default «Сводная информация» tab). Its labels may have NO
         # colon (a two-column layout), so split the text by the KNOWN labels.
@@ -703,6 +864,11 @@ async def _extract_person(page, url, images_dir, log) -> dict:
             }""", _SUMMARY_LABELS)
         except Exception:
             pass
+
+        # ── Person photo(s): grab NOW, while we are on «Сводная информация» and
+        # before tab switches / card clicks can remove the portrait from view.
+        base = safe_fn(rec.get("name") or result_name or "person")
+        await _grab_photos(page, images_dir, base, rec, log)
 
         # ── Tabs for the header. «Боевой путь» loads slowly → wait longer.
         rec["combat"]     = await _tab_block(page, ["боевой путь", "combat"], 6, log)
@@ -764,8 +930,7 @@ async def _extract_person(page, url, images_dir, log) -> dict:
         log(f"      сводка: {len(rec['summary'])} полей, карточек: {len(rec['docs'])}, "
             f"боевой путь: {'да' if rec['combat'] else 'нет'}")
 
-        base = safe_fn(rec.get("name") or "person")
-        await _save_media(page, rec, images_dir, base, log)
+        await _save_media(page, rec, images_dir, base, log)   # base set above
     except Exception as e:
         log(f"      !! страница человека ({type(e).__name__})")
     # strip leaked site chrome (footer/nav) from every text block
@@ -795,6 +960,15 @@ def _docx_add_person(doc, i, rec):
     name = rec.get("name") or f"Запись {i}"
     hp = doc.add_paragraph(); hr = hp.add_run(f"{i}. {name}")
     hr.bold = True; hr.font.size = Pt(13)
+
+    # Person photo(s): medium size, right under the name.
+    for ph in rec.get("photos", []):
+        try:
+            png = _to_png(Path(ph).read_bytes())
+            if png:
+                doc.add_picture(io.BytesIO(png), width=Inches(2.2))
+        except Exception:
+            pass
 
     # ── Header: Сводная / Боевой путь / Дополнительная ──
     summary = rec.get("summary") or []
@@ -832,12 +1006,13 @@ def _docx_add_person(doc, i, rec):
             doc.add_paragraph(d["text"])
         doc.add_paragraph("")          # ← spacing between cards
 
-    # Document SCANS (the slow-loading archival pages): big, saved to disk.
+    # Document SCANS (the slow-loading archival pages): saved to disk; embedded
+    # at a moderate size (was too large before — «УМЕНЬШАЙ»).
     for img in rec.get("scans", []):
         try:
             png = _to_png(Path(img).read_bytes())
             if png:
-                doc.add_picture(io.BytesIO(png), width=Inches(5.5))
+                doc.add_picture(io.BytesIO(png), width=Inches(3.3))
         except Exception:
             pass
 
@@ -954,7 +1129,8 @@ async def run_scraper(*,
                 try:
                     dp = await ctx.new_page()
                     try:
-                        rec = await _extract_person(dp, pr["href"], images_dir, log)
+                        rec = await _extract_person(dp, pr["href"], images_dir, log,
+                                                    result_name=pr["name"])
                     finally:
                         await dp.close()
                     if not rec.get("name"):
@@ -963,7 +1139,8 @@ async def run_scraper(*,
                 except Exception as _e:
                     log(f"      !! пропускаю человека ({type(_e).__name__})")
                     persons.append({"name": pr["name"], "url": pr["href"],
-                                    "summary": [], "docs": [], "scans": [], "awards": []})
+                                    "summary": [], "docs": [], "scans": [],
+                                    "awards": [], "photos": []})
                 await asyncio.sleep(0.3)
 
             _prog(92, "Сохранение…")
