@@ -28,11 +28,11 @@
     "url": "https://www.ancestry.com"
   },
   {
-    "key": "pamyat-naroda",
+    "key": "Pamatlogo",
     "name": "Память народа",
-    "subtitle": "Обобщённый банк данных участников Великой Отечественной войны",
-    "action": "open_url",
-    "url": "https://pamyat-naroda.ru"
+    "subtitle": "WWII participant records — pamyat-naroda.ru",
+    "action": "open_window",
+    "window_cls": "gui.pamyat.PamyatApp"
   },
   {
     "key": "gwar",
