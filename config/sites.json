@@ -49,6 +49,13 @@
     "window_cls": "gui.memsearch.MemsearchApp"
   },
   {
+    "key": "Yadvashemlogo",
+    "name": "Yad Vashem",
+    "subtitle": "Central Database of Shoah Victims' Names — collections.yadvashem.org",
+    "action": "open_window",
+    "window_cls": "gui.yadvashem.YadVashemApp"
+  },
+  {
     "key": "hryc",
     "name": "hryc.by",
     "subtitle": "Поиск в архивах, газетах и книгах",
