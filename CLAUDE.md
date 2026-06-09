@@ -335,6 +335,27 @@ no_viewport=True, accept_downloads=True
 
 ---
 
+## Памяти героев Великой войны (gwar_scraper.py + gui/gwar.py)
+
+`gwar.mil.ru/heroes/` — участники Первой мировой (1914–1918), то же ведомство, что «Память народа», но **проще**: каждый результат = ОДИН документ (не группа карточек на человека). Сайт **только русский**, GUI английский, логина нет, key `Voinalogo` (лого `config/Voinalogo.png`). Сайт мне недоступен (Chrome/403) → DOM брал у пользователя.
+
+### Поиск (`/heroes/`, поля по `id`/`name`, язык-независимы)
+- `last_name`, `first_name`, `middle_name`, `birth_date`, `birth_place_gubernia`, `birth_place_uezd`, `birth_place_volost`, `birth_place`, `rank`, `military_unit_name`, `event_place`, `fund`, `inventory`, `file`. Поля кастомные (`with-unilabel`, `data-placeholder`) → заполнять кликом + `keyboard.type` (как pamyat).
+- **`birth_date` с маской `date+month`**: голый год (1889) маска ломает → НЕ заполнять поле, фильтровать по году в результатах (`want_year` из `birth_date`). Полную дату (с точками) — заполнять.
+- **«Разделы»** = чекбоксы-источники `award_tag/dead_tag/frc_tag/commander_tag/prs_tag` (по умолчанию ВСЕ вкл). Кликать `label[for="…"]` только если нужно снять.
+- Кнопка: `input.button-search-big[value="Найти"]`. «Больше параметров поиска» — раскрыть, если свёрнуто.
+
+### Результаты
+- Ссылки записей: `a[href*="/heroes/chelovek"]` (детали `/heroes/chelovek_plen…`). Имя = текст ссылки, сниппет = ближайший контейнер (для года/места). Нечёткое ФИО — те же `_person_matches` (фамилия ~0.7, имя Герш/Гирш, отчество по основе).
+- **Пагинация — через URL-параметр `page=N`** (results URL уже содержит `&page=1`): `_with_page(url, n)` + `goto`, ждать смены первой ссылки. (`<a data-page>` — JS, href пустой.)
+
+### Запись (детальная)
+- `h1` = имя; подпись (тип, «Картотека военнопленных») = первый непустой элемент после `h1`. Поля левой панели — `_parse_fields` по фикс-меткам `_GWAR_LABELS` (вкл. варианты «Должность/Звание» с переносом строки).
+- **Скан документа**: многостраничный («Страница X из N» → `/из\s*(\d+)/`). По каждой странице: кнопка `#btnSaveImage` (`icon-save-dropdown`) → `expect_download` (обернуть клик иконки + клик пункта дропдауна, как в FS); фолбэк — самый большой `<img>` через `_img_bytes_via_goto` (CDN блокит plain). Перелистывать страницы документа `td.to-right-arrow`. Имена: `{имя}_лист{N}.jpg`, в Word `Inches(4.5)`.
+- Word: таблица полей + сканы + «Источник» (URL без `?backurl`); конфликт файлов overwrite/append/skip; PermissionError → имя с меткой времени.
+
+---
+
 ## GUI — общая шапка (gui/_app_icon.py)
 
 - `app_icon()` — иконка окна из `config/app_icon.png` (для всех окон через `setWindowIcon`).

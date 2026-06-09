@@ -35,11 +35,11 @@
     "window_cls": "gui.pamyat.PamyatApp"
   },
   {
-    "key": "gwar",
+    "key": "Voinalogo",
     "name": "Памяти героев Великой войны",
     "subtitle": "Участники Первой мировой войны — gwar.mil.ru",
-    "action": "open_url",
-    "url": "https://gwar.mil.ru"
+    "action": "open_window",
+    "window_cls": "gui.gwar.GwarApp"
   },
   {
     "key": "Memlogo",
