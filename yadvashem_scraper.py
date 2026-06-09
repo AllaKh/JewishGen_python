@@ -282,13 +282,37 @@ _DETAIL_JS = r"""(BAD) => {
         if (seen.has(key)) return; seen.add(key);
         pairs.push([label, value]);
     });
-    // document images (Pages of Testimony / scans) — real images, no maps/thumbs
+    // document images (Pages of Testimony / scans). Be liberal: a lazy <img> has
+    // naturalWidth 0 and its real URL may sit in data-src/srcset/currentSrc; the
+    // scan can also live in a same-origin <iframe> or as a CSS background. Bytes
+    // are validated on download, so a few extra candidates are harmless.
     const imgs = [];
-    document.querySelectorAll('img[src]').forEach(im => {
-        const s = im.src || '';
-        if (!/^https?:/i.test(s) || bad.test(s)) return;
-        const w = im.naturalWidth || 0, h = im.naturalHeight || 0;
-        if (w >= 200 && h >= 200) imgs.push([w * h, s]);
+    const okUrl = s => s && /^https?:/i.test(s) && !bad.test(s);
+    const add = (s, area) => { if (okUrl(s)) imgs.push([area || 1, s]); };
+    const scan = doc => {
+        doc.querySelectorAll('img').forEach(im => {
+            const w = Math.max(im.naturalWidth || 0, im.clientWidth || 0,
+                               parseInt(im.getAttribute('width')) || 0);
+            const h = Math.max(im.naturalHeight || 0, im.clientHeight || 0,
+                               parseInt(im.getAttribute('height')) || 0);
+            const big = (w >= 150 && h >= 150);
+            const lazy = !im.naturalWidth;                 // not yet decoded
+            const area = (w && h) ? w * h : 1e9;           // unknown size → large
+            const cand = im.currentSrc || im.src || im.getAttribute('data-src')
+                       || im.getAttribute('data-original') || im.getAttribute('data-lazy') || '';
+            if (big || lazy) add(cand, area);
+            const ss = im.getAttribute('srcset') || '';
+            if (ss) add(ss.split(',').pop().trim().split(/\s+/)[0], area);
+        });
+        doc.querySelectorAll('*').forEach(el => {
+            const m = (getComputedStyle(el).backgroundImage || '')
+                .match(/url\(["']?(https?:[^"')]+)["']?\)/i);
+            if (m) add(m[1], (el.clientWidth || 0) * (el.clientHeight || 0));
+        });
+    };
+    scan(document);
+    document.querySelectorAll('iframe').forEach(f => {
+        try { if (f.contentDocument) scan(f.contentDocument); } catch (e) {}
     });
     imgs.sort((x, y) => y[0] - x[0]);
     const docLinks = [...document.querySelectorAll('a[href]')].map(a => a.href)
@@ -326,6 +350,10 @@ _JUNK = ("соцсет", "яд вашем в соц", "начать заново
 # lowercase ASCII with an underscore, no spaces.
 _ICON_RE = re.compile(r"^[a-z][a-z0-9]*_[a-z0-9_]+$")
 
+# A bare document-tab label («Record 1», «Запись 2») — the tab strip leaks into
+# the fields as a fake «label⏎value» pair; never a real genealogy field.
+_REC_TAB_RE = re.compile(r"^(record|запис[ьи]?)\s*\d*$", re.I)
+
 
 def _is_junk(s: str) -> bool:
     s = (s or "").lower()
@@ -338,6 +366,10 @@ def _clean_fields(pairs):
         if not k or not v or _is_junk(k) or _is_junk(v):
             continue
         if _ICON_RE.match(v) or _ICON_RE.match(k):     # Material-icon leak
+            continue
+        if _REC_TAB_RE.match(k.strip()) or _REC_TAB_RE.match(v.strip()):
+            continue                                    # «Record 1 / Record 2» tab strip
+        if k.strip().lower() in ("record details", "record", "детали записи"):
             continue
         if len(k) > 55 or len(v) < 1 or (k, v) in seen:
             continue
@@ -355,7 +387,11 @@ def _clean_text(txt: str) -> str:
         i = txt.find(m)
         if 0 <= i < cut:
             cut = i
-    return txt[:cut].strip()
+    t = txt[:cut].strip()
+    # drop leaked document-tab labels («Record 1 Record 2 Record Details»)
+    t = re.sub(r"\b[Rr]ecord(\s+Details|\s*\d+)\b", " ", t)
+    t = re.sub(r"\bЗапис[ьи]\s*\d+\b", " ", t)
+    return re.sub(r"[ \t]{2,}", " ", t).strip()
 
 
 async def _img_bytes_via_goto(context, url, referer) -> bytes:
@@ -400,52 +436,75 @@ async def _extract_record(page, url, images_dir, log, result_name=""):
     rec = {"name": "", "url": url, "records": []}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(2.5)
-        name = await page.evaluate(
-            "() => { const h=document.querySelector('h1');"
-            " return h ? h.textContent.replace(/\\s+/g,' ').trim() : ''; }")
-        rec["name"] = (name or result_name).strip()
-        base = safe_fn(rec["name"] or result_name or "record")
-        # «Record 1 / Record 2 / …» tabs — each is a DIFFERENT source document.
-        try:
-            ntabs = int(await page.evaluate(_REC_TABS_JS) or 1)
-        except Exception:
-            ntabs = 1
-        ntabs = max(1, min(ntabs, 15))
-        for ti in range(ntabs):
-            if ntabs > 1:
-                try:
-                    await page.evaluate(_REC_CLICK_JS, ti)
+        await asyncio.sleep(1.0)
+        # Yad Vashem often renders garbage / empty on the first hit — ALWAYS reload
+        # before reading, and reload once more if it still came back empty.
+        for attempt in range(2):
+            try:
+                await page.reload(wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+            await asyncio.sleep(2.5)
+            name = await page.evaluate(
+                "() => { const h=document.querySelector('h1');"
+                " return h ? h.textContent.replace(/\\s+/g,' ').trim() : ''; }")
+            rec["name"] = (name or result_name).strip()
+            base = safe_fn(rec["name"] or result_name or "record")
+            # «Record 1 / Record 2 / …» tabs — each is a DIFFERENT source document.
+            try:
+                ntabs = int(await page.evaluate(_REC_TABS_JS) or 1)
+            except Exception:
+                ntabs = 1
+            ntabs = max(1, min(ntabs, 15))
+            records = []
+            for ti in range(ntabs):
+                if ntabs > 1:
+                    try:
+                        await page.evaluate(_REC_CLICK_JS, ti)
+                        await asyncio.sleep(1.2)
+                    except Exception:
+                        pass
+                try:                           # walk the page so lazy scans decode
+                    await page.evaluate("""async () => {
+                        const H = document.body.scrollHeight;
+                        const step = Math.max(300, window.innerHeight * 0.8);
+                        for (let y = 0; y <= H; y += step) {
+                            window.scrollTo(0, y);
+                            await new Promise(r => setTimeout(r, 220));
+                        }
+                        window.scrollTo(0, 0);
+                    }""")
                     await asyncio.sleep(1.2)
                 except Exception:
                     pass
-            try:                               # trigger the (lazy) document scan
-                await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                await asyncio.sleep(0.9)
-                await page.evaluate("() => window.scrollTo(0, 0)")
-            except Exception:
-                pass
-            info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
-            fields = _clean_fields(info.get("pairs", []))
-            imgs, urls = [], list(info.get("imgs", [])) + list(info.get("docLinks", []))
-            for u in urls[:8]:
-                body = await _img_bytes_via_goto(page.context, u, page.url)
-                if _looks_image(body):         # skip misnamed HTML/error pages
-                    images_dir.mkdir(parents=True, exist_ok=True)
-                    suf = Path(urlparse(u).path).suffix.lower()
-                    if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff",
-                                   ".pdf", ".webp"):
-                        suf = ".jpg"
-                    tag = f"_rec{ti + 1}_{len(imgs) + 1}" if ntabs > 1 else f"_{len(imgs) + 1}"
-                    dest = images_dir / f"{base}{tag}{suf}"
-                    dest.write_bytes(body)
-                    imgs.append(str(dest))
-            rec["records"].append({"label": f"Record {ti + 1}", "fields": fields,
-                                   "images": imgs,
-                                   "text": "" if fields else _clean_text(info.get("bodyText", ""))})
-        nf = sum(len(r["fields"]) for r in rec["records"])
-        nd = sum(len(r["images"]) for r in rec["records"])
-        log(f"      вкладок: {len(rec['records'])}, полей: {nf}, документов: {nd}")
+                info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
+                fields = _clean_fields(info.get("pairs", []))
+                imgs, urls = [], list(info.get("imgs", [])) + list(info.get("docLinks", []))
+                for u in urls[:8]:
+                    body = await _img_bytes_via_goto(page.context, u, page.url)
+                    if _looks_image(body):     # skip misnamed HTML/error pages
+                        images_dir.mkdir(parents=True, exist_ok=True)
+                        suf = Path(urlparse(u).path).suffix.lower()
+                        if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff",
+                                       ".pdf", ".webp"):
+                            suf = ".jpg"
+                        tag = f"_rec{ti + 1}_{len(imgs) + 1}" if ntabs > 1 else f"_{len(imgs) + 1}"
+                        dest = images_dir / f"{base}{tag}{suf}"
+                        dest.write_bytes(body)
+                        imgs.append(str(dest))
+                records.append({"label": f"Record {ti + 1}", "fields": fields,
+                                "images": imgs,
+                                "text": "" if fields else _clean_text(info.get("bodyText", ""))})
+            nf = sum(len(r["fields"]) for r in records)
+            nd = sum(len(r["images"]) for r in records)
+            rec["records"] = records
+            if nf or nd:
+                log(f"      вкладок: {len(records)}, полей: {nf}, документов: {nd}")
+                break
+            if attempt == 0:
+                log("      ↻ пусто — обновляю ещё раз…")
+            else:
+                log(f"      вкладок: {len(records)}, полей: 0, документов: 0")
     except Exception as e:
         log(f"      !! страница записи ({type(e).__name__})")
     return rec
@@ -468,10 +527,11 @@ def _docx_add_record(doc, i, rec):
     hp = doc.add_paragraph(); hr = hp.add_run(f"{i}. {name}")
     hr.bold = True; hr.font.size = Pt(13)
     records = rec.get("records") or []
-    multi = len(records) > 1
-    for r in records:
-        if multi:                                 # «Record 1», «Record 2», …
-            doc.add_paragraph().add_run(r.get("label", "Record")).bold = True
+    # One block per document — its scans, then its OWN fields table.
+    # No «Record N» captions between them, just a blank line.
+    for di, r in enumerate(records):
+        if di:
+            doc.add_paragraph("")                 # one blank line between documents
         for img in r.get("images", []):
             if str(img).lower().endswith(".pdf"):
                 continue                          # can't embed a PDF as a picture
@@ -481,8 +541,9 @@ def _docx_add_record(doc, i, rec):
                     doc.add_picture(io.BytesIO(png), width=Inches(3.2))
             except Exception:
                 pass
-        if r.get("fields"):
-            _kv_table(doc, r["fields"])
+        fields = r.get("fields") or []
+        if fields:
+            _kv_table(doc, fields)
         elif r.get("text"):
             doc.add_paragraph(r["text"])
     if rec.get("url"):
@@ -509,7 +570,7 @@ def write_docx(path, records, qlines, append=False):
         ht.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for ln in qlines:
             doc.add_paragraph(ln)
-        doc.add_paragraph(f"Records: {len(records)}")
+        doc.add_paragraph(f"Найдено: {len(records)}")
         doc.add_paragraph("")
     for i, rec in enumerate(records, 1):
         _docx_add_record(doc, i, rec)
@@ -559,6 +620,11 @@ async def run_scraper(*,
             _prog(5, "Поиск…")
             log(f"  → Открываю поиск: {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            await asyncio.sleep(1.5)
+            try:                              # YV glitches — refresh before reading
+                await page.reload(wait_until="domcontentloaded", timeout=45000)
+            except Exception:
+                pass
             await asyncio.sleep(4)            # SPA renders results via XHR
             if _done():
                 return summary

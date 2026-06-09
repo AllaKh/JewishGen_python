@@ -282,9 +282,14 @@ class LauncherWindow(QMainWindow):
         fb = self._footer.geometry().bottom()
         final_h = (fb + self._outer.contentsMargins().bottom() + 2) if fb > 50 \
             else max(self.centralWidget().sizeHint().height(), 360)
+        # Never taller than the screen, and open it HIGH (top-aligned, centred)
+        # so the bottom can't run off the lower edge.
+        scr = QApplication.primaryScreen().availableGeometry()
+        final_h = min(final_h, scr.height() - 16)
         self.resize(final_w, final_h)
         self.setFixedHeight(final_h)        # prevent vertical resizing
         self.centralWidget().resize(final_w, final_h)
+        self.move(scr.x() + max(0, (scr.width() - final_w) // 2), scr.y() + 8)
         self._outer.activate()
 
 

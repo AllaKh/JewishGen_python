@@ -60,6 +60,10 @@ QPushButton#startBtn:disabled{background:#9fb3c8;}
 QProgressBar{border:1px solid #c3ccda;border-radius:4px;text-align:center;
   min-height:18px;}
 QProgressBar::chunk{background:#1f4e79;border-radius:3px;}
+QPushButton#advBtn{text-align:left;font-weight:bold;color:#1f4e79;
+  background:#e8eef7;border:1px solid #b8c2d0;padding:7px 12px;}
+QPushButton#advBtn:hover{background:#dbe5f4;}
+QPushButton#advBtn:checked{background:#d2e0f2;}
 """
 
 
@@ -107,37 +111,33 @@ class YadVashemApp(QMainWindow):
         self._build_ui()
         self._load()
 
-    # helper: a labelled text field + optional «search type» combo, into a grid
-    def _row(self, grid, r, c, label, key, with_type=True, items=None):
-        grid.addWidget(QLabel(label), r, c)
+    # uniform grid: fixed-width label | stretching input | fixed «type» combo
+    def _cfg_grid(self, grid):
+        grid.setSpacing(6)
+        grid.setColumnMinimumWidth(0, 175)
+        grid.setColumnStretch(1, 1)
+
+    def _row(self, grid, r, label, key, with_type=True, items=None):
+        grid.addWidget(QLabel(label), r, 0)
         ed = QLineEdit()
-        grid.addWidget(ed, r, c + 1)
+        grid.addWidget(ed, r, 1)
         combo = None
         if with_type:
             combo = QComboBox(); combo.addItems(items or SEARCH_TYPES)
-            combo.setFixedWidth(120)
-            grid.addWidget(combo, r, c + 2)
+            combo.setFixedWidth(130)
+            grid.addWidget(combo, r, 2)
         self._fields[key] = (ed, combo)
         return ed, combo
 
     def _build_ui(self):
         central = QWidget(); self.setCentralWidget(central)
-        outerv = QVBoxLayout(central); outerv.setContentsMargins(0, 0, 0, 0)
+        self._outer = QVBoxLayout(central)
+        self._outer.setContentsMargins(16, 10, 16, 10); self._outer.setSpacing(9)
 
-        head = QWidget(); hv = QVBoxLayout(head)
-        hv.setContentsMargins(16, 10, 16, 0)
-        hv.addLayout(make_header("Yadvashemlogo.png",
-                                 "Yad Vashem — Shoah Victims' Names", color="#1f4e79"))
-        hv.addWidget(QLabel("collections.yadvashem.org — open database, no login. "
-                            "The form mirrors the site's advanced search."))
-        outerv.addWidget(head)
-
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        body = QWidget(); outer = QVBoxLayout(body)
-        outer.setContentsMargins(16, 4, 16, 8); outer.setSpacing(10)
-        scroll.setWidget(body)
-        outerv.addWidget(scroll, 1)
+        self._outer.addLayout(make_header(
+            "Yadvashemlogo.png", "Yad Vashem — Shoah Victims' Names", color="#1f4e79"))
+        self._outer.addWidget(QLabel(
+            "collections.yadvashem.org — open database, no login."))
 
         # ── Search language ──────────────────────────────────────────────────
         lg = QGroupBox("Search language"); ll = QHBoxLayout(lg); ll.setSpacing(10)
@@ -147,75 +147,88 @@ class YadVashemApp(QMainWindow):
             self.f_lang.setCurrentIndex(_i)
         ll.addWidget(QLabel("Type the names in / search in this language:"))
         ll.addWidget(self.f_lang); ll.addStretch()
-        outer.addWidget(lg)
+        self._outer.addWidget(lg)
 
-        # ── Name ─────────────────────────────────────────────────────────────
-        ng = QGroupBox("Name"); ngl = QGridLayout(ng); ngl.setSpacing(6)
-        self._row(ngl, 0, 0, "Last name:",   "last_name")
-        self._row(ngl, 1, 0, "First name:",  "first_name")
-        self._row(ngl, 2, 0, "Maiden name:", "maiden_name")
-        outer.addWidget(ng)
+        # ── Name (always visible) ────────────────────────────────────────────
+        ng = QGroupBox("Name"); ngl = QGridLayout(ng); self._cfg_grid(ngl)
+        self._row(ngl, 0, "Last name:",   "last_name")
+        self._row(ngl, 1, "First name:",  "first_name")
+        self._row(ngl, 2, "Maiden name:", "maiden_name")
+        self._outer.addWidget(ng)
 
-        # ── Date ─────────────────────────────────────────────────────────────
-        dg = QGroupBox("Date"); dgl = QGridLayout(dg); dgl.setSpacing(6)
-        self._row(dgl, 0, 0, "Birth year:", "birth_year", with_type=True, items=YEAR_PREC)
-        self._row(dgl, 1, 0, "Death year:", "death_year", with_type=True, items=YEAR_PREC)
-        outer.addWidget(dg)
+        # ── Date (always visible) ────────────────────────────────────────────
+        dg = QGroupBox("Date"); dgl = QGridLayout(dg); self._cfg_grid(dgl)
+        self._row(dgl, 0, "Birth year:", "birth_year", items=YEAR_PREC)
+        self._row(dgl, 1, "Death year:", "death_year", items=YEAR_PREC)
+        self._outer.addWidget(dg)
 
-        # ── Place ────────────────────────────────────────────────────────────
-        pg = QGroupBox("Place"); pgl = QGridLayout(pg); pgl.setSpacing(6)
+        # ── Advanced toggle ──────────────────────────────────────────────────
+        self._adv_btn = QPushButton(
+            "▶   Advanced search  (Place · Family members · Submitter · Global)")
+        self._adv_btn.setObjectName("advBtn"); self._adv_btn.setCheckable(True)
+        self._adv_btn.toggled.connect(self._toggle_adv)
+        self._outer.addWidget(self._adv_btn)
+
+        # ── Advanced panel (collapsible, scrollable) ─────────────────────────
+        self._adv = QWidget(); av = QVBoxLayout(self._adv)
+        av.setContentsMargins(0, 0, 0, 0); av.setSpacing(9)
+
+        pg = QGroupBox("Place  (place names may be given in their original form)")
+        pgl = QGridLayout(pg); self._cfg_grid(pgl)
         self.rb_byfield = QRadioButton("Search by specific field"); self.rb_byfield.setChecked(True)
-        self.rb_anyplace = QRadioButton("Search any place (not a specific field)")
+        self.rb_anyplace = QRadioButton("Search any place")
         bgp = QButtonGroup(self); bgp.addButton(self.rb_byfield); bgp.addButton(self.rb_anyplace)
-        pgl.addWidget(self.rb_byfield, 0, 0, 1, 3); pgl.addWidget(self.rb_anyplace, 0, 3, 1, 3)
-        self._row(pgl, 1, 0, "Birth place:",          "birth_place")
-        self._row(pgl, 2, 0, "Before the war:",       "place_before")
-        self._row(pgl, 3, 0, "During the war / Shoah:", "place_during")
-        self._row(pgl, 4, 0, "Death place:",          "death_place")
-        outer.addWidget(pg)
+        rrow = QHBoxLayout(); rrow.addWidget(self.rb_byfield)
+        rrow.addSpacing(20); rrow.addWidget(self.rb_anyplace); rrow.addStretch()
+        pgl.addLayout(rrow, 0, 0, 1, 3)
+        self._row(pgl, 1, "Birth place:",            "birth_place")
+        self._row(pgl, 2, "Before the war:",         "place_before")
+        self._row(pgl, 3, "During the war / Shoah:", "place_during")
+        self._row(pgl, 4, "Death place:",            "death_place")
+        av.addWidget(pg)
 
-        # ── Family members ───────────────────────────────────────────────────
-        fg = QGroupBox("Family members"); fgl = QGridLayout(fg); fgl.setSpacing(6)
-        self._row(fgl, 0, 0, "Father's name:",        "father_name")
-        self._row(fgl, 1, 0, "Mother's name:",        "mother_name")
-        self._row(fgl, 2, 0, "Mother's maiden name:", "mother_maiden")
-        self._row(fgl, 3, 0, "Spouse's name:",        "spouse_name")
-        self._row(fgl, 4, 0, "Spouse's maiden name:", "spouse_maiden")
-        outer.addWidget(fg)
+        fg = QGroupBox("Family members"); fgl = QGridLayout(fg); self._cfg_grid(fgl)
+        self._row(fgl, 0, "Father's name:",        "father_name")
+        self._row(fgl, 1, "Mother's name:",        "mother_name")
+        self._row(fgl, 2, "Mother's maiden name:", "mother_maiden")
+        self._row(fgl, 3, "Spouse's name:",        "spouse_name")
+        self._row(fgl, 4, "Spouse's maiden name:", "spouse_maiden")
+        av.addWidget(fg)
 
-        # ── Submitter ────────────────────────────────────────────────────────
-        sg = QGroupBox("Submitter (of Pages of Testimony)")
-        sgl = QGridLayout(sg); sgl.setSpacing(6)
-        self._row(sgl, 0, 0, "First name:", "submitter_first")
-        self._row(sgl, 1, 0, "Last name:",  "submitter_last")
-        outer.addWidget(sg)
+        sg = QGroupBox("Submitter  (of Pages of Testimony, survivor forms, memorial materials)")
+        sgl = QGridLayout(sg); self._cfg_grid(sgl)
+        self._row(sgl, 0, "First name:", "submitter_first")
+        self._row(sgl, 1, "Last name:",  "submitter_last")
+        av.addWidget(sg)
 
-        # ── Global ───────────────────────────────────────────────────────────
-        gg = QGroupBox("Global search (applies only to this field)")
-        ggl = QHBoxLayout(gg); ggl.setSpacing(6)
-        self.f_global = QLineEdit()
-        ggl.addWidget(QLabel("Any text:")); ggl.addWidget(self.f_global, 1)
-        outer.addWidget(gg)
+        gg = QGroupBox("Global search"); ggl = QGridLayout(gg); self._cfg_grid(ggl)
+        ggl.addWidget(QLabel("Any text:"), 0, 0)
+        self.f_global = QLineEdit(); ggl.addWidget(self.f_global, 0, 1, 1, 2)
+        av.addWidget(gg)
+
+        self._adv_scroll = QScrollArea(); self._adv_scroll.setWidgetResizable(True)
+        self._adv_scroll.setFrameShape(QFrame.NoFrame)
+        self._adv_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._adv_scroll.setWidget(self._adv)
+        self._adv_scroll.setVisible(False)
+        self._outer.addWidget(self._adv_scroll, 1)
 
         # ── Output ───────────────────────────────────────────────────────────
         og = QGroupBox("Output (Word)"); ol = QHBoxLayout(og); ol.setSpacing(6)
         self.f_folder = QLineEdit(); self.f_folder.setText(_DEF_DIR)
         bb = QPushButton("Browse…"); bb.setFixedWidth(80); bb.clicked.connect(self._browse)
         ol.addWidget(QLabel("Save to:")); ol.addWidget(self.f_folder, 1); ol.addWidget(bb)
-        outer.addWidget(og)
+        self._outer.addWidget(og)
 
-        # ── Footer (outside the scroll area) ─────────────────────────────────
-        foot = QWidget(); fv = QVBoxLayout(foot); fv.setContentsMargins(16, 0, 16, 10)
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        fv.addWidget(self.pbar); fv.addWidget(self.stlbl)
+        self._outer.addWidget(self.pbar); self._outer.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH"); self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn); br.addStretch()
-        fv.addLayout(br)
-        fv.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
-        outerv.addWidget(foot)
+        self._outer.addLayout(br)
+        self._outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
         for ed, combo in self._fields.values():
             ed.textChanged.connect(self._save)
@@ -226,7 +239,25 @@ class YadVashemApp(QMainWindow):
         self.rb_byfield.toggled.connect(self._save)
         self.f_lang.currentTextChanged.connect(self._save)
 
-        self.resize(940, 880)
+        self.setFixedWidth(960)
+        self._fit()
+
+    # ── Advanced toggle + height fit (never taller than the screen) ──────────
+    def _toggle_adv(self, on):
+        self._adv_scroll.setVisible(on)
+        self._adv_btn.setText(("▼" if on else "▶")
+                              + "   Advanced search  (Place · Family members · Submitter · Global)")
+        self._fit()
+
+    def _fit(self):
+        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        avail = QApplication.primaryScreen().availableGeometry().height()
+        if self._adv_scroll.isVisible():
+            self._adv_scroll.setMaximumHeight(max(160, int(avail * 0.5)))
+        self._outer.invalidate(); self._outer.activate()
+        h = min(self.sizeHint().height(), avail - 48)   # stay on-screen
+        self.resize(self.width(), h)
+        self.setFixedHeight(h)
 
     def _browse(self):
         p = QFileDialog.getExistingDirectory(self, "Output folder",
