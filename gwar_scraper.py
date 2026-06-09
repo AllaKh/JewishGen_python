@@ -309,18 +309,36 @@ async def _img_bytes_via_goto(context, url, referer) -> bytes:
 BASE = "https://gwar.mil.ru"
 
 
+# The form has DUPLICATE inputs (mobile + desktop) sharing the same id/name, and
+# some live in collapsed sections — a normal click hits the hidden duplicate and
+# times out. So set the value on EVERY matching element via the native setter and
+# fire input/change/keyup so the site's jQuery picks it up. Whichever copy the
+# search reads, it is filled; the visible one also shows it to the user.
+_FILL_JS = r"""([fid, val]) => {
+    const els = [...document.querySelectorAll('#' + CSS.escape(fid) + ', [name="' + fid + '"]')];
+    if (!els.length) return 'missing';
+    els.forEach(el => {
+        const proto = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement : HTMLInputElement;
+        try {
+            Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, val);
+        } catch (e) { el.value = val; }
+        ['input', 'change', 'keyup', 'blur'].forEach(t =>
+            el.dispatchEvent(new Event(t, {bubbles: true})));
+        if (el.classList) el.classList.remove('empty-field');
+    });
+    return 'ok:' + els.length;
+}"""
+
+
 async def _fill_field(page, fid: str, value: str, log):
     if not value:
         return
     try:
-        el = page.locator(f"#{fid}").first
-        if await el.count():
-            await el.scroll_into_view_if_needed(timeout=2000)
-            await el.click(timeout=3000)
-            await page.keyboard.press("Control+a")
-            await page.keyboard.press("Delete")
-            await page.keyboard.type(str(value), delay=20)
+        r = await page.evaluate(_FILL_JS, [fid, str(value)])
+        if isinstance(r, str) and r.startswith("ok"):
             log(f"  ✓ {fid} = {value!r}")
+        else:
+            log(f"  !! поле {fid}: не найдено ({r})")
     except Exception as e:
         log(f"  !! поле {fid}: {type(e).__name__}")
 
@@ -330,14 +348,20 @@ async def _do_search(page, params, log) -> bool:
     await page.goto(f"{BASE}/heroes/", wait_until="domcontentloaded", timeout=40000)
     await asyncio.sleep(2)
 
-    # Expand «Дополнительные параметры поиска» if collapsed.
-    try:
-        more = page.get_by_text("Больше параметров", exact=False).first
-        if await more.count() and await more.is_visible():
-            await more.click(timeout=2000)
-            await asyncio.sleep(0.5)
-    except Exception:
-        pass
+    # Open BOTH collapsible sections so their fields are visible (and the user
+    # sees them used): «Дополнительные параметры поиска» (toggle «Больше
+    # параметров поиска») and «Место хранения документов» (toggle «Показать
+    # архивные реквизиты»). When a section is already open its «show» toggle
+    # text is absent, so this is a harmless no-op.
+    for txt in ("Больше параметров", "Показать архивные реквизиты"):
+        try:
+            t = page.get_by_text(txt, exact=False).first
+            if await t.count() and await t.is_visible():
+                await t.click(timeout=2000)
+                await asyncio.sleep(0.8)
+        except Exception:
+            pass
+    await asyncio.sleep(0.4)
 
     # Text fields (id == name on the page).
     await _fill_field(page, "last_name",   params.get("last_name", ""), log)
@@ -365,8 +389,16 @@ async def _do_search(page, params, log) -> bool:
     _ev = params.get("event", "")
     if _ev:
         try:
-            await page.select_option("#event_id", value=str(_ev), timeout=3000)
-            log(f"  ✓ event_id = {_ev}")
+            r = await page.evaluate(r"""([sid, val]) => {
+                const els = [...document.querySelectorAll(
+                    '#' + CSS.escape(sid) + ', [name="' + sid + '"]')]
+                    .filter(e => e.tagName === 'SELECT');
+                if (!els.length) return 'missing';
+                els.forEach(s => { s.value = val;
+                    s.dispatchEvent(new Event('change', {bubbles: true})); });
+                return 'ok:' + els.length;
+            }""", ["event_id", str(_ev)])
+            log(f"  ✓ event_id = {_ev} ({r})")
         except Exception as e:
             log(f"  !! select event_id: {type(e).__name__}")
     await _fill_field(page, "fund",      params.get("fund", ""), log)
