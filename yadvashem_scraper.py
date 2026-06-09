@@ -58,43 +58,51 @@ HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
                  "officeDocument/2006/relationships/hyperlink")
 
 BASE = "https://collections.yadvashem.org"
-SEARCH_PATH = "/ru/names/search-results-names"
 
-# GUI «search type» label → URL value (gnt_*). Confirmed: yvSynonym.
+# Search/UI languages — GUI label → code. The name params carry the code as a
+# suffix (s_<field>_search_<lang>); the path uses /<lang>/.
+LANGS = {
+    "English": "en", "Hebrew": "he", "Russian": "ru",
+    "Spanish": "es", "German": "de", "French": "fr",
+}
+
+# GUI «search type» label → URL value (t_*). Confirmed: yvSynonym.
 SEARCH_TYPES = {
     "YV synonyms": "yvSynonym",
     "Literal":     "literal",
     "Phonetic":    "phonetic",
 }
-# GUI «birth/death year precision» → value.
+# GUI «birth/death year precision» → value. Confirmed: exactly.
 YEAR_PREC = {
-    "Exact": "0",
-    "± 2":   "2",
-    "± 5":   "5",
+    "Exact": "exactly",
+    "± 2":   "year2",
+    "± 5":   "year5",
 }
 
-# GUI field key → URL parameter (gn_*). The match type goes to gnt_<same suffix>.
-# CONFIRMED from the address bar: last_name→gn_last_name, gnt_last_name; place→gn_place.
+# GUI field key → the «<field>» part of the YV param. The real scheme is
+# s_<field>_search_<lang> (value) + t_<field>_search_<lang> (type). CONFIRMED from
+# a live search URL: last_name, first_name, father_first_name, place_birth,
+# place_permanent (= «До войны»), year_birth (type «exactly»). The rest are
+# best-effort by analogy.
 PARAM_MAP = {
-    "last_name":      "gn_last_name",
-    "first_name":     "gn_first_name",
-    "maiden_name":    "gn_maiden_name",
-    "birth_place":    "gn_birth_place",
-    "place_before":   "gn_place_before_war",
-    "place_during":   "gn_place_during_war",
-    "death_place":    "gn_death_place",
-    "father_name":    "gn_father_name",
-    "mother_name":    "gn_mother_name",
-    "mother_maiden":  "gn_mother_maiden_name",
-    "spouse_name":    "gn_spouse_name",
-    "spouse_maiden":  "gn_spouse_maiden_name",
-    "submitter_first": "gn_submitter_first_name",
-    "submitter_last":  "gn_submitter_last_name",
-    "birth_year":     "gn_birth_year",
-    "death_year":     "gn_death_year",
+    "last_name":       "last_name",
+    "first_name":      "first_name",
+    "maiden_name":     "maiden_name",
+    "birth_place":     "place_birth",
+    "place_before":    "place_permanent",
+    "place_during":    "place_during_war",
+    "death_place":     "place_death",
+    "father_name":     "father_first_name",
+    "mother_name":     "mother_first_name",
+    "mother_maiden":   "mother_maiden_name",
+    "spouse_name":     "spouse_first_name",
+    "spouse_maiden":   "spouse_maiden_name",
+    "submitter_first": "submitter_first_name",
+    "submitter_last":  "submitter_last_name",
 }
-_YEAR_TYPE_PARAM = {"birth_year": "gn_birth_year_type",
-                    "death_year": "gn_death_year_type"}
+_PLACE_KEYS = ("birth_place", "place_before", "place_during", "death_place")
+# Year fields use no language suffix.
+_YEAR_FIELDS = {"birth_year": "year_birth", "death_year": "year_death"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────── #
@@ -142,32 +150,34 @@ def _add_hyperlink(para, text, url):
 
 
 # ── Build the search URL from the GUI fields ──────────────────────────────── #
-def _build_search_url(fields: dict, place_mode: str, global_text: str) -> str:
+def _build_search_url(fields: dict, place_mode: str, global_text: str,
+                      lang: str = "ru") -> str:
     q = [("page", "1")]
-    for key, param in PARAM_MAP.items():
+    for key, fld in PARAM_MAP.items():
         val = (fields.get(key) or "").strip()
         if not val:
             continue
-        # «any place» mode: collapse the specific place fields into gn_place
-        if place_mode == "anyplace" and key in (
-                "birth_place", "place_before", "place_during", "death_place"):
-            continue
-        q.append((param, val))
-        # match type → gnt_<suffix> (for name fields) / year precision
+        if place_mode == "anyplace" and key in _PLACE_KEYS:
+            continue                              # collapsed into s_place_search
+        q.append((f"s_{fld}_search_{lang}", val))
         t_label = fields.get(key + "_type")
-        if key in _YEAR_TYPE_PARAM and t_label:
-            q.append((_YEAR_TYPE_PARAM[key], YEAR_PREC.get(t_label, "0")))
-        elif t_label:
-            q.append(("gnt_" + param[3:], SEARCH_TYPES.get(t_label, "yvSynonym")))
+        q.append((f"t_{fld}_search_{lang}",
+                  SEARCH_TYPES.get(t_label, "yvSynonym")))
+    for key, fld in _YEAR_FIELDS.items():
+        val = (fields.get(key) or "").strip()
+        if not val:
+            continue
+        q.append((f"s_{fld}_search", val))
+        t_label = fields.get(key + "_type")
+        q.append((f"t_{fld}_search", YEAR_PREC.get(t_label, "exactly")))
     if place_mode == "anyplace":
-        anyplace = next((fields.get(k) for k in
-                         ("birth_place", "place_before", "place_during", "death_place")
+        anyplace = next((fields.get(k) for k in _PLACE_KEYS
                          if (fields.get(k) or "").strip()), "")
         if anyplace:
-            q.append(("gn_place", anyplace.strip()))
+            q.append((f"s_place_search_{lang}", anyplace.strip()))
     if (global_text or "").strip():
-        q.append(("gn_freetext", global_text.strip()))
-    return f"{BASE}{SEARCH_PATH}?{urlencode(q, doseq=True)}"
+        q.append((f"s_global_search_{lang}", global_text.strip()))
+    return f"{BASE}/{lang}/names/search-results?{urlencode(q, doseq=True)}"
 
 
 # ── Results ───────────────────────────────────────────────────────────────── #
@@ -244,27 +254,44 @@ async def _collect_results(page, log, max_pages, max_records) -> list:
 
 
 # ── Record detail ─────────────────────────────────────────────────────────── #
-_DETAIL_JS = r"""() => {
+_BAD_IMG = (r"maps\.google|googleapis|gstatic|staticmap|/maps/|\.svg|sprite|"
+            r"logo|icon|placeholder|avatar|flag")
+_DETAIL_JS = r"""(BAD) => {
+    const bad = new RegExp(BAD, 'i');
     const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-    const h1 = document.querySelector('h1, h2, [class*="title" i]');
-    const name = h1 ? norm(h1.textContent) : '';
-    // field rows: label/value pairs anywhere on the page
+    // name = a heading that is NOT a bare field label like «Имя»/«Name»
+    let name = '';
+    for (const h of document.querySelectorAll('h1, h2, [class*="title" i]')) {
+        const t = norm(h.textContent);
+        if (t && t.length > 2 && !/^(имя|name|שם|фамилия)$/i.test(t)) { name = t.slice(0, 90); break; }
+    }
+    // field rows: label/value pairs (skip big containers)
     const pairs = [];
-    document.querySelectorAll('tr, li, [class*="field" i], [class*="detail" i], dl > *')
+    document.querySelectorAll(
+        'tr, li, dl > *, [class*="field" i], [class*="prop" i], [class*="detail" i], [class*="row" i]')
         .forEach(e => {
+            if (e.children.length > 3) return;
             const t = norm(e.innerText);
             const m = t.match(/^(.{2,40}?)\s*[:\-–]\s+(.{1,200})$/);
-            if (m) pairs.push([m[1].trim(), m[2].trim()]);
+            if (m && m[1].trim() && m[2].trim()) pairs.push([m[1].trim(), m[2].trim()]);
         });
-    // biggest content image (Page of Testimony scan / photo)
-    let img = '', area = 0;
+    // document images (Pages of Testimony etc.) — exclude maps/logos
+    const imgs = [];
     document.querySelectorAll('img[src]').forEach(im => {
-        const s = (im.src || '').toLowerCase();
-        if (/\.svg|sprite|logo|icon|placeholder|avatar/.test(s)) return;
+        const s = im.src || '';
+        if (!/^https?:/i.test(s) || bad.test(s)) return;
         const a = (im.naturalWidth || 0) * (im.naturalHeight || 0);
-        if (a > area && a > 40000) { area = a; img = im.src; }
+        if (a > 20000) imgs.push([a, s]);
     });
-    return {name, pairs: pairs.slice(0, 60), img};
+    imgs.sort((x, y) => y[0] - x[0]);
+    // direct document links (full-size image / pdf)
+    const docLinks = [...document.querySelectorAll('a[href]')].map(a => a.href)
+        .filter(h => /\.(jpe?g|png|tiff?|pdf)(\?|$)/i.test(h) && !bad.test(h));
+    const main = document.querySelector('main, [class*="content" i], [role="main"]') || document.body;
+    return {name, pairs: pairs.slice(0, 80),
+            imgs: [...new Set(imgs.map(i => i[1]))].slice(0, 12),
+            docLinks: [...new Set(docLinks)].slice(0, 12),
+            bodyText: norm(main.innerText).slice(0, 3000)};
 }"""
 
 
@@ -293,30 +320,35 @@ async def _img_bytes_via_goto(context, url, referer) -> bytes:
 
 
 async def _extract_record(page, url, images_dir, log, result_name=""):
-    rec = {"name": "", "url": url, "fields": [], "images": []}
+    rec = {"name": "", "url": url, "fields": [], "images": [], "text": ""}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(2)
-        info = await page.evaluate(_DETAIL_JS)
-        rec["name"] = info.get("name") or result_name
-        # de-dupe pairs, keep order
+        await asyncio.sleep(2.5)
+        info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
+        rec["name"] = (info.get("name") or result_name).strip()
         seen, fields = set(), []
         for k, v in info.get("pairs", []):
             kk = (k, v)
             if kk not in seen and len(k) < 45:
                 seen.add(kk); fields.append((k, v))
         rec["fields"] = fields
+        if not fields:
+            rec["text"] = info.get("bodyText", "")
         base = safe_fn(rec.get("name") or result_name or "record")
-        log(f"      полей: {len(rec['fields'])}")
-        img = info.get("img")
-        if img:
-            body = await _img_bytes_via_goto(page.context, img, page.url)
-            if body:
+        # document images (Pages of Testimony etc.) + direct document links
+        urls = list(info.get("imgs", [])) + list(info.get("docLinks", []))
+        saved = 0
+        for u in urls[:12]:
+            body = await _img_bytes_via_goto(page.context, u, page.url)
+            if body and len(body) > 5000:
                 images_dir.mkdir(parents=True, exist_ok=True)
-                dest = images_dir / f"{base}.jpg"
+                suf = Path(urlparse(u).path).suffix.lower()
+                if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".pdf"):
+                    suf = ".jpg"
+                dest = images_dir / f"{base}_{saved + 1}{suf}"
                 dest.write_bytes(body)
-                rec["images"].append(str(dest))
-                log(f"      🖼 изображение: {dest.name}")
+                rec["images"].append(str(dest)); saved += 1
+        log(f"      полей: {len(rec['fields'])}, документов: {saved}")
     except Exception as e:
         log(f"      !! страница записи ({type(e).__name__})")
     return rec
@@ -339,14 +371,18 @@ def _docx_add_record(doc, i, rec):
     hp = doc.add_paragraph(); hr = hp.add_run(f"{i}. {name}")
     hr.bold = True; hr.font.size = Pt(13)
     for img in rec.get("images", []):
+        if str(img).lower().endswith(".pdf"):
+            continue                              # can't embed a PDF as a picture
         try:
             png = _to_png(Path(img).read_bytes())
             if png:
-                doc.add_picture(io.BytesIO(png), width=Inches(2.6))
+                doc.add_picture(io.BytesIO(png), width=Inches(3.0))
         except Exception:
             pass
     if rec.get("fields"):
         _kv_table(doc, rec["fields"])
+    elif rec.get("text"):
+        doc.add_paragraph(rec["text"])
     if rec.get("url"):
         p = doc.add_paragraph(); _add_hyperlink(p, "Source / Источник", rec["url"])
     doc.add_paragraph("")
@@ -380,7 +416,7 @@ def write_docx(path, records, qlines, append=False):
 
 # ── Main entry point ──────────────────────────────────────────────────────── #
 async def run_scraper(*,
-    fields=None, place_mode="byfield", global_text="",
+    fields=None, place_mode="byfield", global_text="", lang="ru",
     output_folder=Path("."),
     log=print, progress=None, cancel_event=None, ask_file_conflict=None,
     max_pages=10, max_records=60,
@@ -406,7 +442,7 @@ async def run_scraper(*,
         _prog(100, "Пустой запрос.")
         return summary
 
-    url = _build_search_url(fields, place_mode, global_text)
+    url = _build_search_url(fields, place_mode, global_text, lang=lang)
     qlines = [f"Запрос: {qkey}", f"URL: {url}"]
 
     _prog(0, "Запускаю браузер…")

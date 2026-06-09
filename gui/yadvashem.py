@@ -33,10 +33,13 @@ try:
     _SCRAPER_OK = True
     SEARCH_TYPES = list(_scraper.SEARCH_TYPES.keys())
     YEAR_PREC = list(_scraper.YEAR_PREC.keys())
+    LANGS = _scraper.LANGS
 except ImportError:
     _SCRAPER_OK = False
     SEARCH_TYPES = ["YV synonyms", "Literal", "Phonetic"]
     YEAR_PREC = ["Exact", "± 2", "± 5"]
+    LANGS = {"English": "en", "Hebrew": "he", "Russian": "ru",
+             "Spanish": "es", "German": "de", "French": "fr"}
 
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
@@ -136,6 +139,16 @@ class YadVashemApp(QMainWindow):
         scroll.setWidget(body)
         outerv.addWidget(scroll, 1)
 
+        # ── Search language ──────────────────────────────────────────────────
+        lg = QGroupBox("Search language"); ll = QHBoxLayout(lg); ll.setSpacing(10)
+        self.f_lang = QComboBox(); self.f_lang.addItems(list(LANGS.keys()))
+        _i = self.f_lang.findText("Russian")
+        if _i >= 0:
+            self.f_lang.setCurrentIndex(_i)
+        ll.addWidget(QLabel("Type the names in / search in this language:"))
+        ll.addWidget(self.f_lang); ll.addStretch()
+        outer.addWidget(lg)
+
         # ── Name ─────────────────────────────────────────────────────────────
         ng = QGroupBox("Name"); ngl = QGridLayout(ng); ngl.setSpacing(6)
         self._row(ngl, 0, 0, "Last name:",   "last_name")
@@ -173,8 +186,8 @@ class YadVashemApp(QMainWindow):
         # ── Submitter ────────────────────────────────────────────────────────
         sg = QGroupBox("Submitter (of Pages of Testimony)")
         sgl = QGridLayout(sg); sgl.setSpacing(6)
-        self._row(sgl, 0, 0, "First name:", "submitter_first", with_type=False)
-        self._row(sgl, 1, 0, "Last name:",  "submitter_last",  with_type=False)
+        self._row(sgl, 0, 0, "First name:", "submitter_first")
+        self._row(sgl, 1, 0, "Last name:",  "submitter_last")
         outer.addWidget(sg)
 
         # ── Global ───────────────────────────────────────────────────────────
@@ -211,6 +224,7 @@ class YadVashemApp(QMainWindow):
         self.f_global.textChanged.connect(self._save)
         self.f_folder.textChanged.connect(self._save)
         self.rb_byfield.toggled.connect(self._save)
+        self.f_lang.currentTextChanged.connect(self._save)
 
         self.resize(940, 880)
 
@@ -230,6 +244,7 @@ class YadVashemApp(QMainWindow):
             "fields":      flds,
             "place_mode":  "byfield" if self.rb_byfield.isChecked() else "anyplace",
             "global_text": self.f_global.text().strip(),
+            "lang":        LANGS.get(self.f_lang.currentText(), "ru"),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":         print,
             "cancel_event": None,
@@ -288,7 +303,7 @@ class YadVashemApp(QMainWindow):
         try:
             d = {"place_mode": "byfield" if self.rb_byfield.isChecked() else "anyplace",
                  "global": self.f_global.text(), "folder": self.f_folder.text(),
-                 "fields": {}}
+                 "lang": self.f_lang.currentText(), "fields": {}}
             for key, (ed, combo) in self._fields.items():
                 d["fields"][key] = ed.text()
                 if combo is not None:
@@ -313,6 +328,9 @@ class YadVashemApp(QMainWindow):
                     combo.setCurrentIndex(i)
         self.f_global.setText(d.get("global", ""))
         self.f_folder.setText(d.get("folder", _DEF_DIR))
+        _i = self.f_lang.findText(d.get("lang", "Russian"))
+        if _i >= 0:
+            self.f_lang.setCurrentIndex(_i)
         if d.get("place_mode") == "anyplace":
             self.rb_anyplace.setChecked(True)
 

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QApplication,
+    QLabel, QPushButton, QFrame, QApplication, QSizePolicy,
 )
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap
@@ -235,6 +235,10 @@ class LauncherWindow(QMainWindow):
 
         # Card list (plain widget, no scroll area)
         self._card_container = QWidget()
+        # Don't let the container grow past the cards' total height — otherwise the
+        # extra vertical space lands as an empty band between the last card and the
+        # footer (the «too big / empty space at the bottom» bug).
+        self._card_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         card_layout = QVBoxLayout(self._card_container)
         card_layout.setContentsMargins(0, 4, 0, 4)
         card_layout.setSpacing(SiteCard.CARD_SPACING)
