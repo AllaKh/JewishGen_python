@@ -369,19 +369,24 @@ async def _do_search(page, params, log) -> bool:
     for _pass in range(3):                  # 2nd toggle may appear after the 1st
         try:
             n = await page.evaluate(r"""() => {
-                const want = ['Больше параметров', 'Показать архивные'];
+                // Collapsed toggles carry class «more-sign … _closed» (the archive
+                // one is «more-sign-arc more-sign_closed visible», text «Поиск по
+                // архивным реквизитам»). Also accept «Больше параметров поиска» by
+                // text. Click each VISIBLE collapsed toggle once; once open the
+                // class flips to «_opened» / the text changes, so it is never
+                // re-collapsed.
                 let clicked = 0;
-                for (const w of want) {
-                    // smallest VISIBLE element whose text contains the phrase →
-                    // click it once (clicking the inner text bubbles to the
-                    // toggle handler; avoids double-toggling icon + text).
-                    let best = null, bestLen = 1e9;
-                    for (const e of document.querySelectorAll('span,a,div,button,p,li,i')) {
-                        const t = (e.textContent || '').trim();
-                        if (t.includes(w) && t.length < 50 && t.length < bestLen
-                                && e.offsetParent !== null) { best = e; bestLen = t.length; }
-                    }
-                    if (best) { best.click(); clicked++; }
+                const hit = new Set();
+                const want = ['Больше параметров', 'архивным реквизитам'];
+                for (const e of document.querySelectorAll(
+                        'span,a,div,button,p,li,[class*="more-sign"]')) {
+                    if (e.offsetParent === null || hit.has(e)) continue;
+                    const c = (e.className && e.className.toString)
+                        ? e.className.toString() : '';
+                    const t = (e.textContent || '').trim();
+                    const byClass = /more-sign/.test(c) && /_closed/.test(c);
+                    const byText = t.length < 60 && want.some(w => t.includes(w));
+                    if (byClass || byText) { hit.add(e); e.click(); clicked++; }
                 }
                 return clicked;
             }""")
