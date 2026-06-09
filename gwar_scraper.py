@@ -348,20 +348,28 @@ async def _do_search(page, params, log) -> bool:
     await page.goto(f"{BASE}/heroes/", wait_until="domcontentloaded", timeout=40000)
     await asyncio.sleep(2)
 
-    # Open BOTH collapsible sections so their fields are visible (and the user
-    # sees them used): «Дополнительные параметры поиска» (toggle «Больше
-    # параметров поиска») and «Место хранения документов» (toggle «Показать
-    # архивные реквизиты»). When a section is already open its «show» toggle
-    # text is absent, so this is a harmless no-op.
-    for txt in ("Больше параметров", "Показать архивные реквизиты"):
-        try:
-            t = page.get_by_text(txt, exact=False).first
-            if await t.count() and await t.is_visible():
-                await t.click(timeout=2000)
-                await asyncio.sleep(0.8)
-        except Exception:
-            pass
-    await asyncio.sleep(0.4)
+    # Open BOTH collapsible sections so the user SEES the advanced fields used:
+    # «Дополнительные параметры поиска» (toggle «Больше параметров поиска») and
+    # «Место хранения документов» (toggle «Показать архивные реквизиты»). The
+    # toggles are duplicated (mobile+desktop) like the inputs, so click the
+    # VISIBLE one via JS. We match only «Больше …»/«Показать …», so an already
+    # open section (which shows «Меньше …»/«Скрыть …») is never collapsed.
+    try:
+        n = await page.evaluate(r"""() => {
+            const want = ['Больше параметров', 'Показать архивные'];
+            let clicked = 0;
+            for (const e of document.querySelectorAll('span,a,div,button,p,li')) {
+                if (e.children.length > 1) continue;
+                const t = (e.textContent || '').trim();
+                if (t.length < 60 && want.some(w => t.includes(w))
+                        && e.offsetParent !== null) { e.click(); clicked++; }
+            }
+            return clicked;
+        }""")
+        log(f"  → раскрыл доп. секции: {n}")
+        await asyncio.sleep(1.0)
+    except Exception:
+        pass
 
     # Text fields (id == name on the page).
     await _fill_field(page, "last_name",   params.get("last_name", ""), log)
@@ -419,6 +427,9 @@ async def _do_search(page, params, log) -> bool:
                     await target.click(timeout=2000)
         except Exception:
             pass
+
+    # Let the user see the filled, expanded form for a moment before submitting.
+    await asyncio.sleep(2.0)
 
     # Submit «Найти».
     clicked = False
