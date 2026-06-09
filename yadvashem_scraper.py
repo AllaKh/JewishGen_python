@@ -311,12 +311,20 @@ def _looks_image(b: bytes) -> bool:
             or b[:4] == b"RIFF" or b[:2] in (b"II", b"MM"))
 
 
-# Site chrome that leaks into fields/text (nav, social, map widget) — dropped.
+# Site chrome that leaks into fields/text (nav, social, map widget, search bar,
+# Material-icon names like «keyboard_arrow_down») — dropped.
 _JUNK = ("соцсет", "яд вашем в соц", "начать заново", "print candle",
          "поделиться", "холокост", "коллекции и исследования", "увековечение",
          "образование", "музеи и выставки", "праведники", "посетителям",
          "map data", "keyboard shortcuts", "satellite", "©", "google",
-         "deutsch", "français", "официальные названия мест")
+         "deutsch", "français", "официальные названия мест",
+         "база данных имен", "расширенный поиск", "очистить все",
+         "очистить поля", "keyboard_arrow", "expand_more", "expand_less",
+         "arrow_drop")
+
+# A value that is a bare Material-icon token («keyboard_arrow_down»): all
+# lowercase ASCII with an underscore, no spaces.
+_ICON_RE = re.compile(r"^[a-z][a-z0-9]*_[a-z0-9_]+$")
 
 
 def _is_junk(s: str) -> bool:
@@ -329,7 +337,9 @@ def _clean_fields(pairs):
     for k, v in pairs:
         if not k or not v or _is_junk(k) or _is_junk(v):
             continue
-        if len(k) > 55 or (k, v) in seen:
+        if _ICON_RE.match(v) or _ICON_RE.match(k):     # Material-icon leak
+            continue
+        if len(k) > 55 or len(v) < 1 or (k, v) in seen:
             continue
         seen.add((k, v)); out.append((k, v))
     return out
