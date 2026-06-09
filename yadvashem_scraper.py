@@ -311,6 +311,43 @@ def _looks_image(b: bytes) -> bool:
             or b[:4] == b"RIFF" or b[:2] in (b"II", b"MM"))
 
 
+# Site chrome that leaks into fields/text (nav, social, map widget) — dropped.
+_JUNK = ("соцсет", "яд вашем в соц", "начать заново", "print candle",
+         "поделиться", "холокост", "коллекции и исследования", "увековечение",
+         "образование", "музеи и выставки", "праведники", "посетителям",
+         "map data", "keyboard shortcuts", "satellite", "©", "google",
+         "deutsch", "français", "официальные названия мест")
+
+
+def _is_junk(s: str) -> bool:
+    s = (s or "").lower()
+    return any(j in s for j in _JUNK)
+
+
+def _clean_fields(pairs):
+    out, seen = [], set()
+    for k, v in pairs:
+        if not k or not v or _is_junk(k) or _is_junk(v):
+            continue
+        if len(k) > 55 or (k, v) in seen:
+            continue
+        seen.add((k, v)); out.append((k, v))
+    return out
+
+
+def _clean_text(txt: str) -> str:
+    """Cut the site chrome (social/nav) off a free-text fallback."""
+    if not txt:
+        return ""
+    cut = len(txt)
+    for m in ("ЯД ВАШЕМ В СОЦ", "Начать заново", "Print Candle", "Поделиться",
+              "Официальные названия мест"):
+        i = txt.find(m)
+        if 0 <= i < cut:
+            cut = i
+    return txt[:cut].strip()
+
+
 async def _img_bytes_via_goto(context, url, referer) -> bytes:
     if not url or not url.startswith("http"):
         return b""
@@ -335,43 +372,70 @@ async def _img_bytes_via_goto(context, url, referer) -> bytes:
     return b""
 
 
+_REC_TABS_JS = r"""() => {
+    const t = [...document.querySelectorAll('.mdc-tab, [role="tab"]')];
+    const rec = t.filter(e => /record|запис/i.test(e.textContent || ''));
+    return (rec.length || t.length);
+}"""
+_REC_CLICK_JS = r"""(i) => {
+    let t = [...document.querySelectorAll('.mdc-tab, [role="tab"]')]
+        .filter(e => /record|запис/i.test(e.textContent || ''));
+    if (!t.length) t = [...document.querySelectorAll('.mdc-tab, [role="tab"]')];
+    if (t[i]) { t[i].click(); return true; }
+    return false;
+}"""
+
+
 async def _extract_record(page, url, images_dir, log, result_name=""):
-    rec = {"name": "", "url": url, "fields": [], "images": [], "text": ""}
+    rec = {"name": "", "url": url, "records": []}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(2.5)
-        try:                                   # trigger lazy-loaded document scans
-            await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(1.3)
-            await page.evaluate("() => window.scrollTo(0, 0)")
+        name = await page.evaluate(
+            "() => { const h=document.querySelector('h1');"
+            " return h ? h.textContent.replace(/\\s+/g,' ').trim() : ''; }")
+        rec["name"] = (name or result_name).strip()
+        base = safe_fn(rec["name"] or result_name or "record")
+        # «Record 1 / Record 2 / …» tabs — each is a DIFFERENT source document.
+        try:
+            ntabs = int(await page.evaluate(_REC_TABS_JS) or 1)
         except Exception:
-            pass
-        info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
-        rec["name"] = (info.get("name") or result_name).strip()
-        seen, fields = set(), []
-        for k, v in info.get("pairs", []):
-            kk = (k, v)
-            if kk not in seen and len(k) < 55:
-                seen.add(kk); fields.append((k, v))
-        rec["fields"] = fields
-        if not fields:
-            rec["text"] = info.get("bodyText", "")
-        base = safe_fn(rec.get("name") or result_name or "record")
-        # document images (Pages of Testimony etc.) + direct document links
-        urls = list(info.get("imgs", [])) + list(info.get("docLinks", []))
-        saved = 0
-        for u in urls[:12]:
-            body = await _img_bytes_via_goto(page.context, u, page.url)
-            if _looks_image(body):             # skip misnamed HTML/error pages
-                images_dir.mkdir(parents=True, exist_ok=True)
-                suf = Path(urlparse(u).path).suffix.lower()
-                if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff",
-                               ".pdf", ".webp"):
-                    suf = ".jpg"
-                dest = images_dir / f"{base}_{saved + 1}{suf}"
-                dest.write_bytes(body)
-                rec["images"].append(str(dest)); saved += 1
-        log(f"      полей: {len(rec['fields'])}, документов: {saved}")
+            ntabs = 1
+        ntabs = max(1, min(ntabs, 15))
+        for ti in range(ntabs):
+            if ntabs > 1:
+                try:
+                    await page.evaluate(_REC_CLICK_JS, ti)
+                    await asyncio.sleep(1.2)
+                except Exception:
+                    pass
+            try:                               # trigger the (lazy) document scan
+                await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(0.9)
+                await page.evaluate("() => window.scrollTo(0, 0)")
+            except Exception:
+                pass
+            info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
+            fields = _clean_fields(info.get("pairs", []))
+            imgs, urls = [], list(info.get("imgs", [])) + list(info.get("docLinks", []))
+            for u in urls[:8]:
+                body = await _img_bytes_via_goto(page.context, u, page.url)
+                if _looks_image(body):         # skip misnamed HTML/error pages
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    suf = Path(urlparse(u).path).suffix.lower()
+                    if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff",
+                                   ".pdf", ".webp"):
+                        suf = ".jpg"
+                    tag = f"_rec{ti + 1}_{len(imgs) + 1}" if ntabs > 1 else f"_{len(imgs) + 1}"
+                    dest = images_dir / f"{base}{tag}{suf}"
+                    dest.write_bytes(body)
+                    imgs.append(str(dest))
+            rec["records"].append({"label": f"Record {ti + 1}", "fields": fields,
+                                   "images": imgs,
+                                   "text": "" if fields else _clean_text(info.get("bodyText", ""))})
+        nf = sum(len(r["fields"]) for r in rec["records"])
+        nd = sum(len(r["images"]) for r in rec["records"])
+        log(f"      вкладок: {len(rec['records'])}, полей: {nf}, документов: {nd}")
     except Exception as e:
         log(f"      !! страница записи ({type(e).__name__})")
     return rec
@@ -393,19 +457,24 @@ def _docx_add_record(doc, i, rec):
     name = rec.get("name") or f"Record {i}"
     hp = doc.add_paragraph(); hr = hp.add_run(f"{i}. {name}")
     hr.bold = True; hr.font.size = Pt(13)
-    for img in rec.get("images", []):
-        if str(img).lower().endswith(".pdf"):
-            continue                              # can't embed a PDF as a picture
-        try:
-            png = _to_png(Path(img).read_bytes())
-            if png:
-                doc.add_picture(io.BytesIO(png), width=Inches(3.0))
-        except Exception:
-            pass
-    if rec.get("fields"):
-        _kv_table(doc, rec["fields"])
-    elif rec.get("text"):
-        doc.add_paragraph(rec["text"])
+    records = rec.get("records") or []
+    multi = len(records) > 1
+    for r in records:
+        if multi:                                 # «Record 1», «Record 2», …
+            doc.add_paragraph().add_run(r.get("label", "Record")).bold = True
+        for img in r.get("images", []):
+            if str(img).lower().endswith(".pdf"):
+                continue                          # can't embed a PDF as a picture
+            try:
+                png = _to_png(Path(img).read_bytes())
+                if png:
+                    doc.add_picture(io.BytesIO(png), width=Inches(3.2))
+            except Exception:
+                pass
+        if r.get("fields"):
+            _kv_table(doc, r["fields"])
+        elif r.get("text"):
+            doc.add_paragraph(r["text"])
     if rec.get("url"):
         p = doc.add_paragraph(); _add_hyperlink(p, "Source / Источник", rec["url"])
     doc.add_paragraph("")
@@ -466,7 +535,7 @@ async def run_scraper(*,
         return summary
 
     url = _build_search_url(fields, place_mode, global_text, lang=lang)
-    qlines = [f"Запрос: {qkey}", f"URL: {url}"]
+    qlines = [f"Запрос: {qkey}"]
 
     _prog(0, "Запускаю браузер…")
     async with async_playwright() as pw:
@@ -512,7 +581,7 @@ async def run_scraper(*,
                 except Exception as _e:
                     log(f"      !! пропускаю запись ({type(_e).__name__})")
                     records.append({"name": rm["name"], "url": rm["href"],
-                                    "fields": [], "images": []})
+                                    "records": []})
                 await asyncio.sleep(0.3)
 
             _prog(92, "Сохранение…")

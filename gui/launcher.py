@@ -93,7 +93,7 @@ class SiteCard(QFrame):
 
         sub_lbl = QLabel(site.get("subtitle", ""))
         sub_lbl.setObjectName("siteSub")
-        sub_lbl.setWordWrap(True)
+        sub_lbl.setWordWrap(False)             # one line → deterministic card height
 
         text_col.addWidget(name_lbl)
         text_col.addWidget(sub_lbl)
@@ -111,6 +111,10 @@ class SiteCard(QFrame):
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(self._on_click)
         layout.addWidget(btn)
+
+        # Fixed, uniform card height → the launcher height is deterministic and
+        # the fit never locks in a too-tall window (no empty band at the bottom).
+        self.setFixedHeight(self.CARD_HEIGHT)
 
     # ------------------------------------------------------------------
     def _on_click(self):
