@@ -121,9 +121,8 @@ class GwarApp(QMainWindow):
         bgl.addWidget(QLabel("First name:"), 0, 2); bgl.addWidget(self.f_first, 0, 3)
         bgl.addWidget(QLabel("Patronymic:"), 1, 0); bgl.addWidget(self.f_mid, 1, 1)
         bgl.addWidget(QLabel("Birth date:"), 1, 2); bgl.addWidget(self.f_birth, 1, 3)
-        self.f_exact = QCheckBox(
-            "Exact match — keep only EXACT surname / first name / patronymic "
-            "(drop fuzzy variants like Рубик↔Рубин, Гирш↔Герш)")
+        self.f_exact = QCheckBox("Exact match (surname / first name / patronymic)")
+        self.f_exact.setChecked(True)
         bgl.addWidget(self.f_exact, 2, 0, 1, 4)
         outer.addWidget(bg)
 
@@ -320,7 +319,7 @@ class GwarApp(QMainWindow):
         i = self.f_event.findText(d.get("event", ""))
         if i >= 0:
             self.f_event.setCurrentIndex(i)
-        self.f_exact.setChecked(bool(d.get("exact", False)))
+        self.f_exact.setChecked(bool(d.get("exact", True)))
         secs = d.get("sections", {})
         for n, cb in self._sec_cbs.items():
             cb.setChecked(bool(secs.get(n, True)))

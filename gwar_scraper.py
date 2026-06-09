@@ -518,6 +518,7 @@ async def _collect_results(page, params, log, max_pages, max_records) -> list:
     want = (params.get("last_name", ""), params.get("first_name", ""),
             params.get("middle_name", ""))
     exact = bool(params.get("exact"))
+    log(f"  → точное совпадение ФИО: {'ВКЛ' if exact else 'выкл'}")
     ym = re.search(r"(18|19|20)\d{2}", params.get("birth_date", "") or "")
     want_year = ym.group(0) if ym else ""
     out, seen = [], set()
@@ -615,15 +616,17 @@ async def _grab_doc_scans(page, images_dir, base, rec, log):
 
     saved = 0
     for pi in range(pages):
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(0.6)
         ok = False
-        # 1) save button (icon-save-dropdown) → catch download
+        # 1) save button (icon-save-dropdown) → catch download. SHORT timeout: when
+        # the dropdown doesn't produce a download we must NOT hang 15s — the image
+        # fallback below is what actually works on these cards.
         try:
             btn = page.locator("#btnSaveImage").first
             if await btn.count():
-                async with page.expect_download(timeout=15000) as dl:
+                async with page.expect_download(timeout=5000) as dl:
                     await btn.click(timeout=4000)
-                    await asyncio.sleep(0.6)
+                    await asyncio.sleep(0.4)
                     for sel in ('.icon-save-dropdown a', '.icon-save-dropdown li',
                                 'a:has-text("Скачать")', 'a[href*="download" i]'):
                         it = page.locator(sel).first
@@ -682,7 +685,7 @@ async def _extract_record(page, url, images_dir, base_dir, log, result_name=""):
     rec = {"name": "", "type": "", "url": url, "fields": [], "scans": []}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(1.2)
         info = await page.evaluate(_DETAIL_JS, _GWAR_LABELS)
         rec["name"] = info.get("name") or result_name
         rec["type"] = info.get("typ") or ""
