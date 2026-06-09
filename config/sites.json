@@ -43,7 +43,7 @@
   },
   {
     "key": "Memlogo",
-    "name": "Memsearch",
+    "name": "Мемориал",
     "subtitle": "Soviet repression victim databases (Memorial / GULAG.CZ) — memsearch.org",
     "action": "open_window",
     "window_cls": "gui.memsearch.MemsearchApp"

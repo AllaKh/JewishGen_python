@@ -4,12 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python v 3.0">
-      <change afterPath="$PROJECT_DIR$/config/JGlogo.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/sites.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/styles.json" afterDir="false" />
+    <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python v 3.02">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/CLAUDE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/app_logo.png" beforeDir="false" afterPath="$PROJECT_DIR$/config/app_logo.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/sites.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/sites.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/gui/launcher.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/launcher.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/yadvashem.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/yadvashem.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/autosave.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/autosave.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/profiles.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/profiles.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/yadvashem_scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/yadvashem_scraper.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -109,13 +113,22 @@
       <option name="project" value="LOCAL" />
       <updated>1779313003625</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="JewishGen_python v 3.02">
+      <option name="closed" value="true" />
+      <created>1779544316585</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1779544316585</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="JewishGen_python v 1.0" />
     <MESSAGE value="JewishGen_python v 2.0" />
     <MESSAGE value="JewishGen_python v 3.0" />
-    <option name="LAST_COMMIT_MESSAGE" value="JewishGen_python v 3.0" />
+    <MESSAGE value="JewishGen_python v 3.02" />
+    <option name="LAST_COMMIT_MESSAGE" value="JewishGen_python v 3.02" />
   </component>
 </project>
