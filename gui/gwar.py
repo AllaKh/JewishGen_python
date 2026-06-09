@@ -2,8 +2,10 @@
 gui/gwar.py — «Памяти героев Великой войны» (gwar.mil.ru/heroes/) search window.
 
 WWI (1914–1918) participant records. The site is Russian-only; the GUI is
-English. Fills the search form, collects FIO-matching records, opens each and
-copies the fields to Word, saving the scanned document image(s).
+English. The form mirrors the site's own sections (Basic data / Place /
+Sections / Additional parameters / Document storage). Fills the search form,
+collects FIO-matching records, opens each and copies the fields to Word,
+saving the scanned document image(s).
 """
 
 import asyncio, json, sys, threading
@@ -11,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QCheckBox,
+    QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
     QFileDialog, QProgressBar, QMessageBox, QApplication, QGroupBox,
 )
 from PySide6.QtCore import QThread, Signal, Qt
@@ -29,9 +31,11 @@ try:
     import gwar_scraper as _scraper
     _SCRAPER_OK = True
     SECTIONS = list(_scraper.SECTIONS.keys())
+    EVENTS = _scraper.EVENTS
 except ImportError:
     _SCRAPER_OK = False
     SECTIONS = ["Awards", "Losses", "Personal data", "Commanders", "Notable people"]
+    EVENTS = {"": ""}
 
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
@@ -39,9 +43,9 @@ QGroupBox{font-weight:bold;font-size:11px;border:1px solid #c9bd9a;
   border-radius:6px;margin-top:10px;padding-top:6px;background:#faf8f2;}
 QGroupBox::title{subcontrol-origin:margin;subcontrol-position:top left;
   left:10px;padding:0 4px;color:#8a6d1f;background:#faf8f2;}
-QLineEdit{padding:4px 6px;border:1px solid #cdc4ac;border-radius:4px;
+QLineEdit,QComboBox{padding:4px 6px;border:1px solid #cdc4ac;border-radius:4px;
   background:white;}
-QLineEdit:focus{border:1px solid #b8860b;}
+QLineEdit:focus,QComboBox:focus{border:1px solid #b8860b;}
 QPushButton{padding:5px 14px;border-radius:4px;border:1px solid #c9bd9a;
   background:#f1ecdd;}
 QPushButton:hover{background:#e6dcc2;}
@@ -92,7 +96,7 @@ class GwarApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Heroes of the Great War")
-        self.setMinimumWidth(780)
+        self.setMinimumWidth(820)
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
         self._build_ui()
@@ -108,43 +112,30 @@ class GwarApp(QMainWindow):
         outer.addWidget(QLabel("WWI (1914–1918) participant records "
                                "(gwar.mil.ru) — the site is Russian only."))
 
-        # Person
-        ng = QGroupBox("Person")
-        ngl = QGridLayout(ng); ngl.setSpacing(6)
+        # 1) Basic data ──────────────────────────────────────────────────────
+        bg = QGroupBox("Basic data")
+        bgl = QGridLayout(bg); bgl.setSpacing(6)
         self.f_last = QLineEdit(); self.f_first = QLineEdit(); self.f_mid = QLineEdit()
         self.f_birth = QLineEdit(); self.f_birth.setPlaceholderText("year or DD.MM.YYYY")
-        ngl.addWidget(QLabel("Surname:"), 0, 0);    ngl.addWidget(self.f_last, 0, 1)
-        ngl.addWidget(QLabel("First name:"), 0, 2); ngl.addWidget(self.f_first, 0, 3)
-        ngl.addWidget(QLabel("Patronymic:"), 1, 0); ngl.addWidget(self.f_mid, 1, 1)
-        ngl.addWidget(QLabel("Birth date:"), 1, 2); ngl.addWidget(self.f_birth, 1, 3)
-        outer.addWidget(ng)
+        bgl.addWidget(QLabel("Surname:"), 0, 0);    bgl.addWidget(self.f_last, 0, 1)
+        bgl.addWidget(QLabel("First name:"), 0, 2); bgl.addWidget(self.f_first, 0, 3)
+        bgl.addWidget(QLabel("Patronymic:"), 1, 0); bgl.addWidget(self.f_mid, 1, 1)
+        bgl.addWidget(QLabel("Birth date:"), 1, 2); bgl.addWidget(self.f_birth, 1, 3)
+        outer.addWidget(bg)
 
-        # Place of birth / conscription
-        pg = QGroupBox("Place of residence / conscription (optional)")
+        # 2) Place of residence / conscription ───────────────────────────────
+        pg = QGroupBox("Place of residence / conscription")
         pgl = QGridLayout(pg); pgl.setSpacing(6)
         self.f_gub = QLineEdit(); self.f_uezd = QLineEdit()
         self.f_vol = QLineEdit(); self.f_set = QLineEdit()
-        pgl.addWidget(QLabel("Gubernia:"), 0, 0);  pgl.addWidget(self.f_gub, 0, 1)
-        pgl.addWidget(QLabel("Uezd:"), 0, 2);      pgl.addWidget(self.f_uezd, 0, 3)
-        pgl.addWidget(QLabel("Volost:"), 1, 0);    pgl.addWidget(self.f_vol, 1, 1)
+        pgl.addWidget(QLabel("Gubernia:"), 0, 0);   pgl.addWidget(self.f_gub, 0, 1)
+        pgl.addWidget(QLabel("Uezd:"), 0, 2);       pgl.addWidget(self.f_uezd, 0, 3)
+        pgl.addWidget(QLabel("Volost:"), 1, 0);     pgl.addWidget(self.f_vol, 1, 1)
         pgl.addWidget(QLabel("Settlement:"), 1, 2); pgl.addWidget(self.f_set, 1, 3)
         outer.addWidget(pg)
 
-        # Service + archive
-        sg = QGroupBox("Service & archive (optional)")
-        sgl = QGridLayout(sg); sgl.setSpacing(6)
-        self.f_rank = QLineEdit(); self.f_unit = QLineEdit(); self.f_evplace = QLineEdit()
-        self.f_fund = QLineEdit(); self.f_inv = QLineEdit(); self.f_file = QLineEdit()
-        sgl.addWidget(QLabel("Rank / position:"), 0, 0); sgl.addWidget(self.f_rank, 0, 1)
-        sgl.addWidget(QLabel("Military unit:"), 0, 2);   sgl.addWidget(self.f_unit, 0, 3)
-        sgl.addWidget(QLabel("Place of event:"), 1, 0);  sgl.addWidget(self.f_evplace, 1, 1)
-        sgl.addWidget(QLabel("Fund:"), 1, 2);            sgl.addWidget(self.f_fund, 1, 3)
-        sgl.addWidget(QLabel("Inventory/Cabinet:"), 2, 0); sgl.addWidget(self.f_inv, 2, 1)
-        sgl.addWidget(QLabel("File/Box:"), 2, 2);        sgl.addWidget(self.f_file, 2, 3)
-        outer.addWidget(sg)
-
-        # Sections (Разделы) — all on by default
-        secg = QGroupBox("Sections to search")
+        # 3) Sections (Разделы) — all on by default ──────────────────────────
+        secg = QGroupBox("Sections")
         secl = QHBoxLayout(secg); secl.setSpacing(12)
         self._sec_cbs = {}
         for name in SECTIONS:
@@ -154,7 +145,31 @@ class GwarApp(QMainWindow):
         secl.addStretch()
         outer.addWidget(secg)
 
-        # Output
+        # 4) Additional search parameters ────────────────────────────────────
+        ag = QGroupBox("Additional search parameters")
+        agl = QGridLayout(ag); agl.setSpacing(6)
+        self.f_rank = QLineEdit(); self.f_unit = QLineEdit(); self.f_evplace = QLineEdit()
+        self.f_event = QComboBox(); self.f_event.addItems(list(EVENTS.keys()))
+        self.f_evfrom = QLineEdit(); self.f_evfrom.setPlaceholderText("DD.MM.YYYY")
+        self.f_evto   = QLineEdit(); self.f_evto.setPlaceholderText("DD.MM.YYYY")
+        agl.addWidget(QLabel("Rank / position:"), 0, 0); agl.addWidget(self.f_rank, 0, 1)
+        agl.addWidget(QLabel("Military unit:"), 0, 2);   agl.addWidget(self.f_unit, 0, 3)
+        agl.addWidget(QLabel("Event:"), 1, 0);           agl.addWidget(self.f_event, 1, 1, 1, 3)
+        agl.addWidget(QLabel("Event start:"), 2, 0);     agl.addWidget(self.f_evfrom, 2, 1)
+        agl.addWidget(QLabel("Event end:"), 2, 2);       agl.addWidget(self.f_evto, 2, 3)
+        agl.addWidget(QLabel("Place of event:"), 3, 0);  agl.addWidget(self.f_evplace, 3, 1, 1, 3)
+        outer.addWidget(ag)
+
+        # 5) Document storage ────────────────────────────────────────────────
+        dg = QGroupBox("Document storage")
+        dgl = QGridLayout(dg); dgl.setSpacing(6)
+        self.f_fund = QLineEdit(); self.f_inv = QLineEdit(); self.f_file = QLineEdit()
+        dgl.addWidget(QLabel("Fund:"), 0, 0);              dgl.addWidget(self.f_fund, 0, 1)
+        dgl.addWidget(QLabel("Inventory/Cabinet:"), 0, 2); dgl.addWidget(self.f_inv, 0, 3)
+        dgl.addWidget(QLabel("File/Box:"), 1, 0);          dgl.addWidget(self.f_file, 1, 1)
+        outer.addWidget(dg)
+
+        # Output ─────────────────────────────────────────────────────────────
         og = QGroupBox("Output (Word)")
         ol = QHBoxLayout(og); ol.setSpacing(6)
         self.f_folder = QLineEdit(); self.f_folder.setText(_DEF_DIR)
@@ -175,9 +190,10 @@ class GwarApp(QMainWindow):
 
         for w in (self.f_last, self.f_first, self.f_mid, self.f_birth,
                   self.f_gub, self.f_uezd, self.f_vol, self.f_set,
-                  self.f_rank, self.f_unit, self.f_evplace,
+                  self.f_rank, self.f_unit, self.f_evfrom, self.f_evto, self.f_evplace,
                   self.f_fund, self.f_inv, self.f_file, self.f_folder):
             w.textChanged.connect(self._save)
+        self.f_event.currentTextChanged.connect(self._save)
         for cb in self._sec_cbs.values():
             cb.stateChanged.connect(self._save)
 
@@ -199,6 +215,9 @@ class GwarApp(QMainWindow):
             "settlement":  self.f_set.text().strip(),
             "rank":        self.f_rank.text().strip(),
             "unit":        self.f_unit.text().strip(),
+            "event":       EVENTS.get(self.f_event.currentText(), ""),
+            "event_from":  self.f_evfrom.text().strip(),
+            "event_to":    self.f_evto.text().strip(),
             "event_place": self.f_evplace.text().strip(),
             "fund":        self.f_fund.text().strip(),
             "inventory":   self.f_inv.text().strip(),
@@ -266,6 +285,8 @@ class GwarApp(QMainWindow):
                  "gub": self.f_gub.text(), "uezd": self.f_uezd.text(),
                  "vol": self.f_vol.text(), "set": self.f_set.text(),
                  "rank": self.f_rank.text(), "unit": self.f_unit.text(),
+                 "event": self.f_event.currentText(),
+                 "evfrom": self.f_evfrom.text(), "evto": self.f_evto.text(),
                  "evplace": self.f_evplace.text(), "fund": self.f_fund.text(),
                  "inv": self.f_inv.text(), "file": self.f_file.text(),
                  "folder": self.f_folder.text(),
@@ -286,9 +307,13 @@ class GwarApp(QMainWindow):
         self.f_gub.setText(d.get("gub", "")); self.f_uezd.setText(d.get("uezd", ""))
         self.f_vol.setText(d.get("vol", "")); self.f_set.setText(d.get("set", ""))
         self.f_rank.setText(d.get("rank", "")); self.f_unit.setText(d.get("unit", ""))
+        self.f_evfrom.setText(d.get("evfrom", "")); self.f_evto.setText(d.get("evto", ""))
         self.f_evplace.setText(d.get("evplace", "")); self.f_fund.setText(d.get("fund", ""))
         self.f_inv.setText(d.get("inv", "")); self.f_file.setText(d.get("file", ""))
         self.f_folder.setText(d.get("folder", _DEF_DIR))
+        i = self.f_event.findText(d.get("event", ""))
+        if i >= 0:
+            self.f_event.setCurrentIndex(i)
         secs = d.get("sections", {})
         for n, cb in self._sec_cbs.items():
             cb.setChecked(bool(secs.get(n, True)))

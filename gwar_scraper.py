@@ -70,6 +70,64 @@ SECTIONS = {
     "Notable people": "prs_tag",
 }
 
+# «Событие» (event_id) — WWI battles/operations, English label → site value.
+EVENTS = {
+    "": "",
+    "East Prussian Operation": "13",
+    "Battle of Galicia": "14",
+    "Rava-Russka Operation": "18",
+    "Battle of Gumbinnen": "19",
+    "Battle of Kraśnik": "9",
+    "Lublin-Kholm Operation": "15",
+    "Battle of Komarów": "10",
+    "Battle of Tannenberg": "23",
+    "Battle of the Golden Lipa": "11",
+    "Battle of the Gnila Lipa": "12",
+    "Capitulation of the 13th & 15th Corps": "157",
+    "Austro-Hungarian capture of Komarów": "16",
+    "Galich-Lviv Operation": "17",
+    "Russian capture of Lviv": "20",
+    "Battle of Gorodok": "22",
+    "Russian capture of Halych": "21",
+    "Battle of the Masurian Lakes": "25",
+    "Siege of Przemyśl": "27",
+    "Warsaw-Ivangorod Operation": "29",
+    "Köprüköy Operation": "32",
+    "Łódź Operation": "33",
+    "Sarikamish Operation": "38",
+    "Battle of Ardahan": "39",
+    "Russian offensive in the Carpathians": "40",
+    "Lasdehnen Operation": "41",
+    "Battle of Kozevo": "47",
+    "Augustów Operation": "43",
+    "Capture of Mount Makówka": "48",
+    "Gorlice-Tarnów breakthrough": "53",
+    "1st Austro-German offensive": "50",
+    "2nd Austro-German offensive": "57",
+    "Alashkert Operation": "60",
+    "Riga-Shavli Operation": "102",
+    "Polish pocket (loss of Poland)": "62",
+    "Vilnius Operation (loss of Lithuania)": "65",
+    "Sventiany breakthrough": "67",
+    "Erzurum campaign": "75",
+    "Trebizond Operation": "78",
+    "Lake Naroch Operation": "80",
+    "Brusilov offensive": "93",
+    "Battle of Lutsk": "89",
+    "Battle of Dobronouts (Okna breakthrough)": "91",
+    "Battle of Kolomyia": "96",
+    "1st Battle of Kovel": "103",
+    "2nd Battle of Kovel": "101",
+    "August Operation (SW Front)": "107",
+    "Kovel Battle (SW Front)": "110",
+    "Mitau Operation": "114",
+    "Capture of Khanaqin (Persia)": "121",
+    "June (Kerensky) offensive": "127",
+    "Battle of Zborov": "126",
+    "Tarnopol disaster": "130",
+    "2nd Battle of Mărășești (Romanian Front)": "131",
+}
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────── #
 def safe_fn(s: str, n: int = 80) -> str:
@@ -299,7 +357,18 @@ async def _do_search(page, params, log) -> bool:
     await _fill_field(page, "birth_place",          params.get("settlement", ""), log)
     await _fill_field(page, "rank",                 params.get("rank", ""), log)
     await _fill_field(page, "military_unit_name",   params.get("unit", ""), log)
+    await _fill_field(page, "data_vibitiya",        params.get("event_from", ""), log)
+    await _fill_field(page, "data_vibitiya_end",    params.get("event_to", ""), log)
     await _fill_field(page, "event_place",          params.get("event_place", ""), log)
+    # «Событие» is a custom selectric over <select id="event_id"> — set the value
+    # on the underlying select (language-independent).
+    _ev = params.get("event", "")
+    if _ev:
+        try:
+            await page.select_option("#event_id", value=str(_ev), timeout=3000)
+            log(f"  ✓ event_id = {_ev}")
+        except Exception as e:
+            log(f"  !! select event_id: {type(e).__name__}")
     await _fill_field(page, "fund",      params.get("fund", ""), log)
     await _fill_field(page, "inventory", params.get("inventory", ""), log)
     await _fill_field(page, "file",      params.get("file", ""), log)
@@ -618,7 +687,7 @@ def write_docx(path, records, qlines, append=False):
 async def run_scraper(*,
     last_name="", first_name="", middle_name="",
     birth_date="", gubernia="", uezd="", volost="", settlement="",
-    rank="", unit="", event_place="",
+    rank="", unit="", event="", event_from="", event_to="", event_place="",
     fund="", inventory="", file="",
     sections=None,
     output_folder=Path("."),
@@ -643,6 +712,7 @@ async def run_scraper(*,
         middle_name=middle_name.strip(), birth_date=birth_date.strip(),
         gubernia=gubernia.strip(), uezd=uezd.strip(), volost=volost.strip(),
         settlement=settlement.strip(), rank=rank.strip(), unit=unit.strip(),
+        event=event, event_from=event_from.strip(), event_to=event_to.strip(),
         event_place=event_place.strip(), fund=fund.strip(),
         inventory=inventory.strip(), file=file.strip(),
         sections=sections or {})

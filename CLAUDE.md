@@ -340,7 +340,8 @@ no_viewport=True, accept_downloads=True
 `gwar.mil.ru/heroes/` — участники Первой мировой (1914–1918), то же ведомство, что «Память народа», но **проще**: каждый результат = ОДИН документ (не группа карточек на человека). Сайт **только русский**, GUI английский, логина нет, key `Voinalogo` (лого `config/Voinalogo.png`). Сайт мне недоступен (Chrome/403) → DOM брал у пользователя.
 
 ### Поиск (`/heroes/`, поля по `id`/`name`, язык-независимы)
-- `last_name`, `first_name`, `middle_name`, `birth_date`, `birth_place_gubernia`, `birth_place_uezd`, `birth_place_volost`, `birth_place`, `rank`, `military_unit_name`, `event_place`, `fund`, `inventory`, `file`. Поля кастомные (`with-unilabel`, `data-placeholder`) → заполнять кликом + `keyboard.type` (как pamyat).
+- `last_name`, `first_name`, `middle_name`, `birth_date`, `birth_place_gubernia`, `birth_place_uezd`, `birth_place_volost`, `birth_place`, `rank`, `military_unit_name`, `event_place`, `data_vibitiya`/`data_vibitiya_end` (даты события), `fund`, `inventory`, `file`. Поля кастомные (`with-unilabel`, `data-placeholder`) → заполнять кликом + `keyboard.type` (как pamyat).
+- **«Событие»** — `<select id="event_id">` под виджетом `selectric` (~54 операции ПМВ), `select_option(value=…)`; в GUI словарь `EVENTS` (англ. → value). GUI зеркалит секции сайта: Basic data / Place / Sections / Additional parameters (вкл. Событие + даты) / Document storage — пользователь сверяет с сайтом, не пропускать поля!
 - **`birth_date` с маской `date+month`**: голый год (1889) маска ломает → НЕ заполнять поле, фильтровать по году в результатах (`want_year` из `birth_date`). Полную дату (с точками) — заполнять.
 - **«Разделы»** = чекбоксы-источники `award_tag/dead_tag/frc_tag/commander_tag/prs_tag` (по умолчанию ВСЕ вкл). Кликать `label[for="…"]` только если нужно снять.
 - Кнопка: `input.button-search-big[value="Найти"]`. «Больше параметров поиска» — раскрыть, если свёрнуто.
