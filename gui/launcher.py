@@ -166,10 +166,13 @@ class LauncherWindow(QMainWindow):
         super().showEvent(ev)
         if not getattr(self, "_fitted_once", False):
             self._fitted_once = True
-            # Fit now and again next tick, after the shown layout has settled.
+            # Fit now and again on several later ticks — on a slower / high-DPI
+            # machine the layout (word-wrapped card subtitles) keeps settling past
+            # 120 ms, and an early fit locks in a too-tall window → empty band at
+            # the bottom. The last passes run after it has fully settled.
             self._fit_to_cards()
-            QTimer.singleShot(0,   self._fit_to_cards)
-            QTimer.singleShot(120, self._fit_to_cards)
+            for _ms in (0, 120, 250, 500, 900):
+                QTimer.singleShot(_ms, self._fit_to_cards)
 
     # ------------------------------------------------------------------
     def _build_ui(self):

@@ -255,44 +255,60 @@ async def _collect_results(page, log, max_pages, max_records) -> list:
 
 # ── Record detail ─────────────────────────────────────────────────────────── #
 _BAD_IMG = (r"maps\.google|googleapis|gstatic|staticmap|/maps/|\.svg|sprite|"
-            r"logo|icon|placeholder|avatar|flag")
+            r"logo|icon|placeholder|avatar|flag|/thumb|_thumb|share|social")
 _DETAIL_JS = r"""(BAD) => {
     const bad = new RegExp(BAD, 'i');
-    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-    // name = a heading that is NOT a bare field label like «Имя»/«Name»
-    let name = '';
-    for (const h of document.querySelectorAll('h1, h2, [class*="title" i]')) {
-        const t = norm(h.textContent);
-        if (t && t.length > 2 && !/^(имя|name|שם|фамилия)$/i.test(t)) { name = t.slice(0, 90); break; }
-    }
-    // field rows: label/value pairs (skip big containers)
-    const pairs = [];
-    document.querySelectorAll(
-        'tr, li, dl > *, [class*="field" i], [class*="prop" i], [class*="detail" i], [class*="row" i]')
-        .forEach(e => {
-            if (e.children.length > 3) return;
-            const t = norm(e.innerText);
-            const m = t.match(/^(.{2,40}?)\s*[:\-–]\s+(.{1,200})$/);
-            if (m && m[1].trim() && m[2].trim()) pairs.push([m[1].trim(), m[2].trim()]);
-        });
-    // document images (Pages of Testimony etc.) — exclude maps/logos
+    const norm = s => (s || '').replace(/ /g, ' ')
+        .replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+    // person name = the page H1 («Любовь Шендерович»)
+    const h1 = document.querySelector('h1');
+    const name = h1 ? norm(h1.textContent).replace(/\n+/g, ' ').slice(0, 90) : '';
+    // «Record Details» fields = innermost «label⏎value» blocks (label on one
+    // line, value on the next). A 2-line block whose descendants are NOT 2-line
+    // blocks is exactly one field.
+    const twoLines = e => {
+        const ls = norm(e.innerText).split('\n').map(x => x.trim()).filter(x => x);
+        return ls.length === 2 ? ls : null;
+    };
+    const pairs = [], seen = new Set();
+    document.querySelectorAll('div, li, section').forEach(e => {
+        const ls = twoLines(e);
+        if (!ls) return;
+        const [label, value] = ls;
+        if (!label || !value || label.length > 55 || value.length > 400) return;
+        for (const c of e.querySelectorAll('div, li, section'))
+            if (twoLines(c)) return;            // not innermost
+        const key = label + '|' + value;
+        if (seen.has(key)) return; seen.add(key);
+        pairs.push([label, value]);
+    });
+    // document images (Pages of Testimony / scans) — real images, no maps/thumbs
     const imgs = [];
     document.querySelectorAll('img[src]').forEach(im => {
         const s = im.src || '';
         if (!/^https?:/i.test(s) || bad.test(s)) return;
-        const a = (im.naturalWidth || 0) * (im.naturalHeight || 0);
-        if (a > 20000) imgs.push([a, s]);
+        const w = im.naturalWidth || 0, h = im.naturalHeight || 0;
+        if (w >= 200 && h >= 200) imgs.push([w * h, s]);
     });
     imgs.sort((x, y) => y[0] - x[0]);
-    // direct document links (full-size image / pdf)
     const docLinks = [...document.querySelectorAll('a[href]')].map(a => a.href)
         .filter(h => /\.(jpe?g|png|tiff?|pdf)(\?|$)/i.test(h) && !bad.test(h));
     const main = document.querySelector('main, [class*="content" i], [role="main"]') || document.body;
     return {name, pairs: pairs.slice(0, 80),
             imgs: [...new Set(imgs.map(i => i[1]))].slice(0, 12),
             docLinks: [...new Set(docLinks)].slice(0, 12),
-            bodyText: norm(main.innerText).slice(0, 3000)};
+            bodyText: norm(main.innerText).replace(/\n+/g, ' ').slice(0, 3000)};
 }"""
+
+
+def _looks_image(b: bytes) -> bool:
+    """True if bytes start with a known image / PDF magic — avoids saving a
+    misnamed HTML/error page as «.jpg» (the «ДАТА_1.jpg» won't-open bug)."""
+    if not b or len(b) < 200:
+        return False
+    return (b[:3] == b"\xff\xd8\xff" or b[:8] == b"\x89PNG\r\n\x1a\n"
+            or b[:4] == b"GIF8" or b[:2] == b"BM" or b[:4] == b"%PDF"
+            or b[:4] == b"RIFF" or b[:2] in (b"II", b"MM"))
 
 
 async def _img_bytes_via_goto(context, url, referer) -> bytes:
@@ -324,12 +340,18 @@ async def _extract_record(page, url, images_dir, log, result_name=""):
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(2.5)
+        try:                                   # trigger lazy-loaded document scans
+            await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(1.3)
+            await page.evaluate("() => window.scrollTo(0, 0)")
+        except Exception:
+            pass
         info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
         rec["name"] = (info.get("name") or result_name).strip()
         seen, fields = set(), []
         for k, v in info.get("pairs", []):
             kk = (k, v)
-            if kk not in seen and len(k) < 45:
+            if kk not in seen and len(k) < 55:
                 seen.add(kk); fields.append((k, v))
         rec["fields"] = fields
         if not fields:
@@ -340,10 +362,11 @@ async def _extract_record(page, url, images_dir, log, result_name=""):
         saved = 0
         for u in urls[:12]:
             body = await _img_bytes_via_goto(page.context, u, page.url)
-            if body and len(body) > 5000:
+            if _looks_image(body):             # skip misnamed HTML/error pages
                 images_dir.mkdir(parents=True, exist_ok=True)
                 suf = Path(urlparse(u).path).suffix.lower()
-                if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".pdf"):
+                if suf not in (".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff",
+                               ".pdf", ".webp"):
                     suf = ".jpg"
                 dest = images_dir / f"{base}_{saved + 1}{suf}"
                 dest.write_bytes(body)
