@@ -735,7 +735,11 @@ async def run_scraper(*,
         browser = await pw.chromium.launch(
             headless=False,
             args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
-        ctx = await browser.new_context(no_viewport=True, accept_downloads=True)
+        # gwar.mil.ru uses a Russian government root CA that Chromium does not
+        # trust → Page.goto throws ERR_CERT_AUTHORITY_INVALID. Ignore HTTPS errors
+        # (this is why the browser shows «Не защищено» but still loads the site).
+        ctx = await browser.new_context(no_viewport=True, accept_downloads=True,
+                                        ignore_https_errors=True)
         page = await ctx.new_page()
         try:
             _prog(5, "Поиск…")
