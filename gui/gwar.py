@@ -121,6 +121,10 @@ class GwarApp(QMainWindow):
         bgl.addWidget(QLabel("First name:"), 0, 2); bgl.addWidget(self.f_first, 0, 3)
         bgl.addWidget(QLabel("Patronymic:"), 1, 0); bgl.addWidget(self.f_mid, 1, 1)
         bgl.addWidget(QLabel("Birth date:"), 1, 2); bgl.addWidget(self.f_birth, 1, 3)
+        self.f_exact = QCheckBox(
+            "Exact match — keep only EXACT surname / first name / patronymic "
+            "(drop fuzzy variants like Рубик↔Рубин, Гирш↔Герш)")
+        bgl.addWidget(self.f_exact, 2, 0, 1, 4)
         outer.addWidget(bg)
 
         # 2) Place of residence / conscription ───────────────────────────────
@@ -194,6 +198,7 @@ class GwarApp(QMainWindow):
                   self.f_fund, self.f_inv, self.f_file, self.f_folder):
             w.textChanged.connect(self._save)
         self.f_event.currentTextChanged.connect(self._save)
+        self.f_exact.stateChanged.connect(self._save)
         for cb in self._sec_cbs.values():
             cb.stateChanged.connect(self._save)
 
@@ -223,6 +228,7 @@ class GwarApp(QMainWindow):
             "inventory":   self.f_inv.text().strip(),
             "file":        self.f_file.text().strip(),
             "sections":    {n: cb.isChecked() for n, cb in self._sec_cbs.items()},
+            "exact":       self.f_exact.isChecked(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":         print,
             "cancel_event": None,
@@ -289,7 +295,7 @@ class GwarApp(QMainWindow):
                  "evfrom": self.f_evfrom.text(), "evto": self.f_evto.text(),
                  "evplace": self.f_evplace.text(), "fund": self.f_fund.text(),
                  "inv": self.f_inv.text(), "file": self.f_file.text(),
-                 "folder": self.f_folder.text(),
+                 "folder": self.f_folder.text(), "exact": self.f_exact.isChecked(),
                  "sections": {n: cb.isChecked() for n, cb in self._sec_cbs.items()}}
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -314,6 +320,7 @@ class GwarApp(QMainWindow):
         i = self.f_event.findText(d.get("event", ""))
         if i >= 0:
             self.f_event.setCurrentIndex(i)
+        self.f_exact.setChecked(bool(d.get("exact", False)))
         secs = d.get("sections", {})
         for n, cb in self._sec_cbs.items():
             cb.setChecked(bool(secs.get(n, True)))

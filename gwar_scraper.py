@@ -219,10 +219,21 @@ def _patr_match(r: str, w: str) -> bool:
     return _sim(r, w) >= 0.78
 
 
-def _person_matches(result_name, want_last, want_first, want_middle) -> bool:
+def _person_matches(result_name, want_last, want_first, want_middle,
+                    exact=False) -> bool:
     if not want_last:
         return True
     r_last, r_first, r_middle = _parse_fio(result_name)
+    if exact:
+        # Strict: the given fields must match EXACTLY (Рубик ≠ Рубин, Герш ≠ Гирш).
+        norm = lambda s: (s or "").strip().lower()
+        if norm(r_last) != norm(want_last):
+            return False
+        if want_first and norm(r_first) != norm(want_first):
+            return False
+        if want_middle and norm(r_middle) != norm(want_middle):
+            return False
+        return True
     if _sim(r_last, want_last) < 0.7:
         return False
     if want_first and r_first and not _first_match(r_first, want_first):
@@ -360,11 +371,17 @@ async def _do_search(page, params, log) -> bool:
             n = await page.evaluate(r"""() => {
                 const want = ['Больше параметров', 'Показать архивные'];
                 let clicked = 0;
-                for (const e of document.querySelectorAll('span,a,div,button,p,li')) {
-                    if (e.children.length > 1) continue;
-                    const t = (e.textContent || '').trim();
-                    if (t.length < 60 && want.some(w => t.includes(w))
-                            && e.offsetParent !== null) { e.click(); clicked++; }
+                for (const w of want) {
+                    // smallest VISIBLE element whose text contains the phrase →
+                    // click it once (clicking the inner text bubbles to the
+                    // toggle handler; avoids double-toggling icon + text).
+                    let best = null, bestLen = 1e9;
+                    for (const e of document.querySelectorAll('span,a,div,button,p,li,i')) {
+                        const t = (e.textContent || '').trim();
+                        if (t.includes(w) && t.length < 50 && t.length < bestLen
+                                && e.offsetParent !== null) { best = e; bestLen = t.length; }
+                    }
+                    if (best) { best.click(); clicked++; }
                 }
                 return clicked;
             }""")
@@ -500,6 +517,7 @@ _COLLECT_JS = r"""() => {
 async def _collect_results(page, params, log, max_pages, max_records) -> list:
     want = (params.get("last_name", ""), params.get("first_name", ""),
             params.get("middle_name", ""))
+    exact = bool(params.get("exact"))
     ym = re.search(r"(18|19|20)\d{2}", params.get("birth_date", "") or "")
     want_year = ym.group(0) if ym else ""
     out, seen = [], set()
@@ -516,7 +534,7 @@ async def _collect_results(page, params, log, max_pages, max_records) -> list:
                 continue
             seen.add(href)
             name = r.get("name", "")
-            if not _person_matches(name, *want):
+            if not _person_matches(name, *want, exact=exact):
                 continue
             if want_year:
                 yrs = re.findall(r"(?:18|19|20)\d{2}", r.get("snippet", ""))
@@ -748,7 +766,7 @@ async def run_scraper(*,
     birth_date="", gubernia="", uezd="", volost="", settlement="",
     rank="", unit="", event="", event_from="", event_to="", event_place="",
     fund="", inventory="", file="",
-    sections=None,
+    sections=None, exact=False,
     output_folder=Path("."),
     log=print,
     progress=None,
@@ -774,7 +792,7 @@ async def run_scraper(*,
         event=event, event_from=event_from.strip(), event_to=event_to.strip(),
         event_place=event_place.strip(), fund=fund.strip(),
         inventory=inventory.strip(), file=file.strip(),
-        sections=sections or {})
+        sections=sections or {}, exact=bool(exact))
 
     output_folder = Path(output_folder); output_folder.mkdir(parents=True, exist_ok=True)
     qkey = " ".join(p for p in (last_name, first_name, middle_name) if p) or "gwar"
