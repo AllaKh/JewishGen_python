@@ -354,22 +354,27 @@ async def _do_search(page, params, log) -> bool:
     # toggles are duplicated (mobile+desktop) like the inputs, so click the
     # VISIBLE one via JS. We match only «Больше …»/«Показать …», so an already
     # open section (which shows «Меньше …»/«Скрыть …») is never collapsed.
-    try:
-        n = await page.evaluate(r"""() => {
-            const want = ['Больше параметров', 'Показать архивные'];
-            let clicked = 0;
-            for (const e of document.querySelectorAll('span,a,div,button,p,li')) {
-                if (e.children.length > 1) continue;
-                const t = (e.textContent || '').trim();
-                if (t.length < 60 && want.some(w => t.includes(w))
-                        && e.offsetParent !== null) { e.click(); clicked++; }
-            }
-            return clicked;
-        }""")
-        log(f"  → раскрыл доп. секции: {n}")
-        await asyncio.sleep(1.0)
-    except Exception:
-        pass
+    total_opened = 0
+    for _pass in range(3):                  # 2nd toggle may appear after the 1st
+        try:
+            n = await page.evaluate(r"""() => {
+                const want = ['Больше параметров', 'Показать архивные'];
+                let clicked = 0;
+                for (const e of document.querySelectorAll('span,a,div,button,p,li')) {
+                    if (e.children.length > 1) continue;
+                    const t = (e.textContent || '').trim();
+                    if (t.length < 60 && want.some(w => t.includes(w))
+                            && e.offsetParent !== null) { e.click(); clicked++; }
+                }
+                return clicked;
+            }""")
+        except Exception:
+            n = 0
+        total_opened += n
+        if n == 0:
+            break
+        await asyncio.sleep(0.8)
+    log(f"  → раскрыл доп. секции: {total_opened}")
 
     # Text fields (id == name on the page).
     await _fill_field(page, "last_name",   params.get("last_name", ""), log)
@@ -498,7 +503,6 @@ async def _collect_results(page, params, log, max_pages, max_records) -> list:
     ym = re.search(r"(18|19|20)\d{2}", params.get("birth_date", "") or "")
     want_year = ym.group(0) if ym else ""
     out, seen = [], set()
-    results_url = page.url
     page_no = 1
     while page_no <= max_pages and len(out) < max_records:
         try:
@@ -526,23 +530,35 @@ async def _collect_results(page, params, log, max_pages, max_records) -> list:
             f"всего {len(out)}")
         if len(out) >= max_records:
             break
-        # next page via the page= query param; stop if it doesn't change
+        # Next page is an AJAX link «<a data-page="N">» (its href is empty). Click
+        # the VISIBLE one (links are duplicated mobile+desktop). NO such link → it
+        # was the last/only page → stop. Do NOT navigate by a ?page= URL: gwar
+        # loads results via AJAX, so that just reopens the empty search form
+        # (which is exactly the «возвращаешься к пустой форме» bug).
         first_before = rows[0]["href"] if rows else ""
         try:
-            await page.goto(_with_page(results_url, page_no + 1),
-                            wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(1.5)
-            changed = False
-            for _ in range(12):
+            clicked = await page.evaluate(r"""(n) => {
+                const els = [...document.querySelectorAll('a[data-page="' + n + '"]')];
+                const el = els.find(e => e.offsetParent !== null) || els[0];
+                if (el) { el.click(); return true; }
+                return false;
+            }""", str(page_no + 1))
+        except Exception:
+            clicked = False
+        if not clicked:
+            break                       # no «next page» link → last/only page
+        changed = False
+        for _ in range(15):
+            await asyncio.sleep(1)
+            try:
                 cur = await page.evaluate(
                     "() => { const a = document.querySelector("
                     "'a[href*=\"/heroes/chelovek\"]'); return a ? a.href : ''; }")
-                if cur and cur != first_before:
-                    changed = True; break
-                await asyncio.sleep(1)
-            if not changed:
-                break
-        except Exception:
+            except Exception:
+                cur = ""
+            if cur and cur != first_before:
+                changed = True; break
+        if not changed:
             break
         page_no += 1
     return out
