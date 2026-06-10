@@ -70,10 +70,10 @@
     "window_cls": "gui.skarb.SkarbApp"
   },
   {
-    "key": "velikie",
-    "name": "Великія описи",
-    "subtitle": "Волонтёрская система оцифровки и индексации архивных описей",
-    "action": "open_url",
-    "url": "https://inv.velikie.org/search/?useMorphology=1&addAsterisks=1&highlightMatches=1&sortMode=0&archives=all&projects=all#activeTab-1"
+    "key": "Vikijerelalogo",
+    "name": "Вікіджерела",
+    "subtitle": "Архівні справи (Ревізькі казки, метричні книги…) — uk.wikisource.org",
+    "action": "open_window",
+    "window_cls": "gui.wikisource.WikisourceApp"
   }
 ]
