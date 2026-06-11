@@ -277,16 +277,27 @@ class MyHeritageApp(QMainWindow):
         mv = QVBoxLayout(ms); mv.setSpacing(10); mv.setContentsMargins(12, 10, 12, 10)
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
-        self.f_first_strict = QCheckBox("Exact match for first name")
-        self.f_last_strict  = QCheckBox("Exact match for surname")
         _LBLW = 170
         r1 = QHBoxLayout(); r1.setSpacing(8)
         _l1 = QLabel("First name / Patronymic:"); _l1.setFixedWidth(_LBLW)
-        r1.addWidget(_l1); r1.addWidget(self.f_first, 1); r1.addWidget(self.f_first_strict)
+        r1.addWidget(_l1); r1.addWidget(self.f_first, 1)
         r2 = QHBoxLayout(); r2.setSpacing(8)
         _l2 = QLabel("Surname:"); _l2.setFixedWidth(_LBLW)
-        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1); r2.addWidget(self.f_last_strict)
+        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1)
         mv.addLayout(r1); mv.addLayout(r2)
+        # Name-matching options — the dropdown under the «Имя» field on MyHeritage.
+        # These decide whether spelling / initial variants are surfaced (e.g.
+        # «Alexander-Wolf Sanders (Shenderovich)» for «Alexander W Sanders»).
+        nml = QLabel("Name matching / Совпадение по имени:")
+        nml.setStyleSheet("font-weight:bold;margin-top:4px;")
+        mv.addWidget(nml)
+        self.f_nm_strict   = QCheckBox("Strict — search the name exactly  /  Искать совпадения строго по имени")
+        self.f_nm_variants = QCheckBox("Spelling variants  /  Варианты написания")
+        self.f_nm_initials = QCheckBox("Initial matching  /  Совпадение инициалов")
+        self.f_nm_starts   = QCheckBox("Starts with the letters  /  Начинается с определённого сочетания букв")
+        self.f_nm_variants.setChecked(True); self.f_nm_initials.setChecked(True)
+        for _cb in (self.f_nm_strict, self.f_nm_variants, self.f_nm_initials, self.f_nm_starts):
+            mv.addWidget(_cb)
         self._outer.addWidget(ms)
 
         # ── Advanced toggle ──────────────────────────────────────────────── #
@@ -440,7 +451,7 @@ class MyHeritageApp(QMainWindow):
     def _all_fields(self):
         return [self.f_site, self.f_email, self.f_pass, self.f_imap_pass,
                 self.f_first, self.f_surname,
-                self.f_first_strict, self.f_last_strict,
+                self.f_nm_strict, self.f_nm_variants, self.f_nm_initials, self.f_nm_starts,
                 self.f_by, self.f_bp,
                 self.f_fa, self.f_fa_last, self.f_mo, self.f_mo_last,
                 self.f_sp, self.f_sp_last,
@@ -457,8 +468,10 @@ class MyHeritageApp(QMainWindow):
             "imap_password": self.f_imap_pass.text(),
             "first_name":    self.f_first.text(),
             "surname":       self.f_surname.text(),
-            "first_strict":  self.f_first_strict.isChecked(),
-            "last_strict":   self.f_last_strict.isChecked(),
+            "name_strict":     self.f_nm_strict.isChecked(),
+            "name_variants":   self.f_nm_variants.isChecked(),
+            "name_initials":   self.f_nm_initials.isChecked(),
+            "name_startswith": self.f_nm_starts.isChecked(),
             "birth_year":    self.f_by.value(),
             "birth_place":   self.f_bp.text(),
             "father":        self.f_fa.text(),
@@ -509,7 +522,8 @@ class MyHeritageApp(QMainWindow):
         s(self.f_email,     "email");    s(self.f_pass,      "password")
         s(self.f_imap_pass, "imap_password")
         s(self.f_first,  "first_name"); s(self.f_surname, "surname")
-        s(self.f_first_strict, "first_strict"); s(self.f_last_strict, "last_strict")
+        s(self.f_nm_strict, "name_strict"); s(self.f_nm_variants, "name_variants")
+        s(self.f_nm_initials, "name_initials"); s(self.f_nm_starts, "name_startswith")
         s(self.f_by,     "birth_year"); s(self.f_bp,  "birth_place")
         s(self.f_fa,     "father");     s(self.f_fa_last, "father_last")
         s(self.f_mo,     "mother");     s(self.f_mo_last, "mother_last")
@@ -544,8 +558,10 @@ class MyHeritageApp(QMainWindow):
             "site_preset":   self.f_site.currentText(),
             "first_name":    self.f_first.text().strip(),
             "surname":       self.f_surname.text().strip(),
-            "first_strict":  self.f_first_strict.isChecked(),
-            "last_strict":   self.f_last_strict.isChecked(),
+            "name_strict":     self.f_nm_strict.isChecked(),
+            "name_variants":   self.f_nm_variants.isChecked(),
+            "name_initials":   self.f_nm_initials.isChecked(),
+            "name_startswith": self.f_nm_starts.isChecked(),
             "birth_year":    str(self.f_by.value()) if self.f_by.value() else "",
             "birth_place":   self.f_bp.text().strip(),
             "father":        self.f_fa.text().strip(),

@@ -19,7 +19,7 @@ later runs reuse the session and MyHeritage stops flagging logins as suspicious.
 """
 
 import asyncio, difflib, imaplib, email as _email_lib
-import io, os, re, sys, time
+import io, os, re, sys, time, hashlib, urllib.parse
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
@@ -222,6 +222,138 @@ def _search_words(lang=None):
 def _name_sim(a, b):
     a, b = a.strip().lower(), b.strip().lower()
     return difflib.SequenceMatcher(None, a, b).ratio() * 100 if a and b else 0.0
+
+
+# Names come in mixed scripts («Александр-Вольф Сандерс», «Alexandre-Wolf Sanders»)
+# — fold everything onto one coarse Latin form before comparing.
+_CYR2LAT = {"а":"a","б":"b","в":"v","г":"g","ґ":"g","д":"d","е":"e","ё":"e","є":"e",
+            "ж":"zh","з":"z","и":"i","і":"i","ї":"i","й":"i","к":"k","л":"l","м":"m",
+            "н":"n","о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f","х":"h",
+            "ц":"c","ч":"ch","ш":"sh","щ":"sch","ъ":"","ы":"i","ь":"","э":"e","ю":"iu","я":"ia"}
+_NAME_SEP = re.compile(r"[\s.,()/\[\]«»\"'\-—–]+")
+
+
+def _fold_name_token(t):
+    t = "".join(_CYR2LAT.get(ch, ch) for ch in (t or "").lower())
+    for a, b in (("shch","sch"),("kh","h"),("ts","c"),("ph","f"),("x","ks"),
+                 ("w","v"),("y","i"),("j","i")):
+        t = t.replace(a, b)
+    return re.sub(r"[^a-z0-9]+", "", t)
+
+
+def _gname_tokens(s):
+    return [t for t in (_fold_name_token(x) for x in _NAME_SEP.split(s or "")) if t]
+
+
+def _stem_match(a, b):
+    if a == b:
+        return True
+    if len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5]:
+        return True
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.72
+
+
+def _tok_in(q, rt):
+    """A query token is present among record tokens (exact / stem / initial)."""
+    return any(q == r or _stem_match(q, r)
+               or (len(q) == 1 and r.startswith(q))
+               or (len(r) == 1 and q.startswith(r)) for r in rt)
+
+
+def _name_relevant(record_name, first_q, last_q):
+    """Keep records that match the searched name fully: the FIRST given name is
+    positional (record must START with «Alexander»-variant, so «Walter Alexander»
+    is dropped), and EVERY other given token — incl. the middle initial «W» —
+    must be present (so «Alexander Alfred/Lorn/Bertram Sanders» are dropped, but
+    «Alexander-Wolf»/«Александр-Вольф» pass: «W» matches «Wolf»/«Вольф»). The
+    surname must be present. Lenient on transliteration / variants."""
+    rt = _gname_tokens(record_name)
+    if not rt:
+        return True
+    qf = _gname_tokens(first_q)
+    if qf:
+        if len(qf[0]) >= 2 and not _stem_match(qf[0], rt[0]):
+            return False                              # first token ≠ «Alexander»
+        for q in qf[1:]:                              # middle initials / names («W»)
+            if not _tok_in(q, rt):
+                return False
+    for lt in _gname_tokens(last_q):
+        if len(lt) >= 2 and not _tok_in(lt, rt):
+            return False                              # surname missing
+    return True
+
+
+def _year_ok(want_year, rec_year, tol=5):
+    """True unless BOTH years are known and differ by more than `tol`. Drops the
+    «Alexander W. (~1848)» people when the search asked for ~1897."""
+    try:
+        wy = int(re.sub(r"\D", "", str(want_year))[:4] or 0)
+        ry = int(re.sub(r"\D", "", str(rec_year))[:4] or 0)
+    except Exception:
+        return True
+    if not wy or not ry:
+        return True
+    return abs(wy - ry) <= tol
+
+
+def _name_year(name):
+    """Birth year embedded in a result name, e.g. «Alexander W. (~1848) Sanders»
+    or «… (1848-1920)» → «1848». MyHeritage shows the life span in parentheses
+    for family-tree people, so this catches the wrong «~1848» Alexanders that
+    carry no «Рождение» line on the card."""
+    m = re.search(r"\(\s*~?\s*(1[5-9]\d\d|20\d\d)\b", name or "")
+    return m.group(1) if m else ""
+
+
+def _detail_birth_year(rec):
+    """A birth-year estimate from the OPENED record, to drop wrong-era people the
+    card stage couldn't (no birth line on the card). Priority:
+      1. the person's own «Рождение»/«Birth» field;
+      2. the SPOUSE's year as a same-generation proxy — «Alexander married Cynthia
+         (b.1848)» reveals an 1840s man even with no birth field. Parents are a
+         generation older, so they are NOT used (would wrongly drop the 1897 man
+         whose parents were born 1858)."""
+    td = rec.get("table_data", {}) or {}
+    for k, v in td.items():
+        if re.search(r"рожд|birth|geboren|naiss|nacim|geb\.", k, re.I):
+            m = re.search(r"\b(1[5-9]\d\d|20\d\d)\b", str(v))
+            if m:
+                return m.group(1)
+    for k, v in td.items():
+        if re.search(r"\b(жена|муж|супруг[аи]?|spouse|wife|husband|conjoint|"
+                     r"ehepartner|cónyuge|cônjuge)\b", k, re.I):
+            m = re.search(r"\b(1[5-9]\d\d|20\d\d)\b", str(v))
+            if m:
+                return m.group(1)
+    return ""
+
+
+def _year_not_earlier(want, got, tol=5):
+    """The user's rule: DROP records whose year is EARLIER than the searched birth
+    year, KEEP equal or later. Returns False (→ drop) only when `got` is more than
+    `tol` years BEFORE `want`. Unknown years are kept (lenient)."""
+    try:
+        wy = int(re.sub(r"\D", "", str(want))[:4] or 0)
+        gy = int(re.sub(r"\D", "", str(got))[:4] or 0)
+    except Exception:
+        return True
+    if not wy or not gy:
+        return True
+    return gy >= wy - tol
+
+
+def _type_ok(rec, filt):
+    """Honour «Уточнить по типу записи» by filtering on the record's category:
+    «Семейные деревья» keeps only trees, «Исторические записи» keeps only the
+    rest. «All Records» keeps everything."""
+    if filt not in ("Historical Records", "Family Trees"):
+        return True
+    blob = (str(rec.get("category", "")) + " " +
+            str(rec.get("source_text", ""))).lower()
+    url = str(rec.get("url", "")).lower()
+    is_tree = bool(re.search(r"дерев|family\s*tree|tree|geni", blob)) \
+        or "/collection-1/" in url
+    return is_tree if filt == "Family Trees" else (not is_tree)
 
 def safe_fn(s, n=80):
     return re.sub(r'\s+', '_', re.sub(r'[\\/*?:"<>|]', '_', s.strip()))[:n] or "result"
@@ -1213,6 +1345,47 @@ async def _find_form_root(page, sels, log, secs=25):
     return None
 
 
+async def _set_name_match(root, page, params, log):
+    """MyHeritage has name-matching options in a dropdown under the «Имя» field
+    («Искать совпадения строго по имени» / «Варианты написания» / «Совпадение
+    инициалов» / «Начинается с…»). They decide whether the search surfaces
+    spelling / initial variants — e.g. «Alexander-Wolf Sanders (Shenderovich)»
+    for «Alexander W Sanders». The desired state comes from the GUI checkboxes.
+    Checkboxes are role=checkbox spans (data-automations=check_box_control_label)."""
+    DESIRED = [
+        ["строго по имени", bool(params.get("name_strict"))],
+        ["Варианты написани", bool(params.get("name_variants", True))],
+        ["Совпадение инициал", bool(params.get("name_initials", True))],
+        ["Начинается с", bool(params.get("name_startswith"))],
+    ]
+    try:
+        fn = root.locator('[data-pw-rf="first"]').first
+        if await fn.count():
+            await fn.click(timeout=2500)          # focus → the options dropdown opens
+            await asyncio.sleep(0.6)
+        res = await root.evaluate(r"""(desired) => {
+            const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+            const boxes = Array.from(document.querySelectorAll(
+                '[role="checkbox"][data-automations="check_box_control_label"]'));
+            const out = [];
+            for (const pair of desired) {
+                const frag = pair[0], want = pair[1];
+                const b = boxes.find(x => norm(x.textContent).includes(frag));
+                if (!b) continue;
+                const checked = b.getAttribute('aria-checked') === 'true';
+                if (checked !== want) { b.click(); out.push(frag + ' → ' + want); }
+                else { out.push(frag + ' (ok)'); }
+            }
+            return out;
+        }""", DESIRED)
+        if res:
+            log(f"  → Совпадение по имени: {', '.join(res)}")
+        else:
+            log("  !! опции совпадения по имени не найдены (выпадашка не открылась)")
+    except Exception as e:
+        log(f"  !! опции имени: {type(e).__name__}: {e}")
+
+
 async def _fill_research_basic(root, page, params, log) -> bool:
     """
     Robustly fill the basic research fields. Selectors for the inputs vary, but
@@ -1272,6 +1445,9 @@ async def _fill_research_basic(root, page, params, log) -> bool:
             log(f"  !! {label}: {e}")
 
     await _type("first", params.get("first_name", ""), "First name")
+    # set the name-matching options (variants + initials) while the «Имя» field is
+    # focused and its options dropdown is open — BEFORE moving to the next field.
+    await _set_name_match(root, page, params, log)
     await _type("last",  params.get("surname", ""),    "Surname")
     await _type("year",  params.get("birth_year", ""), "Birth year")
     await _type("place", params.get("birth_place", ""), "Birth place")
@@ -1649,6 +1825,68 @@ async def _fill_advanced(root, page, params, log):
                 log("  !! не удалось включить «Точное совпадение всех параметров»")
 
 
+async def _apply_record_type_filter(page, record_filter, log):
+    """Click the RESULTS-page «Уточнить по типу записи» refine radio so MyHeritage
+    filters server-side (instant) instead of us reading every record and dropping
+    the wrong type. The «refine» control lives on the results page (NOT the search
+    form — clicking the form's category nav-link went to /category-5000/)."""
+    if record_filter not in ("Historical Records", "Family Trees"):
+        return False
+    wanted = {
+        "Historical Records": ["Исторические записи", "Historical records",
+                               "Historical Records", "Documents historiques",
+                               "Historische Aufzeichnungen", "Registros históricos",
+                               "Registos históricos", "רשומות היסטוריות"],
+        "Family Trees":       ["Семейные деревья", "Family trees", "Family Trees",
+                               "Arbres généalogiques", "Stammbäume",
+                               "Árboles genealógicos", "Árvores genealógicas",
+                               "עצי משפחה"],
+    }[record_filter]
+    try:
+        await page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass
+    for lab in wanted:
+        try:
+            # the refine radio's label — the exact leaf class the user gave is
+            # «styled_radio_label_paragraph--<hash>»; fall back to broader radio
+            # labels carrying the text.
+            el = page.locator(
+                '[class*="styled_radio_label_paragraph" i]', has_text=lab).first
+            if not await el.count():
+                el = page.locator(
+                    '[class*="styled_radio_label" i]', has_text=lab).first
+            if not await el.count():
+                el = page.locator(
+                    f'label:has-text("{lab}"), [role="radio"]:has-text("{lab}"), '
+                    f'[class*="radio" i]:has-text("{lab}")').first
+            if not await el.count():
+                continue
+            before = await page.evaluate(
+                "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
+            try:
+                await el.scroll_into_view_if_needed(timeout=3000)
+            except Exception:
+                pass
+            await el.click(timeout=5000, force=True)
+            changed = False
+            for _ in range(24):                      # ~12s for the AJAX refresh
+                await asyncio.sleep(0.5)
+                now = await page.evaluate(
+                    "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
+                if now != before:
+                    changed = True
+                    break
+            log(f"  ✓ Сайт отфильтровал по типу записи: {record_filter}"
+                + ("" if changed else " (набор не изменился — вероятно, и так один тип)"))
+            return True
+        except Exception:
+            continue
+    log(f"  !! радио «{record_filter}» на странице результатов не найдено — "
+        f"оставляю свой пост-фильтр")
+    return False
+
+
 async def _search(page, search_url, params, has_cookies, log):
     log(f"  → Navigating to search: {search_url}")
     try:
@@ -1677,28 +1915,12 @@ async def _search(page, search_url, params, has_cookies, log):
     except Exception as _exc:
         log(f"  !! advanced search error (продолжаю поиск): {_exc}")
 
-    # Record type filter
-    rf = params.get("record_filter", "All Records")
-    FILTER_MAP = {
-        "Historical Records": ["Исторические записи", "Historical records",
-                               "Historical Records", "רשומות היסטוריות",
-                               "Documents historiques", "Historische Aufzeichnungen",
-                               "Registros históricos", "Registos históricos"],
-        "Family Trees":       ["Семейные деревья",    "Family trees",
-                               "Family Trees",        "עצי משפחה",
-                               "Arbres généalogiques", "Stammbäume",
-                               "Árboles genealógicos", "Árvores genealógicas"],
-    }
-    if rf != "All Records":
-        for label in FILTER_MAP.get(rf, [rf]):
-            try:
-                el = page.get_by_text(re.compile(re.escape(label), re.I)).first
-                if await el.count():
-                    await el.click(timeout=5000)
-                    await asyncio.sleep(1.5)
-                    break
-            except Exception:
-                pass
+    # NB: record-type («Уточнить по типу записи»: Исторические записи / Семейные
+    # деревья) is NOT clicked on the form. Clicking the label matched a CATEGORY
+    # NAV LINK («Исторические записи» in the menu) → navigated to /category-5000/
+    # → killed the search (0 results, name re-filled twice). Instead we search ALL
+    # types and FILTER the collected records by their category afterwards (see
+    # «_type_ok» in the read loop) — which is what the filter is meant to do.
 
     # Submit search — results usually open in a NEW TAB
     ctx = page.context
@@ -1756,43 +1978,43 @@ async def _search(page, search_url, params, has_cookies, log):
         await asyncio.sleep(3)
     log(f"  ✓ Страница результатов: {results_page.url[:90]}")
 
-    # EXACT search via the URL (deterministic — the «Точное совпадение всех
-    # параметров» checkbox is unreliable). MyHeritage encodes exact mode as
-    # exactSearch=1 in the results URL, which already carries every field
-    # param. If exact was requested, set it and reload.
-    if params.get("exact_match") and not params.get("_exact_ok"):
-        u = results_page.url
-        # Remember the plain (non-exact) results URL so run_scraper can fall
-        # back to it if exactSearch turns out to be too strict (0 records).
-        params["_noexact_url"] = u
-        if re.search(r"[?&]exactSearch=", u):
-            new_u = re.sub(r"([?&]exactSearch=)[^&]*", r"\g<1>1", u)
-        else:
-            new_u = u + ("&" if "?" in u else "?") + "exactSearch=1"
-        if new_u != u:
-            try:
-                log("  → Применяю точное совпадение через URL (exactSearch=1)…")
-                await results_page.goto(new_u, wait_until="domcontentloaded",
-                                        timeout=30000)
-                # WAIT for the exact results to actually render (the SPA may
-                # show a loader first). Poll up to 30s for record links so we
-                # never collect an empty page just because it was still loading.
-                got = 0
-                for _ in range(30):
-                    await asyncio.sleep(1)
-                    try:
-                        got = await results_page.evaluate(
-                            "() => document.querySelectorAll("
-                            "'a[href*=\"showRecord\"], a[href*=\"recordTitle\"]').length")
-                    except Exception:
-                        got = 0
-                    if got > 0:
-                        break
-                params["_exact_ok"] = True
-                log(f"  ✓ Точный поиск ({got} ссылок на странице): "
-                    f"{results_page.url[:80]}")
-            except Exception as _e:
-                log(f"  !! exactSearch через URL не вышел: {_e}")
+    # Use the form's NATURAL (fuzzy) search — exactSearch= empty — which is what
+    # the user's own search does. MyHeritage's exactSearch=1 (strict) is WRONG
+    # here: for «Alexander W Sanders» it DROPS the relevant variants
+    # «Alexander-Wolf Sanders (Shenderovich)» / «Александр-Вольф Сандерс
+    # (Шендерович)» (hyphenated first name ≠ exact «Alexander») while letting
+    # through unrelated «Alexander Sanders». The result set stays bounded by the
+    # «expanded criteria» divider (everything up to «Walter Alexander …») and the
+    # page/40-record caps. So we NEVER force exactSearch=1 — strip it if present.
+    u = results_page.url
+    if re.search(r"[?&]exactSearch=1\b", u):
+        new_u = re.sub(r"([?&]exactSearch=)1\b", r"\g<1>", u)
+        try:
+            log("  → Нечёткий поиск формы (exactSearch пустой)…")
+            await results_page.goto(new_u, wait_until="domcontentloaded", timeout=30000)
+            got = 0
+            for _ in range(30):
+                await asyncio.sleep(1)
+                try:
+                    got = await results_page.evaluate(
+                        "() => document.querySelectorAll("
+                        "'a[href*=\"showRecord\"], a[href*=\"recordTitle\"]').length")
+                except Exception:
+                    got = 0
+                if got > 0:
+                    break
+            log(f"  ✓ Результаты формы ({got} ссылок на странице): "
+                f"{results_page.url[:80]}")
+        except Exception as _e:
+            log(f"  !! не вышло переключить на нечёткий поиск: {_e}")
+
+    # Let the SITE filter by record type (server-side, instant). Our «_type_ok»
+    # post-filter stays as a safety net if the refine control isn't found.
+    try:
+        await _apply_record_type_filter(
+            results_page, params.get("record_filter", "All Records"), log)
+    except Exception as _e:
+        log(f"  !! фильтр по типу записи на сайте не применился: {_e}")
 
     return results_page
 
@@ -1830,12 +2052,15 @@ async def _collect_one_page(page):
             return !!(divider.compareDocumentPosition(el)
                       & Node.DOCUMENT_POSITION_PRECEDING);
         };
+        // Collect ALL records (incl. those after the «expanded criteria» divider —
+        // name-variant matches like «Alexander-Wolf Sanders (Shenderovich)» live
+        // there). The Python side keeps the relevant ones by first-name match.
+        const SKIPIMG = /avatar|silhouette|placeholder|default|no_?photo|no_?image|sprite|icon|\.svg|blank|spacer|stock/i;
         const anchors = Array.from(document.querySelectorAll(
             'a[href*="showRecord"], a[href*="recordTitle"]'));
         for (const a of anchors) {
             const href = a.href || '';
             if (!href || seen.has(href)) continue;
-            if (!beforeDivider(a)) continue;          // skip relaxed matches
             seen.add(href);
             const card = a.closest('[class*="result" i], li, article, div') || a;
             let name = '';
@@ -1848,9 +2073,28 @@ async def _collect_one_page(page):
             let score = -1;
             const sm = (card.textContent || '').match(/(\d{1,3})\s*%/);
             if (sm) score = parseInt(sm[1], 10);
-            out.push({url: href, name_text: name.slice(0, 200), score});
+            // result-card portrait thumbnail — used as a photo fallback when the
+            // record's own detail page yields none (family-tree people).
+            let thumb = '';
+            for (const im of card.querySelectorAll('img')) {
+                let s = im.getAttribute('src') || im.getAttribute('data-src') || '';
+                const ss = im.getAttribute('srcset') || '';
+                if (ss) s = ss.split(',').pop().trim().split(/\s+/)[0];
+                if (!s || SKIPIMG.test(s)) continue;
+                if (s.startsWith('//')) s = 'https:' + s;
+                if (/^https?:/.test(s)) { thumb = s; break; }
+            }
+            // BIRTH year from the card — taken right after «Рождение»/«Birth»,
+            // NOT the first year in the card (which is the COLLECTION year, e.g.
+            // «…США, 1936-2007» / «…1950 года» — that wrongly dropped the real
+            // 1897 records). Empty year ⇒ keep (lenient).
+            let year = '';
+            const ctxt = card.innerText || '';
+            const ym = ctxt.match(/(?:Рождение|Рожд|Birth|Born|Né[e]?|Geboren|Nacim)[\s\S]{0,25}?(1[6-9]\d\d|20[0-2]\d)/i);
+            if (ym) year = ym[1];
+            out.push({url: href, name_text: name.slice(0, 200), score, thumb, year});
         }
-        return {rows: out, stop: !!divider};
+        return {rows: out, stop: false, hasDivider: !!divider};
     }""")
 
 
@@ -1955,7 +2199,7 @@ async def _diag_results(page, log):
         log(f"  🔎 диагностика не вышла: {e}")
 
 
-async def _collect(page, log, max_pages=30):
+async def _collect(page, log, max_pages=8, want_first="", want_last="", want_year=""):
     # Wait for result cards to render
     results, seen_urls = [], set()
     for _t in range(25):
@@ -1978,17 +2222,23 @@ async def _collect(page, log, max_pages=30):
         except Exception:
             res = {"rows": [], "stop": False}
         rows = res.get("rows", [])
-        stop = res.get("stop", False)
-        new = 0
+        new = new_rel = 0
         for r in rows:
             if r["url"] not in seen_urls:
                 seen_urls.add(r["url"])
                 results.append(r)
                 new += 1
-        log(f"  → Страница {page_no}: записей {len(rows)} (новых {new}), всего {len(results)}")
-        # The «expanded criteria» divider was reached → stop (rest are relaxed)
-        if stop:
-            log("  → Достигнут разделитель «расширения критериев» — стоп")
+                rel = ((not want_first and not want_last)
+                       or _name_relevant(r.get("name_text", ""), want_first, want_last))
+                ry = r.get("year", "") or _name_year(r.get("name_text", ""))
+                if rel and _year_not_earlier(want_year, ry):
+                    new_rel += 1
+        log(f"  → Страница {page_no}: записей {len(rows)} "
+            f"(новых {new}, релевантных {new_rel}), всего {len(results)}")
+        # Once a page brings NO new name-relevant records, we've passed the
+        # relevant block (the «expanded criteria» tail) → stop paginating.
+        if results and new_rel == 0:
+            log("  → больше нет релевантных имён — стоп")
             break
         try:
             advanced = await _goto_next_results(page, log)
@@ -2010,21 +2260,74 @@ async def _collect(page, log, max_pages=30):
     return results
 
 # ── DETAIL PAGE ───────────────────────────────────────────────────────────── #
-async def _detail(page, url, has_cookies, log):
+async def _detail(page, url, has_cookies, log, card_thumb=""):
     d = {"url": url, "full_name": "", "category": "", "table_data": {},
          "profile_url": "", "source_text": "", "thumb_bytes": None,
-         "is_historical": False}
+         "household": "", "is_historical": False, "paywall": False,
+         "doc_bytes": None, "doc_ext": ""}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=35000)
         if has_cookies:
             await _accept_cookies(page, log)
-        await asyncio.sleep(1.5)
-        # nudge lazy-loaded images (the record photo) into loading
+        await asyncio.sleep(1.2)
+        # PAYWALL: a free account gets a LIMITED number of full record views per
+        # run; once exhausted MyHeritage redirects record links to
+        # «/FP/search-plans.php» (the «Купить подписку» wall). Reading that page
+        # yields an empty record — detect it, retry once (sometimes transient),
+        # then flag it so the caller skips it and reports a clean summary.
+        for _ in range(2):
+            if "search-plans" not in (page.url or "").lower():
+                break
+            await asyncio.sleep(1.0)
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(1.5)
+            except Exception:
+                break
+        if "search-plans" in (page.url or "").lower():
+            d["paywall"] = True
+            return d
+        # BOT-CHECK: too-frequent access makes MyHeritage redirect to
+        # «recaptcha-challenge.php» / show «…возможно, Вы — робот». Reading that
+        # yields the warning text as a fake record — detect & skip (treat like a
+        # wall). We never solve captchas; the user must slow down / re-login.
+        cur = (page.url or "").lower()
+        is_bot = "recaptcha" in cur or "captcha-challenge" in cur
+        if not is_bot:
+            try:
+                # match the actual warning, not a stray «recaptcha» script name
+                is_bot = await page.evaluate(
+                    "() => { const t = (document.body.innerText || '').slice(0, 600);"
+                    " return /(возможно|полага|похоже|система).{0,30}робот|"
+                    "вы\\s*[-—]\\s*робот|you are (a )?robot|"
+                    "подтвердите[^]{0,30}не\\s*робот/i.test(t); }")
+            except Exception:
+                is_bot = False
+        if is_bot:
+            d["paywall"] = True            # same handling: skip + report
+            d["botcheck"] = True
+            return d
+        # The record body (esp. family-tree «Члены семьи»: Родители / Родные
+        # брат-сестра / Жена / Дети) and the document scan load LAZILY — scroll
+        # through the whole page, then wait until the field-row count stops
+        # growing. Reading too early was why one tree showed only «Родители».
         try:
-            await page.evaluate("() => window.scrollBy(0, 400)")
-            await asyncio.sleep(1.2)
+            prev, stable = -1, 0
+            for _ in range(12):                       # ~9s cap
+                await page.evaluate(
+                    "() => window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(0.45)
+                cnt = await page.evaluate(
+                    "() => document.querySelectorAll('tr.recordFieldsRow').length")
+                if cnt and cnt == prev:
+                    stable += 1
+                    if stable >= 2:                   # two equal reads → settled
+                        break
+                else:
+                    stable = 0
+                prev = cnt
             await page.evaluate("() => window.scrollTo(0, 0)")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.4)
         except Exception:
             pass
     except Exception as exc:
@@ -2035,7 +2338,7 @@ async def _detail(page, url, has_cookies, log):
     # "more records"/Geni garbage). Labels are unique enough to scan the page.
     info = await page.evaluate(r"""() => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        const res = {name: '', category: '', fields: [], profile: '', photo: ''};
+        const res = {name: '', category: '', fields: [], household: '', profile: '', photo: ''};
 
         // category line
         let catEl = Array.from(document.querySelectorAll('*')).find(e =>
@@ -2060,43 +2363,85 @@ async def _detail(page, url, has_cookies, log):
         }
         if (!res.name && h1s.length) res.name = norm(h1s[0].textContent);
 
-        // WHITELISTED label/value pairs
-        const LABELS = ['Имя','Рождение','Смерть','Брак','Крещение','Погребение',
-            'Захоронение','Проживание','Местожительство','Пол','Возраст',
-            'Отец','Мать','Муж','Жена','Супруг','Супруга','Родители','Дети',
-            'Сын','Дочь','Родные брат/сестра','Члены семьи','Иммиграция',
-            'Name','Birth','Death','Marriage','Residence','Gender','Father',
-            'Mother','Husband','Wife','Spouse','Children'];
-        const seen = new Set();
-        const valueFor = (labelEl) => {
-            // value = next sibling with text, else parent's last child
-            let n = labelEl.nextElementSibling;
-            while (n && !norm(n.textContent)) n = n.nextElementSibling;
-            if (n && norm(n.textContent)) return norm(n.textContent);
-            const par = labelEl.parentElement;
-            if (par) {
-                const kids = Array.from(par.children).filter(c => norm(c.textContent));
-                if (kids.length === 2 && kids[0] === labelEl) return norm(kids[1].textContent);
+        // ── Capture EVERY field, using MyHeritage's REAL markup (read from the
+        // live DOM, not guessed):
+        //   • main fields  = «tr.recordFieldsRow» → «.recordFieldLabel» / «.recordFieldValue»
+        //   • sub-sections («Перепись» …) = a nested «table.multi_table» (2 columns)
+        //   • household («Домочадцы»)      = «table.groupTable» (Родство | Имя | Возраст)
+        // Values are read with <script>/<style> stripped — that map-callout
+        // «<script>jQuery(function(){…})» inside the value cell was the junk.
+        // newline-preserving normaliser (collapses spaces but keeps line breaks)
+        const normNL = s => (s || '').replace(/[ \t ]+/g, ' ')
+            .replace(/ *\n+ */g, '\n').replace(/\n{2,}/g, '\n').trim();
+        const valText = (cell) => {
+            const c = cell.cloneNode(true);
+            c.querySelectorAll('script, style').forEach(s => s.remove());
+            // Family-member cells list several people, each wrapped in an <a>
+            // (Родители / Родные брат-сестра / Дети). Put EACH on its own line —
+            // otherwise «Имя1 годы Имя2 годы …» runs together («слипшееся»).
+            const links = c.querySelectorAll('a');
+            if (links.length >= 2) {
+                links.forEach((a, idx) => {
+                    if (idx > 0)
+                        a.parentNode.insertBefore(
+                            document.createTextNode('\n'), a);
+                });
+                return normNL(c.textContent);
             }
-            return '';
+            return norm(c.textContent);
         };
-        Array.from(document.querySelectorAll('div, span, td, dt, li, p')).forEach(el => {
-            if (el.children.length) return;                 // leaf only
-            const t = norm(el.textContent).replace(/:$/, '');
-            if (!LABELS.includes(t) || seen.has(t)) return;
-            const v = valueFor(el);
-            if (v && v.length < 400 && v !== t) { seen.add(t); res.fields.push([t, v]); }
+        const seen = new Set();
+        const push = (k, v) => {
+            k = norm(k); v = normNL(v);
+            // NB: «Родные брат/сестра» can list 12+ people (700+ chars). The old
+            // 600-char cap silently DROPPED that whole field for trees with many
+            // siblings (why one tree had «всё» and another lost the siblings).
+            // A single record-field cell never legitimately exceeds a few KB.
+            if (!k || !v || k === v || v.length > 4000) return;
+            const key = k + '=' + v;
+            if (!seen.has(key)) { seen.add(key); res.fields.push([k, v]); }
+        };
+        // main fields (skip rows whose value holds a sub-table — handled below)
+        document.querySelectorAll('tr.recordFieldsRow').forEach(tr => {
+            const lab = tr.querySelector('.recordFieldLabel');
+            const val = tr.querySelector('.recordFieldValue');
+            if (!val) return;
+            if (val.querySelector('table.multi_table, table.groupTable')) return;
+            push(lab ? norm(lab.textContent) : '', valText(val));
         });
+        // 2-column sub-tables (Перепись: Город|Detroit  Выпуски|T628 …)
+        document.querySelectorAll('table.multi_table').forEach(mt => {
+            mt.querySelectorAll('tr').forEach(row => {
+                const cells = Array.from(row.children);
+                for (let i = 0; i + 1 < cells.length; i += 2)
+                    push(cells[i].textContent, cells[i + 1].textContent);
+            });
+        });
+        // household («Домочадцы») = groupTable rows «Родство | Имя | Возраст».
+        // Keep cell POSITIONS (don't drop empty cells) so the Word table columns
+        // stay aligned when a row has no «Родство»; trim trailing empties only.
+        const hh = [];
+        document.querySelectorAll('table.groupTable').forEach(gt => {
+            gt.querySelectorAll('tr').forEach(row => {
+                let c = Array.from(row.children).map(x => norm(x.textContent));
+                while (c.length && !c[c.length - 1]) c.pop();   // trim trailing
+                if (c.some(x => x)) hh.push(c.join('  |  '));
+            });
+        });
+        res.household = hh.join('\n');
 
         // "Посмотреть полный профиль на этом сайте" — search whole page
         const prof = Array.from(document.querySelectorAll('a[href]')).find(a =>
             /полный профиль|full profile|profil complet/i.test(norm(a.textContent)));
         if (prof) res.profile = prof.href;
 
-        // record photo — pick the LARGEST real image (the portrait), not the
-        // first one (which was a 1×1 tracking pixel). Photos are lazy-loaded,
-        // so use src / data-src / srcset and size by the displayed box.
-        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank|spacer|loading|pixel|1x1/i;
+        // record photo — pick the LARGEST real image (portrait / document scan),
+        // not the collection cover (flag/crown) in the right «искать в этой
+        // коллекции» sidebar. Photos are lazy-loaded → use src/data-src/srcset.
+        const sidebar = Array.from(document.querySelectorAll('*')).find(e =>
+            /искать в этой коллекции|search this collection/i.test(e.innerText || '')
+            && (e.innerText || '').length < 1500);
+        const SKIP = /avatar|icon|sprite|placeholder|logo|geni|brand|\.svg|badge|flag|blank|spacer|loading|pixel|1x1|default|silhouette|no_?photo|no_?image|tombstone|headstone|gravestone|stock|gender|unknown/i;
         const bestSrc = (im) => {
             const ss = im.getAttribute('srcset') || im.getAttribute('data-srcset') || '';
             if (ss) {
@@ -2108,6 +2453,7 @@ async def _detail(page, url, has_cookies, log):
         };
         const candidates = [];
         for (const im of document.querySelectorAll('img')) {
+            if (sidebar && sidebar.contains(im)) continue;   // skip the collection cover
             const s = bestSrc(im);
             if (!s || !/^https?:|^\/\//.test(s)) continue;
             if (SKIP.test(s) || SKIP.test(im.getAttribute('alt') || '')) continue;
@@ -2122,6 +2468,7 @@ async def _detail(page, url, has_cookies, log):
         }
         // also CSS background-image photos (some cards use them)
         for (const el of document.querySelectorAll('[style*="background-image" i], [class*="photo" i], [class*="thumbnail" i]')) {
+            if (sidebar && sidebar.contains(el)) continue;   // skip the collection cover
             const bg = (el.style && el.style.backgroundImage) || '';
             const m = bg.match(/url\((['"]?)(.*?)\1\)/i);
             if (!m) continue;
@@ -2141,6 +2488,30 @@ async def _detail(page, url, has_cookies, log):
             /^(Источник|Source|В категории|In category)/i.test(norm(e.textContent)));
         res.source = src ? norm(src.textContent) : '';
 
+        // ── «Источник» SECTION (family-tree submitter block): who submitted the
+        // tree, profile/photo counts, «Обновлено …». The user explicitly wants
+        // this captured. Find the «recordSectionTitle» = «Источник», climb to its
+        // section wrapper, take the text, strip the heading + action links.
+        let submitter = '';
+        const stitle = Array.from(
+            document.querySelectorAll('.recordSectionTitle, [class*="SectionTitle" i]'))
+            .find(e => /^(Источник|Source)/i.test(norm(e.textContent)));
+        if (stitle) {
+            let box = stitle;
+            for (let i = 0; i < 4; i++) {
+                if (box.parentElement &&
+                    norm(box.parentElement.textContent).length < 450)
+                    box = box.parentElement; else break;
+            }
+            submitter = norm(box.textContent)
+                .replace(/^Источник[:\s]*/i, '').replace(/^Source[:\s]*/i, '')
+                .replace(/Посмотреть полный профиль[^]*?(сайте|site)/i, ' ')
+                .replace(/Связаться с[^]*$/i, '')
+                .replace(/Contact\b[^]*$/i, '')
+                .replace(/\s+/g, ' ').trim().slice(0, 320);
+        }
+        res.submitter = submitter;
+
         res.historical = /историческ|historical/i.test(res.category || '');
         return res;
     }""")
@@ -2148,13 +2519,25 @@ async def _detail(page, url, has_cookies, log):
     d["full_name"]  = (info.get("name") or "").strip()
     d["category"]   = (info.get("category") or "").strip()
     d["profile_url"] = info.get("profile") or ""
-    d["source_text"] = (info.get("source") or "").strip()
+    # Source = collection name from the URL; the DOM «Источник» element often was
+    # just the bare heading «Источники» (junk) — drop that as a fallback.
+    dom_src = (info.get("source") or "").strip()
+    if re.fullmatch(r"(источник[аи]?|source[s]?)\W*", dom_src, re.I):
+        dom_src = ""
+    d["source_text"] = _collection_name(url) or dom_src
     d["is_historical"] = bool(info.get("historical"))
     td = {}
     for pair in info.get("fields", []):
         if isinstance(pair, list) and len(pair) == 2:
             td[str(pair[0])] = str(pair[1])
+    # «Источник» section (family-tree submitter: «Michael Neyman · 2 819 профилей
+    # в 4 деревьях · 806 фото · Обновлено …») — add it as a table field too.
+    submitter = (info.get("submitter") or "").strip()
+    if submitter and len(submitter) > 4 and not re.fullmatch(
+            r"(источник[аи]?|source[s]?)\W*", submitter, re.I):
+        td.setdefault("Источник (дерево)", submitter)
     d["table_data"] = td
+    d["household"] = (info.get("household") or "").strip()
 
     # ── Photo: click the magnifier (лупа) to open the FULL-size photo ───────
     # The record card shows a small thumbnail with a zoom control
@@ -2172,7 +2555,7 @@ async def _detail(page, url, has_cookies, log):
             await asyncio.sleep(1.5)
             full_url = await page.evaluate(r"""() => {
                 // largest image inside the opened lightbox/modal
-                const SKIP = /sprite|icon|logo|geni|brand|\.svg|avatar|badge/i;
+                const SKIP = /sprite|icon|logo|geni|brand|\.svg|avatar|badge|default|silhouette|no_?photo|no_?image|tombstone|headstone|gravestone|stock|gender|unknown/i;
                 let best = '', area = 0;
                 const scope = document.querySelector(
                     '[class*="modal" i], [role="dialog"], [class*="lightbox" i], '
@@ -2203,25 +2586,181 @@ async def _detail(page, url, has_cookies, log):
     except Exception:
         pass
 
-    # download the photo (full from the zoom popup, else the card thumbnail)
-    photo = full_url or info.get("photo") or ""
-    if photo:
+    # ── Document download (historical records: census / passenger lists). The
+    # download control lives in the FULLSCREEN viewer, which opens by clicking the
+    # overlay button ON the scan («.fullscreen_overlay_button», revealed on hover).
+    # Only THERE does «Загрузить документ» → documentViewer.downloadSource() give
+    # the FULL original. We open it, click download inside expect_download, then
+    # leave fullscreen. Family-tree people have a portrait (full_url) and NO
+    # document viewer — skip them. (This is the gwar/FamilySearch download pattern.)
+    is_doc = False
+    if not full_url:
         try:
-            r = await page.request.get(photo, timeout=15000)
-            if r.ok:
-                body = await r.body()
-                if len(body) > 1000:
-                    d["thumb_bytes"] = body          # bytes for Word (scaled) + disk
-                    log(f"    📷 фото {len(body)//1024}KB"
-                        f"{' (из лупы)' if full_url else ' (превью)'}")
+            is_doc = await page.evaluate(
+                "() => !!document.querySelector('.fullscreen_overlay_button, "
+                "img.document_viewer_image, .mediaItemDownload, "
+                "[onclick*=\"downloadSource\"]')")
+        except Exception:
+            is_doc = False
+    if is_doc:
+        try:
+            # 1) hover the scan to reveal the overlay, then click it → fullscreen
+            opened = False
+            try:
+                img = page.locator(
+                    'img.document_viewer_image, [class*="recordImage" i] img, '
+                    '[class*="record_image" i]').first
+                if await img.count():
+                    await img.scroll_into_view_if_needed(timeout=2500)
+                    await img.hover(timeout=2500)
+                    await asyncio.sleep(0.4)
+            except Exception:
+                pass
+            fsb = page.locator(
+                '.fullscreen_overlay_button, [class*="fullscreen_overlay_button" i], '
+                '[class*="fullscreen" i][class*="button" i]').first
+            if await fsb.count():
+                try:
+                    await fsb.click(timeout=4000, force=True)
+                    opened = True
+                except Exception:
+                    opened = False
+            if not opened:                            # fall back to the hash route
+                try:
+                    await page.evaluate("() => { location.hash = 'fullscreen'; }")
+                    await asyncio.sleep(1.0)
+                    opened = True
+                except Exception:
+                    opened = False
+            # 2) inside fullscreen: «Загрузить документ» → catch the download
+            if opened:
+                await asyncio.sleep(1.5)              # let the viewer initialise
+                try:
+                    async with page.expect_download(timeout=30000) as dl_info:
+                        clicked = False
+                        try:
+                            btn = page.locator(
+                                'span.mediaItemDownload, [onclick*="downloadSource" i], '
+                                '[title*="агрузить документ" i]').first
+                            if await btn.count():
+                                await btn.click(timeout=5000, force=True)
+                                clicked = True
+                        except Exception:
+                            clicked = False
+                        if not clicked:
+                            await page.evaluate(
+                                "() => { try { documentViewer.downloadSource(); } "
+                                "catch (e) {} }")
+                    dl = await dl_info.value
+                    name = (dl.suggested_filename or "").lower()
+                    p = await dl.path()
+                    if p:
+                        b = Path(p).read_bytes()
+                        if b and len(b) > 3000:
+                            if   b[:4] == b"%PDF":                  ext = ".pdf"
+                            elif b[:3] == b"\xff\xd8\xff":           ext = ".jpg"
+                            elif b[:8] == b"\x89PNG\r\n\x1a\n":      ext = ".png"
+                            elif b[:4] == b"RIFF" and b[8:12] == b"WEBP": ext = ".webp"
+                            elif b[:4] in (b"II*\x00", b"MM\x00*"): ext = ".tif"
+                            elif name.endswith((".jpg", ".jpeg")):  ext = ".jpg"
+                            elif name.endswith(".png"):             ext = ".png"
+                            elif name.endswith(".pdf"):             ext = ".pdf"
+                            elif name.endswith((".tif", ".tiff")):  ext = ".tif"
+                            else:                                   ext = ".jpg"
+                            d["doc_bytes"] = b
+                            d["doc_ext"]   = ext
+                            log(f"    📄 документ скачан {len(b)//1024}KB ({ext})")
+                            if ext != ".pdf":
+                                d["thumb_bytes"] = b
+                except Exception as _dle:
+                    log(f"    !! документ не скачался: {type(_dle).__name__}")
+                # Belt-and-suspenders: the fullscreen viewer has the FULL image
+                # loaded now — grab its URL so the fallback can fetch it if the
+                # download event never fired (e.g. opened inline instead).
+                if not d.get("doc_bytes"):
+                    try:
+                        fsimg = await page.evaluate(r"""() => {
+                            let best = '', area = 0;
+                            for (const im of document.querySelectorAll('img')) {
+                                const a = (im.naturalWidth||0)*(im.naturalHeight||0);
+                                const s = im.currentSrc||im.src||'';
+                                if (a > area && a > 500*500 &&
+                                    /myheritage|myheritageimages/i.test(s)) {
+                                    area = a; best = s;
+                                }
+                            }
+                            return best;
+                        }""")
+                        if fsimg:
+                            d["_fs_img"] = fsimg
+                    except Exception:
+                        pass
+            try:                                      # leave fullscreen
+                await page.keyboard.press("Escape")
+                await asyncio.sleep(0.3)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # Fallbacks if no document downloaded: the viewer scan image (wait for it to
+    # decode — the cached 1950 census worked, lazy 1930/Ellis didn't), then the
+    # portrait, preview, or card thumbnail.
+    if not d.get("doc_bytes") and not d.get("thumb_bytes"):
+        scan2 = ""
+        if is_doc:
+            try:
+                for _ in range(14):                   # ~7s for the lazy decode
+                    got = await page.evaluate(r"""() => {
+                        let best = '', area = 0;
+                        for (const im of document.querySelectorAll(
+                            'img.document_viewer_image, img[class*="document_viewer" i]')) {
+                            const a = (im.naturalWidth||0) * (im.naturalHeight||0);
+                            if (a > area) { area = a; best = im.currentSrc||im.src||''; }
+                        }
+                        return {src: best, area};
+                    }""")
+                    if got and got.get("area", 0) > 500 * 500:
+                        scan2 = got["src"]
+                        break
+                    await page.evaluate("() => window.scrollBy(0, 400)")
+                    await asyncio.sleep(0.5)
+            except Exception:
+                pass
+        fs_img = d.pop("_fs_img", "")
+        photo = full_url or fs_img or scan2 or info.get("photo") or card_thumb
+        src_lbl = (" (из лупы)" if full_url
+                   else " (скан, полноэкранный)" if fs_img
+                   else " (скан)" if scan2
+                   else " (превью)" if info.get("photo") else " (из карточки)")
+        if photo:
+            try:
+                r = await page.request.get(photo, timeout=15000)
+                if r.ok:
+                    body = await r.body()
+                    if len(body) > 1000:
+                        d["thumb_bytes"] = body
+                        log(f"    📷 фото {len(body)//1024}KB{src_lbl}")
+                    else:
+                        log("    📷 фото слишком маленькое — пропуск")
                 else:
-                    log("    📷 фото слишком маленькое — пропуск")
-            else:
-                log(f"    !! фото HTTP {r.status}")
-        except Exception as e:
-            log(f"    !! фото не скачалось: {e}")
-    else:
-        log("    (фото на странице не найдено)")
+                    log(f"    !! фото HTTP {r.status}")
+            except Exception as e:
+                log(f"    !! фото не скачалось: {e}")
+        else:
+            log("    (фото на странице не найдено)")
+    elif d.get("doc_ext") == ".pdf" and not d.get("thumb_bytes"):
+        # PDF document downloaded — get the preview tile for the Word thumbnail
+        prev = info.get("photo") or ""
+        if prev:
+            try:
+                r = await page.request.get(prev, timeout=15000)
+                if r.ok:
+                    bb = await r.body()
+                    if len(bb) > 1000:
+                        d["thumb_bytes"] = bb
+            except Exception:
+                pass
     return d
 
 # ── OUTPUT ───────────────────────────────────────────────────────────────── #
@@ -2237,8 +2776,48 @@ def _hyperlink(para, text, url):
     t.set(qn("xml:space"), "preserve")
     run.append(t); hl.append(run); para._p.append(hl)
 
+
+# The collection / source name is carried in the record URL, e.g.
+#   /research/collection-10970/новая-зеландия-индекс-записей-о-рождении-1840-1901?…
+# → «новая зеландия индекс записей о рождении 1840 1901». Far better than the
+# DOM «Источник» element, which often just grabbed the bare heading «Источники».
+def _collection_name(url: str) -> str:
+    m = re.search(r"/research/collection-\d+/([^/?#]+)", url or "")
+    if not m:
+        return ""
+    name = urllib.parse.unquote(m.group(1)).replace("-", " ").strip()
+    return re.sub(r"\s{2,}", " ", name)
+
+
+_YEAR_RE = re.compile(r"\b(1[5-9]\d\d|20\d\d)\b")
+
+
+def _record_year(rec: dict) -> str:
+    """A representative year for the document — the census/collection year if the
+    source carries one, otherwise a year taken from the date fields."""
+    yrs = _YEAR_RE.findall(rec.get("source_text", "") or "")
+    if yrs:
+        return f"{yrs[0]}–{yrs[1]}" if len(yrs) >= 2 else yrs[0]
+    td = rec.get("table_data", {}) or {}
+    for k, v in td.items():
+        if re.search(r"рожд|смерт|брак|прожив|погреб|захорон|крещен|"
+                     r"birth|death|marriage|residence|burial|baptism", k, re.I):
+            m = _YEAR_RE.search(str(v))
+            if m:
+                return m.group(1)
+    for v in td.values():
+        m = _YEAR_RE.search(str(v))
+        if m:
+            return m.group(1)
+    return ""
+
+
 def _docx_add_record(doc, i, rec):
     """Render ONE record into an open Document (shared by fresh + append)."""
+    # Exactly ONE blank line between cards (never two) — put it BEFORE each card
+    # except the first, and add nothing trailing.
+    if i > 1:
+        doc.add_paragraph("")
     doc.add_heading(f"{i}. {rec.get('full_name','—')}", level=2)
     p = doc.add_paragraph()
     p.add_run("Category: ").bold = True
@@ -2246,7 +2825,11 @@ def _docx_add_record(doc, i, rec):
     p2 = doc.add_paragraph()
     p2.add_run("Match: ").bold = True
     p2.add_run(f"{rec.get('score','?')}%")
-    # Source as TEXT (e.g. "Семейные деревья MyHeritage / Geni") — never a logo
+    # Year of the document (census / record year) — always show it.
+    py = doc.add_paragraph()
+    py.add_run("Год: ").bold = True
+    py.add_run(_record_year(rec) or "—")
+    # Source = the collection name (e.g. "Семейные деревья MyHeritage") as TEXT
     if rec.get("source_text"):
         ps = doc.add_paragraph()
         ps.add_run("Источник: ").bold = True
@@ -2254,7 +2837,7 @@ def _docx_add_record(doc, i, rec):
     if rec.get("url"):
         p3 = doc.add_paragraph()
         p3.add_run("Ссылка: ").bold = True
-        _hyperlink(p3, rec["url"], rec["url"])
+        _hyperlink(p3, "Открыть запись на MyHeritage", rec["url"])
     td = rec.get("table_data", {})
     if td:
         tbl = doc.add_table(rows=1, cols=2)
@@ -2266,7 +2849,36 @@ def _docx_add_record(doc, i, rec):
                 run.bold = True
         for f, v in td.items():
             row = tbl.add_row().cells
-            row[0].text = str(f); row[1].text = str(v)
+            row[0].text = str(f)
+            # multi-line value (family members — one person per line)
+            lines = str(v).split("\n")
+            row[1].text = lines[0] if lines else ""
+            for extra in lines[1:]:
+                if extra.strip():
+                    row[1].add_paragraph(extra)
+    # Household members («Домочадцы») — render as a real table (Родство | Имя |
+    # Возраст …), the user wanted it tabular, not a text blob. Blank line BEFORE
+    # the «Домочадцы:» label (separate it from the fields table), not after.
+    hh = rec.get("household")
+    if hh:
+        doc.add_paragraph("")
+        doc.add_paragraph().add_run("Домочадцы:").bold = True
+        rows = [[c.strip() for c in ln.split("|")]
+                for ln in hh.split("\n") if ln.strip()]
+        ncol = max((len(r) for r in rows), default=0)
+        if ncol >= 2:
+            htbl = doc.add_table(rows=0, cols=ncol)
+            htbl.style = "Table Grid"
+            for r in rows:
+                cells = htbl.add_row().cells
+                for j in range(ncol):
+                    cells[j].text = r[j] if j < len(r) else ""
+        else:                                    # single-column fallback
+            para = doc.add_paragraph()
+            for k, ln in enumerate(x.strip() for x in hh.split("\n") if x.strip()):
+                if k:
+                    para.add_run().add_break()
+                para.add_run(ln)
     # Photo thumbnail (small in Word; full-size saved to disk separately).
     # Convert WEBP→PNG so python-docx can embed it.
     tb = rec.get("thumb_bytes")
@@ -2283,7 +2895,8 @@ def _docx_add_record(doc, i, rec):
         pp.add_run("Полный профиль: ").bold = True
         _hyperlink(pp, "Посмотреть полный профиль на этом сайте",
                    rec["profile_url"])
-    doc.add_paragraph("")
+    # NB: no trailing blank — the single inter-card blank is added at the TOP of
+    # the next card (see the «if i > 1» guard) so there are never two in a row.
 
 
 def write_docx(path, records, qlines, append=False):
@@ -2324,15 +2937,26 @@ def write_xlsx(path, records, qlines, append=False):
         raise RuntimeError("openpyxl not installed")
     HF = PatternFill("solid", fgColor="2A4A7F")
     HN = Font(bold=True, color="FFFFFF", size=11)
+    LINKF = Font(color="0563C1", underline="single")
     TS = Side(style="thin", color="B0B8C8")
     T  = Border(left=TS, right=TS, top=TS, bottom=TS)
+
+    def _put(c, name, val):
+        """Write a cell; the URL column becomes a hidden hyperlink («Открыть»)."""
+        if name == "URL" and val:
+            c.value = "Открыть"; c.hyperlink = val; c.font = LINKF
+        else:
+            c.value = val
+        c.border = T
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+
     # Genealogy fields present across THESE records.
     aff = []
     for rec in records:
         for k in rec.get("table_data", {}):
             if k not in aff:
                 aff.append(k)
-    base_cols = ["#", "Full Name", "Category", "Match %", "URL"]
+    base_cols = ["#", "Full Name", "Category", "Match %", "Год", "URL"]
 
     existing = append and Path(path).exists()
     if existing:
@@ -2363,15 +2987,14 @@ def write_xlsx(path, records, qlines, append=False):
                        "Full Name": rec.get("full_name", ""),
                        "Category":  rec.get("category", ""),
                        "Match %":   rec.get("score", ""),
+                       "Год":       _record_year(rec),
                        "URL":       rec.get("url", "")}
             for f in aff:
                 rowdata[f] = td.get(f, "")
             for name, val in rowdata.items():
                 ci = col_idx.get(name)
                 if ci:
-                    c = ws.cell(row=start_row + off, column=ci, value=val)
-                    c.border = T
-                    c.alignment = Alignment(wrap_text=True, vertical="top")
+                    _put(ws.cell(row=start_row + off, column=ci), name, val)
         cols = header
     else:
         wb = Workbook(); ws = wb.active; ws.title = "MyHeritage"
@@ -2383,11 +3006,10 @@ def write_xlsx(path, records, qlines, append=False):
         for ri, rec in enumerate(records, 2):
             td   = rec.get("table_data", {})
             vals = [ri-1, rec.get("full_name",""), rec.get("category",""),
-                    rec.get("score",""), rec.get("url","")] + [td.get(f,"") for f in aff]
+                    rec.get("score",""), _record_year(rec), rec.get("url","")] \
+                + [td.get(f,"") for f in aff]
             for ci, val in enumerate(vals, 1):
-                c = ws.cell(row=ri, column=ci, value=val)
-                c.border = T
-                c.alignment = Alignment(wrap_text=True, vertical="top")
+                _put(ws.cell(row=ri, column=ci), cols[ci-1], val)
     # Auto-size every column.
     for ci in range(1, len(cols) + 1):
         letter = get_column_letter(ci)
@@ -2400,7 +3022,7 @@ def write_xlsx(path, records, qlines, append=False):
 async def run_scraper(*,
     site_preset    = "Israel (.co.il)",
     first_name     = "", surname       = "",
-    first_strict   = False, last_strict = False,
+    name_strict = False, name_variants = True, name_initials = True, name_startswith = False,
     birth_year     = "", birth_place   = "",
     father         = "", father_last   = "",
     mother         = "", mother_last   = "",
@@ -2456,7 +3078,8 @@ async def run_scraper(*,
         record_filter = _RT_MAP[record_type]
     params = dict(
         first_name=first_name, surname=surname,
-        first_strict=first_strict, last_strict=last_strict,
+        name_strict=name_strict, name_variants=name_variants,
+        name_initials=name_initials, name_startswith=name_startswith,
         birth_year=birth_year, birth_place=birth_place,
         father=father, father_last=father_last,
         mother=mother, mother_last=mother_last,
@@ -2628,7 +3251,10 @@ async def run_scraper(*,
                 return summary
 
             _prog(30, "Collecting results…")
-            raw = await _collect(page, log)
+            raw = await _collect(page, log,
+                                 want_first=params.get("first_name", ""),
+                                 want_last=params.get("surname", ""),
+                                 want_year=params.get("birth_year", ""))
             log(f"  Candidates: {len(raw)}")
 
             # Fallback: exactSearch=1 narrows on ALL fields at once, so a
@@ -2657,23 +3283,48 @@ async def run_scraper(*,
             # % when shown, otherwise treat as an exact MyHeritage match (100%).
             # Do NOT re-filter by name similarity — that wrongly drops correct
             # multi-word names (e.g. "Тамара Хананновна Рогинская (Рубина)").
-            qualified = []
+            wf, wl = params.get("first_name", ""), params.get("surname", "")
+            wy = params.get("birth_year", "")
+            qualified, dropped_name = [], 0
             for r in raw:
                 s = r["score"]
                 if s < 0:
                     s = 100.0
-                if s >= MIN_MATCH_PCT:
-                    r["score"] = round(s, 1)
-                    qualified.append(r)
+                if s < MIN_MATCH_PCT:
+                    continue
+                # Keep only the right person: first name «Alexander» + middle «W»
+                # (variants «Alexander-Wolf»/«Александр-Вольф» pass) + surname, and
+                # a birth year near the searched one (drops «Alexander W. ~1848»).
+                if (wf or wl) and not _name_relevant(r.get("name_text", ""), wf, wl):
+                    dropped_name += 1
+                    continue
+                # year: card «Рождение …» OR the «(~1848)» span in the name; drop
+                # only people EARLIER than the searched birth year (keep later).
+                ry = r.get("year", "") or _name_year(r.get("name_text", ""))
+                if wy and not _year_not_earlier(wy, ry):
+                    dropped_name += 1
+                    continue
+                r["score"] = round(s, 1)
+                qualified.append(r)
+            if dropped_name:
+                log(f"  → отброшено (не тот человек / год): {dropped_name}")
+            # Safety: never let the name filter wipe EVERYTHING — fall back to
+            # MyHeritage's own set if it did.
+            if not qualified and dropped_name:
+                log("  !! фильтр имени отсёк всё — оставляю результаты как есть")
+                for r in raw:
+                    s = r["score"] if r["score"] >= 0 else 100.0
+                    if s >= MIN_MATCH_PCT:
+                        r["score"] = round(s, 1); qualified.append(r)
             log(f"  Подходящих записей: {len(qualified)}")
 
-            # Safety: if exact match was requested but couldn't be enabled, the
-            # site returns a huge fuzzy set — don't grind through 500 records.
-            if (params.get("exact_match") and not params.get("_exact_ok")
-                    and len(qualified) > 40):
-                log(f"  !! «Точное совпадение» не включилось — обрабатываю первые "
-                    f"40 из {len(qualified)} (самые релевантные сверху), "
-                    f"чтобы не ждать часами.")
+            # Safety: if the «expanded criteria» divider wasn't found, the site
+            # returns a huge ranked set — process only the top 40 (most relevant,
+            # which is where the name-variant matches sit). Normally the divider
+            # bounds it well below 40 and this never triggers.
+            if len(qualified) > 40:
+                log(f"  !! слишком много результатов ({len(qualified)}) — беру первые "
+                    f"40 (самые релевантные сверху)")
                 qualified = qualified[:40]
 
             if not qualified:
@@ -2687,6 +3338,11 @@ async def run_scraper(*,
             images_dir = output_folder / "images" / (safe_fn(qname) or "myheritage")
 
             records = []
+            paywalled = []                       # records hidden behind the wall
+            dropped_year = dropped_type = 0
+            _rf = params.get("record_filter", "All Records")
+            if _rf != "All Records":
+                log(f"  → Фильтр результатов по типу записи: {_rf}")
             n = len(qualified)
             for i, r in enumerate(qualified, 1):
                 if _done():
@@ -2695,18 +3351,37 @@ async def run_scraper(*,
                 dp = None
                 try:
                     dp = await ctx.new_page()
-                    det = await _detail(dp, r["url"], has_cookies, log)
+                    det = await _detail(dp, r["url"], has_cookies, log,
+                                        card_thumb=r.get("thumb", ""))
                     det["score"] = r["score"]
                     if not det.get("full_name"):
                         det["full_name"] = r["name_text"]
-                    # Save the FULL photo to disk (Word keeps a small copy)
-                    if det.get("thumb_bytes"):
-                        try:
-                            images_dir.mkdir(parents=True, exist_ok=True)
-                            fn = safe_fn(det.get("full_name") or f"record_{i}") + ".jpg"
-                            (images_dir / fn).write_bytes(det["thumb_bytes"])
-                        except Exception:
-                            pass
+                    # Paywalled → don't pollute the document with an empty record;
+                    # collect the name so we can report it at the end.
+                    if det.get("paywall"):
+                        paywalled.append(det["full_name"])
+                        if det.get("botcheck"):
+                            log("    ⚠ MyHeritage показал проверку «робот» "
+                                "(слишком частые запросы) — пропуск")
+                        else:
+                            log("    ⚠ за пейволлом MyHeritage (бесплатный лимит "
+                                "просмотров исчерпан) — пропуск")
+                        continue
+                    # Post-detail filters (the card stage couldn't see these):
+                    #  • year now visible on the record page is EARLIER than the
+                    #    searched birth year → wrong (earlier) person (1848/1864).
+                    by = _detail_birth_year(det)
+                    if wy and by and not _year_not_earlier(wy, by):
+                        log(f"    ⤫ {det['full_name']} — год {by} раньше {wy}, "
+                            f"пропуск")
+                        dropped_year += 1
+                        continue
+                    #  • «Уточнить по типу записи» (historical / family trees)
+                    if not _type_ok(det, _rf):
+                        log(f"    ⤫ {det['full_name']} — не тот тип записи "
+                            f"({_rf}), пропуск")
+                        dropped_type += 1
+                        continue
                     records.append(det)
                     log(f"    ✓ {det['full_name']} — {det['score']}%")
                 except Exception as _exc:
@@ -2720,6 +3395,86 @@ async def run_scraper(*,
                         except Exception:
                             pass
                 await asyncio.sleep(0.7)
+
+            if dropped_year:
+                log(f"  → отброшено по году (раньше {wy}): {dropped_year}")
+            if dropped_type:
+                log(f"  → отброшено по типу записи ({_rf}): {dropped_type}")
+            log(f"  ✓ В документ войдёт записей: {len(records)}")
+            if paywalled:
+                log(f"  ⚠ {len(paywalled)} запис(ь/и) за пейволлом MyHeritage "
+                    f"(нужна платная подписка / исчерпан бесплатный лимит "
+                    f"просмотров): " + "; ".join(paywalled[:12]))
+
+            # Drop MyHeritage placeholder images (gray silhouette, tombstone,
+            # stock collection covers) — they repeat byte-for-byte. A hash is a
+            # placeholder when it is either TINY and repeated (the silhouette) OR
+            # it shows up under ≥3 DIFFERENT names (a generic image reused for
+            # unrelated people). A real photo repeated for ONE person is kept.
+            phash = {}
+            for det in records:
+                tb = det.get("thumb_bytes")
+                if not tb:
+                    continue
+                h = hashlib.md5(tb).hexdigest()
+                det["_phash"] = h
+                e = phash.setdefault(h, {"n": 0, "size": len(tb), "names": set()})
+                e["n"] += 1
+                e["names"].add((det.get("full_name") or "").strip().lower())
+            placeholders = {h for h, e in phash.items()
+                            if (e["size"] < 12000 and e["n"] >= 2)   # tiny silhouette
+                            or len(e["names"]) >= 3}                  # generic across people
+            dropped = 0
+            for det in records:
+                if det.pop("_phash", None) in placeholders:
+                    det["thumb_bytes"] = None
+                    dropped += 1
+            if dropped:
+                log(f"  → отброшено картинок-заглушек (повторяются): {dropped}")
+            # Save the surviving photos to disk. MyHeritage serves WEBP, which
+            # Windows won't open as «.jpg» (that was «нет фотографий в директории»)
+            # — convert to PNG (same as the Word copy) and save as «.png».
+            saved_imgs = 0
+            for i, det in enumerate(records, 1):
+                # Prefer the FULL downloaded document (census/passenger scan, may
+                # be a .pdf); fall back to the portrait/preview image.
+                doc = det.get("doc_bytes")
+                tb  = det.get("thumb_bytes")
+                if doc:
+                    data = doc
+                    ext  = det.get("doc_ext") or ".jpg"
+                elif tb:
+                    data = _to_png(tb) or tb         # WEBP → PNG if PIL can; else raw
+                    if data[:3] == b"\xff\xd8\xff":
+                        ext = ".jpg"
+                    elif data[:8] == b"\x89PNG\r\n\x1a\n":
+                        ext = ".png"
+                    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+                        ext = ".webp"                # PIL couldn't convert → keep WEBP
+                    elif data[:4] == b"GIF8":
+                        ext = ".gif"
+                    else:
+                        ext = ".png"
+                else:
+                    continue
+                try:
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    parts = [det.get("full_name") or f"record_{i}"]
+                    cat = (det.get("category") or "").strip()
+                    yr  = _record_year(det)
+                    if cat:
+                        parts.append(cat)
+                    if yr:
+                        parts.append(yr)
+                    # «_{i}» keeps the name unique (3 records of one person no
+                    # longer overwrite each other to a single file).
+                    fn = safe_fn(" — ".join(parts)) + f"_{i}" + ext
+                    (images_dir / fn).write_bytes(data)
+                    saved_imgs += 1
+                except Exception as _e:
+                    log(f"    !! файл не сохранён на диск: {type(_e).__name__}: {_e}")
+            if saved_imgs:
+                log(f"  → сохранено файлов на диск: {saved_imgs} → {images_dir}")
 
             _prog(88, "Saving files…")
             base   = safe_fn(f"myheritage_{qname}") or "myheritage_results"
