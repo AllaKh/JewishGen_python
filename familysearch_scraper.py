@@ -1319,7 +1319,7 @@ async def run_scraper(
         f"Place Lived: {place_lived}", f"Birth Year: {birth_year}",
     ] if not ln.endswith(": ")]
     summary   = {"ok": False}
-    file_base = safe_fn(qname) if qname else "familysearch_results"
+    file_base = safe_fn(f"familysearch_{qname}") if qname else "familysearch_results"
 
     # logged_in_ref[0] == True после первого успешного входа
     # Передаём как список чтобы _scrape_page мог изменить флаг

@@ -2531,8 +2531,8 @@ async def run_scraper(
                     })
 
                 if want_docx:
-                    # Filename: {search_terms}_{db_name}.docx
-                    base_name = f"{q_prefix}_{safe_filename(desc) or safe_filename(label)}"
+                    # Filename: {search_terms}_jewishgen_{db_name}.docx
+                    base_name = f"{q_prefix}_jewishgen_{safe_filename(desc) or safe_filename(label)}"
                     file_name = f"{base_name}.docx"
                     n = 2
                     while file_name in used_filenames:

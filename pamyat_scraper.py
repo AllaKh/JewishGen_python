@@ -552,32 +552,34 @@ async def _grab_scan(page, images_dir, base, rec, log):
     except Exception:
         nc = 0
     saved, saw_doc = 0, False
+    _vis_btn_js = ("() => { const b=document.querySelector('#btnSaveLocalImage');"
+                   " return !!(b && b.offsetParent !== null); }")
     for k in range(min(nc, 12)):
         try:
             await cards.nth(k).scroll_into_view_if_needed(timeout=2000)
             await cards.nth(k).click(timeout=2500)
         except Exception:
             continue
-        # Does this card actually carry a document? The save button appears in the
-        # DOM only then — no button after ~3s → no document → skip fast
-        # (this is what stops the minute-long hang on document-less cards).
+        # Does this card actually carry a document? The save button must be
+        # VISIBLE (offsetParent) — a hidden #btnSaveLocalImage sits in the DOM
+        # even on document-less cards and made us wait/reload for nothing.
+        # Check immediately, then poll ~2s max → empty card skipped fast.
         has_btn = False
         for _ in range(3):
-            await asyncio.sleep(1)
             try:
-                has_btn = await page.evaluate(
-                    "() => !!document.querySelector('#btnSaveLocalImage')")
+                has_btn = await page.evaluate(_vis_btn_js)
             except Exception:
                 has_btn = False
             if has_btn:
                 break
+            await asyncio.sleep(1)
         if not has_btn:
             continue                        # no document on this card → skip fast
         saw_doc = True
-        # It HAS a document → it can load slowly, so wait (up to ~8s) for the
-        # image-map scan to finish AND the button to become visible.
-        for _ in range(8):
-            await asyncio.sleep(1)
+        # Visible button → a document exists; wait up to ~6s for its image-map
+        # scan to finish decoding.
+        ready = False
+        for _ in range(6):
             try:
                 ready = await page.evaluate(
                     "() => { const b=document.querySelector('#btnSaveLocalImage');"
@@ -587,8 +589,11 @@ async def _grab_scan(page, images_dir, base, rec, log):
                 ready = False
             if ready:
                 break
-        # Whether or not the strict image-map check passed, a button exists here →
-        # attempt the save anyway (some documents may not be image-maps).
+            await asyncio.sleep(1)
+        if not ready:
+            # scan never decoded → don't burn 15s on a download that won't come
+            log("      (карточка без загрузившегося скана — пропускаю)")
+            continue
         # talking filename built from THIS card's own document name
         label = ""
         try:
@@ -814,26 +819,13 @@ async def _save_media(page, rec, images_dir, base, log):
     try:
         await _tab_block(page, ["документ", "documents"], 1.5, log)
         await asyncio.sleep(1.5)
+        # ONE pass, NO reload-retry: страницы без документов уходят за секунды,
+        # незагрузившийся скан просто пропускается (перезагрузка удваивала
+        # ожидание на каждой пустой записи — пользователь требовала убрать).
         ok, saw_doc = await _grab_scan(page, images_dir, base, rec, log)
-        if ok:
-            return
-        # Reload+retry ТОЛЬКО если документ реально есть, но скан не догрузился.
-        # Если документов нет вовсе (saw_doc=False) — НЕ перезагружать (иначе
-        # висим на каждой пустой странице — на это пользователь и жаловалась).
-        if not saw_doc:
-            log("      (документов у этой записи нет — пропускаю)")
-            return
-        log("      ↻ скан долго грузится — обновляю страницу (один раз)")
-        try:
-            await page.reload(wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(2)
-            await _tab_block(page, ["документ", "documents"], 1.5, log)
-            ok, _ = await _grab_scan(page, images_dir, base, rec, log)
-            if ok:
-                return
-        except Exception:
-            pass
-        log("      (скан документа так и не загрузился)")
+        if not ok:
+            log("      (документов у этой записи нет — пропускаю)" if not saw_doc
+                else "      (скан документа не загрузился — пропускаю)")
     except Exception:
         pass
 
