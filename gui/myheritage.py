@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QInputDialog,
     QApplication, QGroupBox, QComboBox, QSpinBox,
     QScrollArea, QRadioButton, QButtonGroup, QFrame, QGridLayout,
-    QToolButton, QMenu,
+    QToolButton, QMenu, QWidgetAction,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction
@@ -227,28 +227,31 @@ class MyHeritageApp(QMainWindow):
         self._build_ui()
         self._load()
 
-    def _match_row(self, label, options):
-        """A row of ALWAYS-VISIBLE match-option checkboxes (shown like the docx /
-        xlsx checkboxes, not hidden behind a dropdown). `options`: list of
-        (key, text, default). Stored in self._match_actions[key] as QCheckBox —
-        same isChecked/setChecked/toggled interface, so save/load/payload are
-        unchanged."""
-        w = QWidget()
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(14)
-        if label:
-            lab = QLabel(label)
-            lab.setStyleSheet("color:#555;")
-            lay.addWidget(lab)
+    def _match_btn(self, label, options):
+        """Per-field dropdown («match ▾»). Each menu item is a REAL QCheckBox (a
+        visible square ☐/☑), via QWidgetAction — not a checkmark-only QAction.
+        `options`: (key, text, default). Stored in self._match_actions[key] as
+        QCheckBox (same isChecked/setChecked/toggled, so save/load/payload work)."""
+        btn = QToolButton()
+        btn.setText(label)
+        btn.setPopupMode(QToolButton.InstantPopup)
+        btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(
+            "QToolButton{padding:4px 10px;border:1px solid #9aa4b2;border-radius:5px;}"
+            "QToolButton::menu-indicator{image:none;}")
+        menu = QMenu(btn)
         for key, text, default in options:
             cb = QCheckBox(text)
             cb.setChecked(default)
+            cb.setStyleSheet("QCheckBox{padding:5px 12px;}")
             cb.toggled.connect(self._save)
+            wa = QWidgetAction(menu)
+            wa.setDefaultWidget(cb)
+            menu.addAction(wa)
             self._match_actions[key] = cb
-            lay.addWidget(cb)
-        lay.addStretch()
-        return w
+        btn.setMenu(menu)
+        return btn
 
     def _build_ui(self):
         self._match_actions = {}
@@ -303,25 +306,23 @@ class MyHeritageApp(QMainWindow):
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
         _LBLW = 170
-        # Each field's match options are ALWAYS-VISIBLE checkboxes shown under the
-        # field (not a dropdown). First name → 4 options; surname → strict.
-        nm_row = self._match_row("Name match:", [
-            ("name_strict",     "Strict",      False),
-            ("name_variants",   "Variants",    True),
-            ("name_initials",   "Initials",    True),
-            ("name_startswith", "Starts with", False),
+        # Each field has its own «match ▾» dropdown (with visible checkbox squares).
+        nm_btn = self._match_btn("match ▾", [
+            ("name_strict",     "Strict — exact name", False),
+            ("name_variants",   "Spelling variants",   True),
+            ("name_initials",   "Initial matching",    True),
+            ("name_startswith", "Starts with letters", False),
         ])
-        sn_row = self._match_row("Surname match:", [
-            ("surname_strict",  "Strict (exact surname)", False),
+        sn_btn = self._match_btn("match ▾", [
+            ("surname_strict",  "Strict — exact surname", False),
         ])
         r1 = QHBoxLayout(); r1.setSpacing(8)
         _l1 = QLabel("First name / Patronymic:"); _l1.setFixedWidth(_LBLW)
-        r1.addWidget(_l1); r1.addWidget(self.f_first, 1)
+        r1.addWidget(_l1); r1.addWidget(self.f_first, 1); r1.addWidget(nm_btn)
         r2 = QHBoxLayout(); r2.setSpacing(8)
         _l2 = QLabel("Surname:"); _l2.setFixedWidth(_LBLW)
-        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1)
-        mv.addLayout(r1); mv.addWidget(nm_row)
-        mv.addLayout(r2); mv.addWidget(sn_row)
+        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1); r2.addWidget(sn_btn)
+        mv.addLayout(r1); mv.addLayout(r2)
         self._outer.addWidget(ms)
 
         # ── Advanced toggle ──────────────────────────────────────────────── #
@@ -358,14 +359,14 @@ class MyHeritageApp(QMainWindow):
         self.f_ym.addItems(["—", "Exact", "± 1", "± 2", "± 5", "± 10", "± 20"])
         self.f_ym.setCurrentText("± 5")
         self.f_ym.setFixedWidth(110)
-        pl_row = self._match_row("", [
+        pl_btn = self._match_btn("match ▾", [
             ("place_match", "Location must match", False),
         ])
         _byrow = QHBoxLayout(); _byrow.setSpacing(8)
         _byrow.addWidget(self.f_by); _byrow.addWidget(QLabel("match:"))
         _byrow.addWidget(self.f_ym); _byrow.addStretch()
         _bprow = QHBoxLayout(); _bprow.setSpacing(8)
-        _bprow.addWidget(self.f_bp, 1); _bprow.addWidget(pl_row)
+        _bprow.addWidget(self.f_bp, 1); _bprow.addWidget(pl_btn)
         af.addRow("Birth year:",  _byrow)
         af.addRow("Birth place:", _bprow)
         af.addRow("Father (name):",    self.f_fa)
