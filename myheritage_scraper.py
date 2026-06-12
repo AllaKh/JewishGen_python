@@ -1416,42 +1416,33 @@ async def _set_name_match(root, page, params, log):
         log(f"  !! опции имени: {type(e).__name__}: {e}")
 
 
-async def _set_field_checkbox(root, page, field_tag, frag, want, label, log,
-                              exclude_name=False):
+async def _set_field_checkbox(root, page, field_tag, frag, want, label, log):
     """Set a field's match checkbox via JS .click() (the only thing that works on
-    the 0×0 option spans), clicking ALL duplicates. `exclude_name`: for the surname
-    «строго» (shared text with the name popup) — skip copies inside the NAME popup."""
+    the option spans — a real Playwright click times out, they're position:fixed
+    0×0-by-offsetParent overlays). Focus the field, then act ONLY on the VISIBLE
+    copies (getBoundingClientRect > 0) — that's the focused field's open popup, so
+    the «строго» shared with the name popup is disambiguated without heuristics."""
     try:
         fld = root.locator(f'[data-pw-rf="{field_tag}"]').first
         if await fld.count():
             await fld.click(timeout=2500)             # focus → its popup opens
             await asyncio.sleep(0.6)
         res = await root.evaluate(r"""(args) => {
-            const [frag, want, excludeName] = args;
+            const [frag, want] = args;
             const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-            const all = [...document.querySelectorAll(
-                '[role=checkbox][data-automations=check_box_control_label]')];
-            const inNamePopup = (b) => {
-                let n = b;
-                for (let i = 0; i < 8 && n; i++) {
-                    if ([...n.querySelectorAll(
-                          '[role=checkbox][data-automations=check_box_control_label]')]
-                          .some(x => norm(x.textContent).includes('Варианты написани')))
-                        return true;
-                    n = n.parentElement;
-                }
-                return false;
-            };
-            let cbs = all.filter(x => norm(x.textContent).toLowerCase()
-                                       .includes(frag.toLowerCase()));
-            if (excludeName) cbs = cbs.filter(b => !inNamePopup(b));
+            const cbs = [...document.querySelectorAll(
+                '[role=checkbox][data-automations=check_box_control_label]')]
+                .filter(x => norm(x.textContent).toLowerCase()
+                              .includes(frag.toLowerCase()))
+                .filter(x => { const r = x.getBoundingClientRect();
+                               return r.width > 0 && r.height > 0; });  // open popup
             let did = false;
             for (const b of cbs)
                 if ((b.getAttribute('aria-checked') === 'true') !== want) {
                     b.click(); did = true;
                 }
             return did ? (want ? 'вкл' : 'выкл') : '';
-        }""", [frag, want, exclude_name])
+        }""", [frag, want])
         if res:
             log(f"  → {label}: {res}")
     except Exception as e:
@@ -1470,33 +1461,33 @@ async def _set_year_match(root, page, params, log):
         if await fld.count():
             await fld.click(timeout=2500)
             await asyncio.sleep(0.6)
-        if re.search(r"exact|точн|^0$", ym):
-            res = await root.evaluate(r"""() => {
-                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                const scope = document.querySelector(
-                    '[data-automations="birth_year_open_field_filter_matching_options_dropdown"]')
-                  || document;
-                const cbs = [...scope.querySelectorAll(
-                    '[role=checkbox][data-automations=check_box_control_label]')]
-                    .filter(x => /точное совпадение года/i.test(norm(x.textContent)));
-                let did = false;
-                for (const b of cbs)
-                    if (b.getAttribute('aria-checked') !== 'true') { b.click(); did = true; }
-                return did ? 'точно' : '';
-            }""")
-            if res:
-                log("  → Совпадение года: точно")
-        else:
-            n = re.sub(r"\D", "", ym) or "5"
-            res = await root.evaluate(r"""(n) => {
-                const rs = document.querySelectorAll(
-                    '[data-automations="birth_year_open_field_filter_match_plus_minus_'+n+'"]');
-                let did = false;
-                for (const r of rs) { r.click(); did = true; }   // click all dups
-                return did ? ('±' + n) : '';
-            }""", n)
-            if res:
-                log(f"  → Совпадение года: {res}")
+        want_exact = bool(re.search(r"exact|точн|^0$", ym))
+        n = re.sub(r"\D", "", ym) or "5"
+        res = await root.evaluate(r"""(args) => {
+            const [wantExact, n] = args;
+            const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+            const vis = x => { const r = x.getBoundingClientRect();
+                               return r.width > 0 && r.height > 0; };
+            // «Точное совпадение года» checkbox (exact) — exact and ±N are
+            // mutually exclusive, so untick exact when a tolerance is chosen.
+            const ex = [...document.querySelectorAll(
+                '[role=checkbox][data-automations=check_box_control_label]')]
+                .filter(x => /точное совпадение года/i.test(norm(x.textContent)))
+                .filter(vis);
+            if (wantExact) {
+                for (const b of ex)
+                    if (b.getAttribute('aria-checked') !== 'true') b.click();
+                return 'точно';
+            }
+            for (const b of ex)
+                if (b.getAttribute('aria-checked') === 'true') b.click();   // untick exact
+            const rs = [...document.querySelectorAll(
+                '[data-automations="birth_year_open_field_filter_match_plus_minus_' + n + '"]')];
+            for (const r of rs) r.click();            // click all dups of the radio
+            return rs.length ? ('±' + n) : ('нет радио ±' + n);
+        }""", [want_exact, n])
+        if res:
+            log(f"  → Совпадение года: {res}")
     except Exception as e:
         log(f"  !! год match: {type(e).__name__}")
 
@@ -1566,12 +1557,10 @@ async def _fill_research_basic(root, page, params, log) -> bool:
     await _set_name_match(root, page, params, log)
     await _type("last",  params.get("surname", ""),    "Surname")
     # Mirror the GUI state to the site (check OR uncheck), so it's visible there.
-    # exclude_name=True → the shared «строго» text in the NAME popup is left alone.
     if params.get("surname"):
         await _set_field_checkbox(root, page, "last", "строго",
                                   bool(params.get("surname_strict")),
-                                  "Совпадение фамилии (строго)", log,
-                                  exclude_name=True)
+                                  "Совпадение фамилии (строго)", log)
     await _type("year",  params.get("birth_year", ""), "Birth year")
     await _set_year_match(root, page, params, log)
     await _type("place", params.get("birth_place", ""), "Birth place")
