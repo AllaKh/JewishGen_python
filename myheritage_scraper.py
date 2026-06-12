@@ -3327,16 +3327,16 @@ async def run_scraper(*,
         # runs reuse the session and MyHeritage's anti-bot stops flagging the
         # login as suspicious (no more "Confirm a login attempt" challenge).
         MH_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        # NB: do NOT hard-code user_agent. It used to be pinned to «Chrome/124»,
+        # but Playwright's bundled Chromium has since moved on (141+). A UA that
+        # claims 124 while the engine exposes 141's APIs is a textbook bot tell —
+        # that mismatch is exactly why MyHeritage started flagging «ты скрипт».
+        # Headed Chromium already reports a correct, matching «Chrome/<ver>» UA.
         ctx = await pw.chromium.launch_persistent_context(
             str(MH_PROFILE_DIR),
             headless=False,
             accept_downloads=True,
             no_viewport=True,
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
             args=["--start-maximized",
                   "--disable-blink-features=AutomationControlled",
                   "--disable-infobars",

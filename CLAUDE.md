@@ -185,6 +185,8 @@ no_viewport=True, accept_downloads=True
 - Свежий контекст без cookies → MyHeritage флагует логин как suspicious и шлёт challenge-письмо «Confirm a login attempt».
 - После первого успешного входа сессия запоминается, 2FA больше не спрашивает.
 - Персистентный профиль **восстанавливает старые вкладки** при старте — закрывать все кроме одной.
+- **НЕ хардкодить `user_agent`!** Был прибит `Chrome/124`, а Playwright обновил Chromium до 141+ → UA заявляет 124, а движок отдаёт API 141 → **классический бот-тэлл** («он видит, что ты скрипт»). Headed-Chromium и так отдаёт корректный совпадающий `Chrome/<ver>` (без «Headless»). Анти-детект: `--disable-blink-features=AutomationControlled` (уже делает `navigator.webdriver=false`) + init-script (webdriver/plugins/languages/chrome). **Диагностики гонять НЕ на `.mh_profile`** или с теми же флагами — headless без init-script показывает `webdriver=true` и пачкает репутацию профиля.
+- **Куки-баннер — кликать ТОЛЬКО явный accept**: текст «Принять все»/«Accept all» по ВСЕМ фреймам, потом accept-специфичные селекторы (OneTrust). НЕ «первая кнопка в `[class*=cookie]`» — там бывает футер-ссылка/«Отклонить», клик по ней **ломает форму логина**.
 
 ### 2FA по почте (КЛЮЧЕВЫЕ уроки)
 - MyHeritage шлёт **ДВА письма с РАЗНЫМИ кодами**:
