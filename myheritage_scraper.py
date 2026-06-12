@@ -326,8 +326,10 @@ def _detail_birth_year(rec):
     #    glues «… Жена Cynthia (born West) 1848 …»). NOT parents/siblings (older).
     _SK = re.compile(r"\b(жена|муж|супруг|spouse|wife|husband|дети|ребён|ребен|"
                      r"сын|доч|child|children|son|daughter)\b", re.I)
-    _SB = re.compile(r"(?:жена|муж|супруг|spouse|wife|husband|дети|ребён|ребен|"
-                     r"child|children)[^0-9]{0,80}?(1[5-9]\d\d)", re.I)
+    # NB: allow ANY chars in the gap (not [^0-9]) so a leading day breaks nothing:
+    # «Супруг(-а): Sarah … 10 мар 1864» — the «10» must not block reaching 1864.
+    _SB = re.compile(r"(?:жена|муж|супруг|жен[ыа]|spouse|wife|husband|дети|ребён|"
+                     r"ребен|child|children).{0,80}?(1[5-9]\d\d|20\d\d)", re.I)
     years = []
     for k, v in td.items():
         v = str(v)
@@ -1831,7 +1833,12 @@ async def _fill_advanced(root, page, params, log):
                 await asyncio.sleep(0.4)
             params["_exact_ok"] = done
             if not done:
-                log("  !! не удалось включить «Точное совпадение всех параметров»")
+                # MyHeritage's checkbox is decorative — its state never flips by
+                # click. Not a problem: we use the normal (fuzzy) search and filter
+                # results ourselves by имя/год/тип (exact mode would drop the
+                # «Александр-Вольф (Shenderovich)» variants). Just a calm note.
+                log("  → «Точное совпадение всех параметров» сайт не переключает — "
+                    "не нужно, фильтрую сам по имени/году/типу")
 
 
 async def _apply_record_type_filter(page, record_filter, log):
@@ -2539,12 +2546,20 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
                     norm(box.parentElement.textContent).length < 450)
                     box = box.parentElement; else break;
             }
-            submitter = norm(box.textContent)
-                .replace(/^Источник[:\s]*/i, '').replace(/^Source[:\s]*/i, '')
-                .replace(/Посмотреть полный профиль[^]*?(сайте|site)/i, ' ')
-                .replace(/Связаться с[^]*$/i, '')
-                .replace(/Contact\b[^]*$/i, '')
-                .replace(/\s+/g, ' ').trim().slice(0, 320);
+            // textContent glued phrases («Michael NeymanОбновлено…») because the
+            // элементы стоят без пробела. Clone and put a line break before each
+            // block-ish child so every phrase is on its own line.
+            const c = box.cloneNode(true);
+            c.querySelectorAll('script, style').forEach(s => s.remove());
+            c.querySelectorAll('div, p, li, a, br, h1, h2, h3, h4, h5, span')
+                .forEach(e => e.parentNode &&
+                    e.parentNode.insertBefore(document.createTextNode('\n'), e));
+            submitter = normNL(c.textContent)
+                .replace(/^\s*Источник[:\s]*/i, '').replace(/^\s*Source[:\s]*/i, '')
+                .replace(/\n?\s*Посмотреть полный профиль[^]*?(?:сайте|site)/i, '')
+                .replace(/\n?\s*Связаться с[^]*$/i, '')
+                .replace(/\n?\s*Contact\b[^]*$/i, '')
+                .replace(/\n{2,}/g, '\n').trim().slice(0, 400);
         }
         res.submitter = submitter;
 
@@ -2670,9 +2685,12 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
                     opened = False
             # 2) inside fullscreen: «Загрузить документ» → catch the download
             if opened:
-                await asyncio.sleep(1.5)              # let the viewer initialise
+                await asyncio.sleep(1.2)              # let the viewer initialise
                 try:
-                    async with page.expect_download(timeout=30000) as dl_info:
+                    # short timeout: downloadSource() usually doesn't fire a
+                    # Playwright download here — fail fast and use the full-screen
+                    # image (_fs_img) below, which IS the full-res scan.
+                    async with page.expect_download(timeout=9000) as dl_info:
                         clicked = False
                         try:
                             btn = page.locator(
@@ -2708,8 +2726,8 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
                             log(f"    📄 документ скачан {len(b)//1024}KB ({ext})")
                             if ext != ".pdf":
                                 d["thumb_bytes"] = b
-                except Exception as _dle:
-                    log(f"    !! документ не скачался: {type(_dle).__name__}")
+                except Exception:
+                    pass    # download button didn't fire — full-res scan via _fs_img
                 # Belt-and-suspenders: the fullscreen viewer has the FULL image
                 # loaded now — grab its URL so the fallback can fetch it if the
                 # download event never fired (e.g. opened inline instead).

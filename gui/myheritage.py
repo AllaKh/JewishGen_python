@@ -416,6 +416,9 @@ class MyHeritageApp(QMainWindow):
             elif isinstance(w, QComboBox): w.currentTextChanged.connect(self._save)
             elif isinstance(w, QSpinBox):  w.valueChanged.connect(self._save)
             elif isinstance(w, QCheckBox): w.stateChanged.connect(self._save)
+        # «Refine by record type» radios weren't autosaved → the choice was
+        # forgotten between runs. Persist it too.
+        self._rt_group.buttonToggled.connect(self._save)
 
         self._fit()
 
