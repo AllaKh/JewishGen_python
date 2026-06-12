@@ -162,8 +162,13 @@ async def _search(page, fn, ln, place, year, log):
             'input[placeholder*="City, County, State" i]',
             place, "Place Lived", log)
     if year:
+        # FS renamed this field; the real placeholder is just "Year" (same as the
+        # Advanced Search birth field). Try several, but the URL fallback below is
+        # what actually guarantees the year filter.
         await _type_field(page,
-            'input[placeholder*="Birth Year" i], input[id*="birthYear" i]',
+            'input[placeholder="Year"], input[placeholder*="Birth Year" i], '
+            'input[id*="birthYear" i], input[id*="birthLikeDate" i], '
+            'input[aria-label*="Year" i]',
             year, "Birth Year", log)
 
     for sel in ['button:has-text("SEARCH")', 'button:has-text("Search")',
@@ -182,7 +187,52 @@ async def _search(page, fn, ln, place, year, log):
     except Exception:
         pass
     await asyncio.sleep(5)  # обязательно 5 секунд
+
+    # GUARANTEE the birth-year filter: the form field is unreliable, so if the
+    # results URL doesn't carry the birth date, add it (q.birthLikeDate.from/to)
+    # and reload. Without it the search isn't limited to e.g. 1897 and the right
+    # person never reaches the result list.
+    if year:
+        u = page.url
+        if "birthLikeDate" not in u and "discovery/results" in u:
+            sep = "&" if "?" in u else "?"
+            new_u = (f"{u}{sep}q.birthLikeDate.from={year}"
+                     f"&q.birthLikeDate.to={year}")
+            try:
+                await page.goto(new_u, wait_until="domcontentloaded", timeout=25000)
+                await asyncio.sleep(5)
+                log(f"  → год рождения добавлен в URL результатов: {year}")
+            except Exception as _e:
+                log(f"  !! не вышло добавить год в URL: {type(_e).__name__}")
     log(f"  Результаты: {page.url}")
+
+
+async def _ensure_year_in_url(page, year, log):
+    """Re-add the birth-year filter (q.birthLikeDate.from/to) to the current
+    results / records URL. The HR tab and the Advanced-Search reload rebuild the
+    URL and can drop it, so we call this right before reading rows — otherwise the
+    search isn't limited to the wanted year and the right person never shows up."""
+    if not year:
+        return
+    u = page.url
+    if ("tab=records" not in u and "discovery/results" not in u) \
+            or "birthLikeDate" in u:
+        return
+    sep = "&" if "?" in u else "?"
+    new_u = f"{u}{sep}q.birthLikeDate.from={year}&q.birthLikeDate.to={year}"
+    try:
+        await page.goto(new_u, wait_until="domcontentloaded", timeout=25000)
+        try:
+            await page.wait_for_selector("tbody tr", timeout=15000)
+            log(f"  → год {year} закреплён в URL результатов")
+        except Exception:
+            # no rows with the year filter (wrong param or zero matches) →
+            # fall back to the original URL so we never lose all results.
+            log("  !! с фильтром года строк нет — возвращаюсь без него")
+            await page.goto(u, wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(3)
+    except Exception as _e:
+        log(f"  !! год в URL не закрепился: {type(_e).__name__}")
 
 
 # ── 2. ЛОГИН ЧЕРЕЗ NAV-КНОПКУ (до HR tab) ────────────────────────────────── #
@@ -972,7 +1022,7 @@ def write_docx(path: Path, records: list, qlines: list):
         if rec.get("url"):
             pp = doc.add_paragraph()
             pp.add_run("Источник: ").bold = True
-            _add_link(pp, rec["url"], rec["url"])
+            _add_link(pp, "Открыть запись", rec["url"])
 
         p = doc.add_paragraph()
         p.add_run("Совпадение: ").bold = True
@@ -1030,6 +1080,7 @@ def write_xlsx(path: Path, records: list, qlines: list):
     wb = Workbook(); ws = wb.active; ws.title = "FamilySearch"
     HF = PatternFill("solid", fgColor="006B6B")
     HN = Font(bold=True, color="FFFFFF", size=11)
+    LINKF = Font(color="0563C1", underline="single")
     TS = Side(style="thin", color="B0C8C8")
     T  = Border(left=TS, right=TS, top=TS, bottom=TS)
 
@@ -1053,7 +1104,11 @@ def write_xlsx(path: Path, records: list, qlines: list):
                 rec.get("events",""), rec.get("relationships",""),
                 imgs, rec.get("url","")] + [td.get(f,"") for f in aff]
         for ci, val in enumerate(vals, 1):
-            c = ws.cell(row=ri, column=ci, value=val)
+            c = ws.cell(row=ri, column=ci)
+            if cols[ci-1] == "URL" and val:          # hidden hyperlink, not raw URL
+                c.value = "Открыть"; c.hyperlink = val; c.font = LINKF
+            else:
+                c.value = val
             c.border = T
             c.alignment = Alignment(wrap_text=True, vertical="top")
 
@@ -1136,6 +1191,8 @@ async def run_scraper(
             _prog(12, "Historical Records tab...")
             await _click_hr(page, log)
             if _done(): return summary
+            # the HR tab can drop the birth-year filter — re-pin it
+            await _ensure_year_in_url(page, birth_year, log)
 
             # ── 4. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(20, "Сбор результатов...")
@@ -1193,6 +1250,7 @@ async def run_scraper(
                     _prog(82, "Advanced Search...")
                     await _advanced(page, adv, log)
                     await asyncio.sleep(2)
+                    await _ensure_year_in_url(page, birth_year, log)
                     await _set_60(page, log)
                     _prog(85, "Сбор результатов после Advanced Search...")
                     raw_adv   = await _collect(page, qname, log)
