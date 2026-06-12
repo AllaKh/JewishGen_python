@@ -314,18 +314,27 @@ def _detail_birth_year(rec):
          generation older, so they are NOT used (would wrongly drop the 1897 man
          whose parents were born 1858)."""
     td = rec.get("table_data", {}) or {}
+    # 1) the person's OWN birth field — short-circuits (so correct people whose
+    #    parents/siblings were born earlier are never judged by those years).
     for k, v in td.items():
         if re.search(r"рожд|birth|geboren|naiss|nacim|geb\.", k, re.I):
             m = re.search(r"\b(1[5-9]\d\d|20\d\d)\b", str(v))
             if m:
                 return m.group(1)
+    # 2) no own birth → earliest SPOUSE/CHILD year (same-or-later generation),
+    #    from a structured field OR inlined in a blob («Источник (дерево)» often
+    #    glues «… Жена Cynthia (born West) 1848 …»). NOT parents/siblings (older).
+    _SK = re.compile(r"\b(жена|муж|супруг|spouse|wife|husband|дети|ребён|ребен|"
+                     r"сын|доч|child|children|son|daughter)\b", re.I)
+    _SB = re.compile(r"(?:жена|муж|супруг|spouse|wife|husband|дети|ребён|ребен|"
+                     r"child|children)[^0-9]{0,80}?(1[5-9]\d\d)", re.I)
+    years = []
     for k, v in td.items():
-        if re.search(r"\b(жена|муж|супруг[аи]?|spouse|wife|husband|conjoint|"
-                     r"ehepartner|cónyuge|cônjuge)\b", k, re.I):
-            m = re.search(r"\b(1[5-9]\d\d|20\d\d)\b", str(v))
-            if m:
-                return m.group(1)
-    return ""
+        v = str(v)
+        if _SK.search(k):
+            years += [int(y) for y in re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", v)]
+        years += [int(y) for y in _SB.findall(v)]
+    return str(min(years)) if years else ""
 
 
 def _year_not_earlier(want, got, tol=5):
@@ -1842,49 +1851,76 @@ async def _apply_record_type_filter(page, record_filter, log):
                                "Árboles genealógicos", "Árvores genealógicas",
                                "עצי משפחה"],
     }[record_filter]
-    try:
-        await page.wait_for_load_state("networkidle", timeout=8000)
-    except Exception:
-        pass
-    for lab in wanted:
+    # JS finder/clicker — robust to the hashed CSS-module class. Finds the refine
+    # radio label by text and clicks it + its radio ancestor.
+    CLICK_JS = r"""(labels) => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        const nodes = [...document.querySelectorAll(
+            '[class*="styled_radio_label_paragraph"], [class*="styled_radio_label"], '
+            + '[class*="radio_label"], [class*="RadioLabel"], label, [role="radio"]')];
+        for (const lab of labels) {
+            let el = nodes.find(e => norm(e.textContent) === lab)
+                  || nodes.find(e => norm(e.textContent).includes(lab));
+            if (el) {
+                const tgt = el.closest('label, [class*="radio" i], [role="radio"]') || el;
+                try { tgt.click(); } catch (e) {}
+                try { el.click(); } catch (e) {}
+                return norm(el.textContent).slice(0, 40);
+            }
+        }
+        return '';
+    }"""
+    # wait for the result list to render first
+    for _ in range(20):
         try:
-            # the refine radio's label — the exact leaf class the user gave is
-            # «styled_radio_label_paragraph--<hash>»; fall back to broader radio
-            # labels carrying the text.
-            el = page.locator(
-                '[class*="styled_radio_label_paragraph" i]', has_text=lab).first
-            if not await el.count():
-                el = page.locator(
-                    '[class*="styled_radio_label" i]', has_text=lab).first
-            if not await el.count():
-                el = page.locator(
-                    f'label:has-text("{lab}"), [role="radio"]:has-text("{lab}"), '
-                    f'[class*="radio" i]:has-text("{lab}")').first
-            if not await el.count():
-                continue
-            before = await page.evaluate(
-                "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
-            try:
-                await el.scroll_into_view_if_needed(timeout=3000)
-            except Exception:
-                pass
-            await el.click(timeout=5000, force=True)
-            changed = False
-            for _ in range(24):                      # ~12s for the AJAX refresh
-                await asyncio.sleep(0.5)
-                now = await page.evaluate(
-                    "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
-                if now != before:
-                    changed = True
-                    break
-            log(f"  ✓ Сайт отфильтровал по типу записи: {record_filter}"
-                + ("" if changed else " (набор не изменился — вероятно, и так один тип)"))
-            return True
+            if await page.evaluate(
+                    "() => document.querySelectorAll('a[href*=\"showRecord\"]').length"):
+                break
         except Exception:
-            continue
-    log(f"  !! радио «{record_filter}» на странице результатов не найдено — "
-        f"оставляю свой пост-фильтр")
-    return False
+            pass
+        await asyncio.sleep(0.5)
+    try:
+        before = await page.evaluate(
+            "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
+    except Exception:
+        before = ""
+    # poll for the refine radio (it renders after the cards), across frames,
+    # scrolling the sidebar into view
+    clicked = ""
+    for _ in range(16):                              # ~16s
+        for fr in page.frames:
+            try:
+                clicked = await fr.evaluate(CLICK_JS, wanted)
+            except Exception:
+                clicked = ""
+            if clicked:
+                break
+        if clicked:
+            break
+        try:
+            await page.evaluate("() => window.scrollBy(0, 350)")
+        except Exception:
+            pass
+        await asyncio.sleep(1.0)
+    if not clicked:
+        log(f"  !! радио «{record_filter}» на странице результатов не найдено — "
+            f"оставляю свой пост-фильтр")
+        return False
+    # wait for the results to refresh (first record link changes)
+    changed = False
+    for _ in range(24):                              # ~12s
+        await asyncio.sleep(0.5)
+        try:
+            now = await page.evaluate(
+                "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
+        except Exception:
+            now = before
+        if now != before:
+            changed = True
+            break
+    log(f"  ✓ Сайт отфильтровал по типу записи: {record_filter} (клик: «{clicked}»)"
+        + ("" if changed else " — набор не сменился"))
+    return True
 
 
 async def _search(page, search_url, params, has_cookies, log):
@@ -2725,6 +2761,32 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
                         break
                     await page.evaluate("() => window.scrollBy(0, 400)")
                     await asyncio.sleep(0.5)
+            except Exception:
+                pass
+        elif not full_url:
+            # Non-document portrait (Geni / other tree). info.photo can miss it:
+            # (a) it's lazy/undecoded, (b) its URL contains «geni» which the main
+            # SKIP wrongly excluded (that was «нет фото» on the Geni record). Scroll
+            # and re-grab the largest real image, NOT skipping «geni».
+            try:
+                for _ in range(8):                    # ~4s
+                    got = await page.evaluate(r"""() => {
+                        const SKIP = /avatar|sprite|placeholder|\/logo|brand|\.svg|badge|flag|blank|spacer|loading|pixel|1x1|default|silhouette|no_?photo|no_?image|gender|unknown|facebook|sprite/i;
+                        let best = '', area = 0;
+                        for (const im of document.querySelectorAll('img')) {
+                            const s = im.currentSrc || im.src || im.getAttribute('data-src') || '';
+                            if (!s || !/^https?:|^\/\//.test(s) || SKIP.test(s)) continue;
+                            const a = (im.naturalWidth||0) * (im.naturalHeight||0);
+                            if (a > area) { area = a; best = s; }
+                        }
+                        return {src: best.startsWith('//') ? 'https:'+best : best, area};
+                    }""")
+                    if got and got.get("area", 0) > 140 * 140:
+                        scan2 = got["src"]
+                        break
+                    await page.evaluate("() => window.scrollBy(0, 400)")
+                    await asyncio.sleep(0.5)
+                await page.evaluate("() => window.scrollTo(0, 0)")
             except Exception:
                 pass
         fs_img = d.pop("_fs_img", "")
