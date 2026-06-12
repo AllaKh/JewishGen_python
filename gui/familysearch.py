@@ -9,7 +9,7 @@ Logo: FSlogo.png
 Autosave: .fs_autosave.json
 """
 
-import json, sys
+import json, sys, threading
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -118,16 +118,36 @@ class PwdEdit(QLineEdit):
 
 # ── Background worker thread ──────────────────────────────────────────────── #
 class Worker(QThread):
-    progress = Signal(int, str)
-    finished = Signal(dict)
+    progress     = Signal(int, str)
+    finished     = Signal(dict)
+    request_file = Signal(str)          # emitted when output files already exist
 
     def __init__(self, payload: dict):
         super().__init__()
         self.payload = payload
+        self._file_choice = "overwrite"
+        self._file_ev     = threading.Event()
+
+    def provide_file_choice(self, choice: str):
+        """Called from the main thread after the user picks overwrite/append/skip."""
+        self._file_choice = choice
+        self._file_ev.set()
 
     def run(self):
         import asyncio
         self.payload["progress"] = lambda v, t: self.progress.emit(int(v), str(t))
+
+        def ask_file_conflict(names):
+            """Called from the scraper when output files already exist. Emits
+            request_file → main thread shows a dialog; blocks for the choice."""
+            self._file_choice = "overwrite"
+            self._file_ev.clear()
+            self.request_file.emit("\n".join(names))
+            self._file_ev.wait(timeout=300)     # up to 5 min for the choice
+            return self._file_choice or "overwrite"
+
+        self.payload["ask_file_conflict"] = ask_file_conflict
+
         try:
             result = asyncio.run(_scraper.run_scraper(**self.payload))
         except Exception as exc:
@@ -586,8 +606,31 @@ class FamilySearchApp(QMainWindow):
         self.worker = Worker(self._payload())
         self.worker.progress.connect(
             lambda v, t: (self.pbar.setValue(v), self.stlbl.setText(t)))
+        self.worker.request_file.connect(self._show_file_conflict_dialog)
         self.worker.finished.connect(self._done)
         self.worker.start()
+
+    # ── File-conflict dialog (existing output files) ──────────────────────── #
+    def _show_file_conflict_dialog(self, names: str):
+        """Existing Word/Excel files were found — ask what to do (always)."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("File already exists")
+        box.setText("These output file(s) already exist:\n\n"
+                    f"{names}\n\nWhat would you like to do?")
+        b_over = box.addButton("Overwrite", QMessageBox.DestructiveRole)
+        b_app  = box.addButton("Append new results", QMessageBox.AcceptRole)
+        b_skip = box.addButton("Skip (don't save)", QMessageBox.RejectRole)
+        box.setDefaultButton(b_app)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is b_app:
+            choice = "append"
+        elif clicked is b_skip:
+            choice = "skip"
+        else:
+            choice = "overwrite"
+        self.worker.provide_file_choice(choice)
 
     def _done(self, r: dict):
         self.start_btn.setEnabled(True)

@@ -23,7 +23,7 @@ familysearch_scraper.py
 10. Имена файлов: {FirstNames} {LastNames}.docx / .xlsx
 """
 
-import asyncio, difflib, io, json, os, re, shutil, sys
+import asyncio, difflib, io, json, os, re, shutil, sys, time
 from pathlib import Path
 from docx_util import set_cell_lines
 
@@ -49,7 +49,7 @@ except ImportError:
     _DOCX_OK = False
 
 try:
-    from openpyxl import Workbook
+    from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
     from openpyxl.utils import get_column_letter
     _OPENPYXL_OK = True
@@ -759,10 +759,20 @@ async def _fetch_bytes(ctx, src: str) -> bytes | None:
 # ── 8. НАЙТИ ЛУЧШУЮ КАРТИНКУ НА СТРАНИЦЕ ─────────────────────────────────── #
 
 async def _best_img(page) -> str:
-    best, area = "", 0
-    for el in await page.query_selector_all("img[src]"):
+    """Largest document image on the page. Scrolls first (FS loads the viewer image
+    lazily) and falls back to a viewer-looking image even when its size is still
+    unknown — so view=index viewer pages aren't wrongly reported as «no image»."""
+    try:
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await asyncio.sleep(0.6)
+        await page.evaluate("window.scrollTo(0, 0)")
+        await asyncio.sleep(0.3)
+    except Exception:
+        pass
+    best, area, fallback = "", 0, ""
+    for el in await page.query_selector_all("img"):
         try:
-            src = (await el.get_attribute("src") or "").strip()
+            src = (await el.evaluate("e => e.currentSrc || e.src || ''") or "").strip()
             if not src.startswith("http"):
                 continue
             if any(b.lower() in src.lower() for b in _IMG_SKIP):
@@ -772,9 +782,13 @@ async def _best_img(page) -> str:
             if w * h > area:
                 area = w * h
                 best = src
+            if not fallback and any(k in src.lower() for k in
+                                    ("dz/v1", "apiv2", "/dz/", "sg.familysearch",
+                                     "/records/image", "/ark:")):
+                fallback = src
         except Exception:
             continue
-    return best
+    return best or fallback
 
 
 # ── 9. СКАЧАТЬ ПОЛНОФОРМАТНУЮ JPG ЧЕРЕЗ ВЬЮЕР ────────────────────────────── #
@@ -1054,21 +1068,25 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
     else:
         log("    На странице нет картинки документа")
 
-    # Полноформатная JPG
-    # view=index — индексная запись без изображения документа, скачивать нечего
+    # Полноформатная JPG через вьюер. view=index тоже пробуем — некоторые
+    # индексные записи ИМЕЮТ скачиваемое изображение документа (пользователь
+    # подтвердила: «вот же оно, доступно»). _download_jpg сам кликает картинку /
+    # открывает вьюер и имеет свои fallback-селекторы, если _best_img пуст.
     is_index = "view=index" in url
-    if img_src and not is_index:
+    jp = None
+    if img_src or is_index:
         jp = await _download_jpg(ctx, page, img_dir, img_label, log)
-        rec["images"] = [jp] if jp else []
-    elif is_index and img_src:
-        log("    view=index — сохраняю только превьюшку")
-        if rec["thumb_bytes"]:
-            fp = img_dir / (safe_fn(img_label) + "_preview.jpg")
-            fp.parent.mkdir(parents=True, exist_ok=True)
-            fp.write_bytes(rec["thumb_bytes"])
-            rec["images"] = [str(fp)]
+    if jp:
+        rec["images"] = [jp]
+    elif rec["thumb_bytes"]:
+        fp = img_dir / (safe_fn(img_label) + "_preview.jpg")
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_bytes(rec["thumb_bytes"])
+        rec["images"] = [str(fp)]
+        log(f"    Сохранена превьюшка: {fp.name}")
     else:
         rec["images"] = []
+        log("    Изображение не найдено")
 
     return rec
 
@@ -1087,86 +1105,103 @@ def _add_link(para, text, url):
     run.append(t); hl.append(run); para._p.append(hl)
 
 
-def write_docx(path: Path, records: list, qlines: list):
-    if not _DOCX_OK:
-        raise RuntimeError("python-docx не установлен")
-    doc = Document()
-    s = doc.sections[0]
-    s.page_width  = Mm(297); s.page_height = Mm(210)
-    s.left_margin = s.right_margin = Mm(15)
-    s.top_margin  = s.bottom_margin = Mm(15)
+def _docx_add_record(doc, i, rec):
+    """Render ONE record into an open Document (shared by fresh write + append)."""
+    title = rec.get("title") or rec.get("name", "—")
+    doc.add_heading(f"{i}. {title}", level=2)
 
-    h = doc.add_heading("FamilySearch — Результаты", 0)
-    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph("Параметры:")
-    for ln in qlines:
-        doc.add_paragraph(ln, style="List Bullet")
-    doc.add_paragraph(f"Найдено: {len(records)} (совпадение ≥{MIN_MATCH}%)")
+    if rec.get("url"):
+        pp = doc.add_paragraph()
+        pp.add_run("Источник (FamilySearch): ").bold = True
+        _add_link(pp, "Открыть запись", rec["url"])
+
+    p = doc.add_paragraph()
+    p.add_run("Совпадение: ").bold = True
+    p.add_run(f"{rec.get('score','?')}%")
+
+    rows_data = []
+    if rec.get("collection"):
+        rows_data.append(("Коллекция", rec["collection"]))
+    if rec.get("events"):
+        rows_data.append(("События", rec["events"]))
+    if rec.get("relationships"):
+        rows_data.append(("Родственники", rec["relationships"]))
+    for f, v in rec.get("table_data", {}).items():
+        rows_data.append((str(f), str(v)))
+
+    if rows_data:
+        tbl = doc.add_table(rows=1, cols=2)
+        tbl.style = "Table Grid"
+        hdr = tbl.rows[0].cells
+        hdr[0].text = "Поле"; hdr[1].text = "Значение"
+        for cell in hdr:
+            for run in cell.paragraphs[0].runs:
+                run.bold = True
+        for f, v in rows_data:
+            r = tbl.add_row().cells
+            r[0].text = f; set_cell_lines(r[1], v)
+
     doc.add_paragraph("")
 
+    imgs = rec.get("images", [])
+    tb   = rec.get("thumb_bytes")
+    if imgs and Path(imgs[0]).exists():
+        doc.add_paragraph("Изображение документа:").runs[0].bold = True
+        try:
+            doc.add_picture(imgs[0], width=Inches(4))
+        except Exception:
+            doc.add_paragraph(f"  [{Path(imgs[0]).name}]")
+    elif tb:
+        doc.add_paragraph("Превью документа:").runs[0].bold = True
+        try:
+            doc.add_picture(io.BytesIO(tb), width=Inches(4))
+        except Exception:
+            doc.add_paragraph("  [не удалось вставить]")
+    else:
+        doc.add_paragraph("  [изображение недоступно]")
+    doc.add_paragraph("")
+
+
+def write_docx(path: Path, records: list, qlines: list, append: bool = False):
+    if not _DOCX_OK:
+        raise RuntimeError("python-docx не установлен")
+    existing = append and Path(path).exists()
+    if existing:
+        # Open the existing document and append a clearly-marked new batch.
+        doc = Document(str(path))
+        doc.add_page_break()
+        sep = doc.add_heading(
+            f"➕ Добавлено ещё {len(records)} (совпадение ≥{MIN_MATCH}%) — "
+            f"{time.strftime('%Y-%m-%d %H:%M')}", level=1)
+        sep.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph("Параметры:")
+        for ln in qlines:
+            doc.add_paragraph(ln, style="List Bullet")
+        doc.add_paragraph("")
+    else:
+        doc = Document()
+        s = doc.sections[0]
+        s.page_width  = Mm(297); s.page_height = Mm(210)
+        s.left_margin = s.right_margin = Mm(15)
+        s.top_margin  = s.bottom_margin = Mm(15)
+        h = doc.add_heading("FamilySearch — Результаты", 0)
+        h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph("Параметры:")
+        for ln in qlines:
+            doc.add_paragraph(ln, style="List Bullet")
+        doc.add_paragraph(f"Найдено: {len(records)} (совпадение ≥{MIN_MATCH}%)")
+        doc.add_paragraph("")
+
     for i, rec in enumerate(records, 1):
-        title = rec.get("title") or rec.get("name", "—")
-        doc.add_heading(f"{i}. {title}", level=2)
-
-        if rec.get("url"):
-            pp = doc.add_paragraph()
-            pp.add_run("Источник: ").bold = True
-            _add_link(pp, "Открыть запись", rec["url"])
-
-        p = doc.add_paragraph()
-        p.add_run("Совпадение: ").bold = True
-        p.add_run(f"{rec.get('score','?')}%")
-
-        rows_data = []
-        if rec.get("collection"):
-            rows_data.append(("Коллекция", rec["collection"]))
-        if rec.get("events"):
-            rows_data.append(("События", rec["events"]))
-        if rec.get("relationships"):
-            rows_data.append(("Родственники", rec["relationships"]))
-        for f, v in rec.get("table_data", {}).items():
-            rows_data.append((str(f), str(v)))
-
-        if rows_data:
-            tbl = doc.add_table(rows=1, cols=2)
-            tbl.style = "Table Grid"
-            hdr = tbl.rows[0].cells
-            hdr[0].text = "Поле"; hdr[1].text = "Значение"
-            for cell in hdr:
-                for run in cell.paragraphs[0].runs:
-                    run.bold = True
-            for f, v in rows_data:
-                r = tbl.add_row().cells
-                r[0].text = f; set_cell_lines(r[1], v)
-
-        doc.add_paragraph("")
-
-        imgs = rec.get("images", [])
-        tb   = rec.get("thumb_bytes")
-        if imgs and Path(imgs[0]).exists():
-            doc.add_paragraph("Изображение документа:").runs[0].bold = True
-            try:
-                doc.add_picture(imgs[0], width=Inches(4))
-            except Exception:
-                doc.add_paragraph(f"  [{Path(imgs[0]).name}]")
-        elif tb:
-            doc.add_paragraph("Превью документа:").runs[0].bold = True
-            try:
-                doc.add_picture(io.BytesIO(tb), width=Inches(4))
-            except Exception:
-                doc.add_paragraph("  [не удалось вставить]")
-        else:
-            doc.add_paragraph("  [изображение недоступно]")
-        doc.add_paragraph("")
+        _docx_add_record(doc, i, rec)
     doc.save(path)
 
 
 # ── Excel ─────────────────────────────────────────────────────────────────── #
 
-def write_xlsx(path: Path, records: list, qlines: list):
+def write_xlsx(path: Path, records: list, qlines: list, append: bool = False):
     if not _OPENPYXL_OK:
         raise RuntimeError("openpyxl не установлен")
-    wb = Workbook(); ws = wb.active; ws.title = "FamilySearch"
     HF = PatternFill("solid", fgColor="006B6B")
     HN = Font(bold=True, color="FFFFFF", size=11)
     LINKF = Font(color="0563C1", underline="single")
@@ -1177,36 +1212,67 @@ def write_xlsx(path: Path, records: list, qlines: list):
     for rec in records:
         for k in rec.get("table_data", {}):
             if k not in aff: aff.append(k)
+    # «База» = название сайта (FamilySearch) — чтобы источник был виден в таблице.
+    base_cols = ["#", "База", "Имя", "Совп. %", "Коллекция", "События",
+                 "Родственники", "Файл JPG", "URL"]
 
-    cols = ["#", "Имя", "Совп. %", "Коллекция", "События",
-            "Родственники", "Файл JPG", "URL"] + aff
-    for ci, cn in enumerate(cols, 1):
-        c = ws.cell(row=1, column=ci, value=cn)
-        c.font = HN; c.fill = HF; c.border = T
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    existing = append and Path(path).exists()
+    if existing:
+        wb = load_workbook(str(path)); ws = wb.active
+        header = [ws.cell(row=1, column=c).value
+                  for c in range(1, ws.max_column + 1)]
+        for name in base_cols + aff:
+            if name not in header:
+                header.append(name)
+                c = ws.cell(row=1, column=len(header), value=name)
+                c.font = HN; c.fill = HF; c.border = T
+                c.alignment = Alignment(horizontal="center",
+                                        vertical="center", wrap_text=True)
+        start_row = ws.max_row + 1
+        start_num = ws.max_row - 1            # records already in the sheet
+    else:
+        wb = Workbook(); ws = wb.active; ws.title = "FamilySearch"
+        header = base_cols + aff
+        for ci, cn in enumerate(header, 1):
+            c = ws.cell(row=1, column=ci, value=cn)
+            c.font = HN; c.fill = HF; c.border = T
+            c.alignment = Alignment(horizontal="center",
+                                    vertical="center", wrap_text=True)
+        start_row = 2
+        start_num = 0
+    col_idx = {name: i + 1 for i, name in enumerate(header)}
 
-    for ri, rec in enumerate(records, 2):
+    for n, rec in enumerate(records):
+        ri   = start_row + n
         td   = rec.get("table_data", {})
         imgs = "\n".join(Path(p).name for p in rec.get("images", []))
-        vals = [ri-1, rec.get("title", rec.get("name","")),
-                rec.get("score",""), rec.get("collection",""),
-                rec.get("events",""), rec.get("relationships",""),
-                imgs, rec.get("url","")] + [td.get(f,"") for f in aff]
-        for ci, val in enumerate(vals, 1):
+        row  = {"#": start_num + n + 1, "База": "FamilySearch",
+                "Имя": rec.get("title", rec.get("name", "")),
+                "Совп. %": rec.get("score", ""),
+                "Коллекция": rec.get("collection", ""),
+                "События": rec.get("events", ""),
+                "Родственники": rec.get("relationships", ""),
+                "Файл JPG": imgs, "URL": rec.get("url", "")}
+        for f in aff:
+            row[f] = td.get(f, "")
+        for name, val in row.items():
+            ci = col_idx.get(name)
+            if not ci:
+                continue
             c = ws.cell(row=ri, column=ci)
-            if cols[ci-1] == "URL" and val:          # hidden hyperlink, not raw URL
+            if name == "URL" and val:            # hidden hyperlink, not raw URL
                 c.value = "Открыть"; c.hyperlink = val; c.font = LINKF
             else:
                 c.value = val
             c.border = T
             c.alignment = Alignment(wrap_text=True, vertical="top")
 
-    for ci in range(1, len(cols)+1):
+    for ci in range(1, len(header) + 1):
         ltr = get_column_letter(ci)
-        mw  = max(len(str(cols[ci-1])),
+        mw  = max(len(str(header[ci-1] or "")),
                   *(len(str(ws.cell(row=r, column=ci).value or "").split("\n")[0])
-                    for r in range(2, ws.max_row+1)), 8)
-        ws.column_dimensions[ltr].width = min(mw+4, 60)
+                    for r in range(2, ws.max_row + 1)), 8)
+        ws.column_dimensions[ltr].width = min(mw + 4, 60)
     wb.save(path)
 
 
@@ -1228,6 +1294,7 @@ async def run_scraper(
     log                      = print,
     progress                 = None,
     cancel_event             = None,
+    ask_file_conflict        = None,  # callable(list[str]) → "overwrite"/"append"/"skip"
 ) -> dict:
 
     def _prog(pct, txt):
@@ -1372,15 +1439,38 @@ async def run_scraper(
             _prog(96, "Сохранение файлов...")
             docx_p = output_folder / f"{file_base}.docx"
             xlsx_p = output_folder / f"{file_base}.xlsx"
+
+            # Если файлы уже есть — ВСЕГДА спросить: перезаписать / дополнить /
+            # пропустить. Без callback или без конфликта — обычная перезапись.
+            existing_names = [p.name for p, want in
+                              ((docx_p, want_docx), (xlsx_p, want_xlsx))
+                              if want and records and p.exists()]
+            decision = "overwrite"
+            if existing_names and ask_file_conflict:
+                try:
+                    decision = (ask_file_conflict(existing_names)
+                                or "overwrite").lower()
+                except Exception as _e:
+                    log(f"  !! диалог конфликта файлов: {_e}")
+                    decision = "overwrite"
+                log(f"  → Файл(ы) уже существуют {existing_names} → выбор: {decision}")
+            append = (decision == "append")
+
             sd = sx = False
-            if want_docx and records:
-                write_docx(docx_p, records, qlines)
-                sd = True
-                log(f"  Word: {docx_p}")
-            if want_xlsx and records:
-                write_xlsx(xlsx_p, records, qlines)
-                sx = True
-                log(f"  Excel: {xlsx_p}")
+            if decision == "skip":
+                log("  → Сохранение пропущено по выбору пользователя "
+                    "(существующие файлы не тронуты).")
+            else:
+                if want_docx and records:
+                    write_docx(docx_p, records, qlines, append=append)
+                    sd = True
+                    log(f"  Word: {docx_p}"
+                        f"{' (дополнен)' if append and docx_p.name in existing_names else ''}")
+                if want_xlsx and records:
+                    write_xlsx(xlsx_p, records, qlines, append=append)
+                    sx = True
+                    log(f"  Excel: {xlsx_p}"
+                        f"{' (дополнен)' if append and xlsx_p.name in existing_names else ''}")
             _prog(100, f"Готово — {len(records)} записей.")
             summary.update({
                 "ok":            True,
