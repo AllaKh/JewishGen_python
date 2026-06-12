@@ -42,6 +42,13 @@
     "window_cls": "gui.gwar.GwarApp"
   },
   {
+    "key": "Pogromslogo",
+    "name": "Jewish Pogroms",
+    "subtitle": "Жертвы еврейских погромов 1917–1922 — jewishpogroms.info",
+    "action": "open_window",
+    "window_cls": "gui.pogroms.PogromsApp"
+  },
+  {
     "key": "Memlogo",
     "name": "Мемориал",
     "subtitle": "Soviet repression victim databases (Memorial / GULAG.CZ) — memsearch.org",
