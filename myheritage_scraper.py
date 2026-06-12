@@ -370,25 +370,31 @@ def safe_fn(s, n=80):
     return re.sub(r'\s+', '_', re.sub(r'[\\/*?:"<>|]', '_', s.strip()))[:n] or "result"
 
 # ── Cookie banner ─────────────────────────────────────────────────────────── #
-_COOKIE_TEXTS = ["Принять все", "Принять всё", "Принять", "Соглашаюсь",
-                 "Разрешить все", "Accept all", "Accept All", "Accept",
-                 "I Agree", "Agree", "Allow all", "OK",
-                 "לקבל הכל", "אישור", "קבל הכל"]
+# Specific «accept ALL» variants only — NOT bare «Принять»/«Accept»/«OK», which
+# could match «Принять только необходимые» / «Accept only necessary».
+_COOKIE_TEXTS = ["Принять все", "Принять всё", "Разрешить все", "Разрешить всё",
+                 "Accept all", "Accept All", "Allow all", "Allow All",
+                 "Соглашаюсь со всеми", "לקבל הכל", "קבל הכל"]
+# ONLY accept-specific controls — NEVER a generic «first button in a cookie box»
+# (that grabbed a footer «Cookie policy» / «Decline» button and BROKE the login).
 _COOKIE_SELS = ["#onetrust-accept-btn-handler", ".onetrust-accept-btn-handler",
-                '[data-testid*="accept" i]', '[aria-label*="Accept" i]',
-                '[id*="accept-all" i]', 'button[id*="accept" i]',
-                '[class*="cookie"] button', '[id*="cookie"] button',
-                '[class*="consent"] button', '[class*="gdpr"] button']
+                'button[id*="accept-all" i]', 'button[id*="acceptall" i]',
+                'button[aria-label*="Accept all" i]',
+                'button[aria-label*="Принять все" i]',
+                '[data-testid*="accept-all" i]', '[data-testid*="acceptall" i]']
 
 
 async def _accept_cookies(page, log):
-    """Accept the cookie / consent banner wherever it shows — the MAIN frame OR an
-    iframe (MyHeritage's form lives in one), and it can load a moment after the
-    page, so retry a few times. Always safe to call (no-op when there's no banner).
-    Returns True once a banner was dismissed."""
+    """Accept the cookie / consent banner wherever it shows — MAIN frame OR an
+    iframe — retrying a few times (it can load late). It ONLY clicks an explicit
+    ACCEPT control: pass 1 = a button whose TEXT is «Принять все»/«Accept all»
+    (across ALL frames first, so a stray cookie-link in the main frame can't be
+    clicked before the real banner in an iframe); pass 2 = accept-specific
+    selectors (OneTrust / accept-all). Always safe; returns True if dismissed."""
     for _ in range(3):                                # banner can load late
         await asyncio.sleep(1.0)
-        for fr in page.frames:                        # includes the main frame
+        # PASS 1 — explicit accept BUTTON TEXT, all frames before any selector
+        for fr in page.frames:
             for text in _COOKIE_TEXTS:
                 try:
                     btn = fr.get_by_role(
@@ -400,6 +406,8 @@ async def _accept_cookies(page, log):
                         return True
                 except Exception:
                     pass
+        # PASS 2 — accept-SPECIFIC selectors only
+        for fr in page.frames:
             for sel in _COOKIE_SELS:
                 try:
                     el = fr.locator(sel).first
@@ -1247,9 +1255,18 @@ async def _login(page, login_url, has_cookies,
 
         log("  !! 2FA: ни один код не подошёл.")
 
-    # Neither success nor 2FA → report any error message
+    # Neither success nor 2FA → report any error message / anti-bot block
     cur = page.url
     try:
+        body = (await page.evaluate(
+            "() => (document.body.innerText || '').slice(0, 600)") or "").lower()
+        if any(k in body for k in (
+                "robot", "captcha", "recaptcha", "подозрительн", "too many",
+                "слишком много", "заблокир", "blocked", "unusual activity",
+                "необычн", "verify you", "докажите")):
+            log("  !! Похоже, MyHeritage временно ОГРАНИЧИЛ вход (анти-бот/капча). "
+                "Это не баг кода — частые попытки входа усугубляют. Подожди "
+                "10–15 мин и войди в браузере профиля вручную один раз.")
         err = (await page.locator('[class*="error" i],[role="alert"]')
                .first.text_content(timeout=2000) or "").strip()
         if err:
