@@ -8,20 +8,19 @@ familysearch_scraper.py
 2.  Ждать 5 секунд результаты.
 3.  Кликнуть таб Historical Records [data-testid="hr-tab"].
     URL меняется на ?tab=records — ждать ИМЕННО ЭТО, не networkidle.
-4.  Кликнуть ПЕРВЫЙ результат → если редирект на логин → залогиниться ОДИН РАЗ:
-      page.fill('#userName', email)
-      page.fill('#password', password)
-      page.click('#login')
-5.  Все записи открываются на ОДНОЙ главной странице (не в новых вкладках) —
-    сессия не теряется, логин не повторяется.
-6.  На каждой странице записи: скопировать текст + превьюшку → Word.
-7.  Кликнуть картинку → вьюер → download → JPG Only →
+4.  ВОЙТИ ОДИН РАЗ ДО открытия записей (_sign_in_if_needed: nav-кнопка
+    [data-testid="no-loggedin-sign-in-button"] → #userName/#password/#login).
+    С персистентным профилем на 2-м прогоне уже залогинены → пропуск.
+5.  Если ЕСТЬ advanced — ДО скрапинга: reload → HR tab → Advanced Search попап
+    [data-testid="advanced-search-form-button"] → заполнить поля/супругу →
+    Search → заново собрать (advanced сужает выдачу ДО скрапинга).
+6.  Собрать результаты ≥80%.
+7.  Все записи открываются на ОДНОЙ главной странице (не в новых вкладках) —
+    сессия одна, логин не повторяется. После каждой → назад на results_url.
+8.  На каждой странице записи: текст + превьюшку → Word.
+9.  Кликнуть картинку → вьюер → download → JPG Only →
     [data-testid="full-text-confirm-download"] → сохранить JPG.
-8.  Вернуться на результаты (go_back).
-9.  Если НЕТ advanced: оставшиеся результаты ≥80%.
-10. Если ЕСТЬ advanced: reload (обязательно!) → Advanced Search →
-    [data-testid="advanced-search-form-button"] → все результаты ≥80%.
-11. Имена файлов: {FirstNames} {LastNames}.docx / .xlsx
+10. Имена файлов: {FirstNames} {LastNames}.docx / .xlsx
 """
 
 import asyncio, difflib, io, json, os, re, shutil, sys
@@ -311,35 +310,43 @@ async def _ensure_year_in_url(page, year, log, exact=None):
 
 # ── 2. ЛОГИН ЧЕРЕЗ NAV-КНОПКУ (до HR tab) ────────────────────────────────── #
 
-async def _sign_in_if_needed(page, email: str, password: str, log) -> bool:
-    """
-    Смотрим есть ли [data-testid='no-loggedin-sign-in-button'].
-    Если есть — кликаем, логинимся, возвращаемся на results.
-    Если нет — уже залогинены.
-    Без логина HR tab показывает 0 строк!
-    """
+async def _sign_in_if_needed(page, email: str, password: str,
+                             logged_in_ref: list, log) -> bool:
+    """Sign in ONCE up front (via the nav «Sign In» button) so records open
+    already logged-in and Advanced Search runs on a logged-in results page. With
+    the persistent profile the session is usually already there → the button is
+    absent → skip. Sets logged_in_ref[0]=True only on an ACTUAL successful login,
+    so a false «already logged in» still lets _scrape_page log in at record #1."""
     log("  Проверяю авторизацию...")
     results_url = page.url
-
     try:
         btn = page.locator('[data-testid="no-loggedin-sign-in-button"]').first
         await btn.wait_for(state="visible", timeout=6000)
-        log("  Не авторизован — кликаю Sign In...")
+    except Exception:
+        log("  Уже авторизованы (кнопка Sign In не видна) — вход не нужен")
+        return True
+
+    log("  Не авторизованы — вхожу ОДИН раз до открытия записей...")
+    try:
         await btn.click(timeout=5000)
         try:
-            await page.wait_for_url(lambda u: "login" in u, timeout=10000)
+            await page.wait_for_url(
+                lambda u: "login" in u or "ident.familysearch" in u, timeout=12000)
         except Exception:
             pass
         await asyncio.sleep(2)
         ok = await _login(page, email, password, log)
-        if ok and "discovery/results" not in page.url:
-            log("  Возвращаюсь на страницу результатов...")
-            await page.goto(results_url, wait_until="domcontentloaded", timeout=20000)
-            await asyncio.sleep(3)
+        if ok:
+            logged_in_ref[0] = True
+            if "discovery/results" not in page.url:
+                log("  Возвращаюсь на страницу результатов...")
+                await page.goto(results_url,
+                                wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(3)
         return ok
-    except Exception:
-        log("  Уже авторизован (кнопка Sign In не найдена)")
-        return True
+    except Exception as e:
+        log(f"  !! Sign in: {e}")
+        return False
 
 
 # ── 3. ТАБ HISTORICAL RECORDS ─────────────────────────────────────────────── #
@@ -552,7 +559,7 @@ async def _collect(page, qname: str, log) -> list:
                 except Exception:
                     return (await c.text_content() or "").strip()
             evts = await _celltext(cells[idx+1]) if len(cells) > idx+1 else ""
-            rels = _split_rels(await _celltext(cells[idx+2])) if len(cells) > idx+2 else ""
+            rels = await _celltext(cells[idx+2]) if len(cells) > idx+2 else ""
             score = round(_sim(qname, name), 1)
             results.append({"url": url, "name": name, "coll": coll,
                             "evts": evts, "rels": rels, "score": score})
@@ -590,7 +597,8 @@ async def _advanced(page, adv: dict, log):
     log("  Открываю Advanced Search...")
     try:
         btn = page.locator('[data-testid="advanced-search-form-button"]').first
-        await btn.wait_for(state="visible", timeout=5000)
+        await btn.wait_for(state="visible", timeout=10000)
+        await btn.scroll_into_view_if_needed(timeout=3000)
         await btn.click(timeout=5000)
         await asyncio.sleep(1.5)
         log("  Модальное окно открыто")
@@ -1281,17 +1289,50 @@ async def run_scraper(
                           place_lived, birth_year, log, exact=exact)
             if _done(): return summary
 
-            # ── 2. ТАБ HISTORICAL RECORDS ─────────────────────────────── #
-            # HR tab работает без логина (ограниченные результаты).
-            # Логин произойдёт автоматически при открытии первой записи.
+            # ── 2. ТАБ HISTORICAL RECORDS (строки видны без логина) ───── #
             _prog(12, "Historical Records tab...")
             await _click_hr(page, log)
             if _done(): return summary
             # the HR tab can drop the birth-year filter — re-pin it
             await _ensure_year_in_url(page, birth_year, log, exact=exact)
 
-            # ── 4. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
-            _prog(20, "Сбор результатов...")
+            # ── 3. ЛОГИН ОДИН РАЗ — ДО открытия записей ──────────────── #
+            # Sign in now (or skip if the persistent profile already holds the
+            # session) so the first record is NEVER the login page and Advanced
+            # Search opens on a logged-in results page.
+            _prog(16, "Sign in...")
+            await _sign_in_if_needed(page, email or "", password or "",
+                                     logged_in_ref, log)
+            if _done(): return summary
+
+            # ── 4. РАСШИРЕННЫЙ ПОИСК ДО СКРАПИНГА ────────────────────── #
+            # Advanced Search narrows the result set BEFORE we scrape (e.g. the
+            # one spouse match), so we collect exactly the right records — not a
+            # dozen namesakes. It runs on a logged-in page now, so the form
+            # button is reliably present.
+            if has_adv:
+                _prog(20, "Advanced Search: reload...")
+                await page.reload(wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(3)
+                await _click_hr(page, log)
+                await asyncio.sleep(1)
+                _prog(24, "Advanced Search...")
+                await _advanced(page, adv, log)
+                await asyncio.sleep(2)
+                await _ensure_year_in_url(page, birth_year, log, exact=exact)
+                # the advanced form rebuilt the URL — re-pin exact name/surname/place
+                u_now = page.url
+                u_ex  = _apply_exact(u_now, exact)
+                if u_ex != u_now and "discovery/results" in u_now:
+                    try:
+                        await page.goto(u_ex, wait_until="domcontentloaded",
+                                        timeout=20000)
+                        await asyncio.sleep(3)
+                    except Exception:
+                        pass
+
+            # ── 5. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
+            _prog(28, "Сбор результатов...")
             await _set_60(page, log)
             raw       = await _collect(page, qname, log)
             qualified = [r for r in raw if r["score"] >= MIN_MATCH]
@@ -1303,21 +1344,14 @@ async def run_scraper(
                                 "message": f"Нет записей ≥{MIN_MATCH}%."})
                 return summary
 
-            # ── 4-5. СКРАПИНГ ЗАПИСЕЙ на ОДНОЙ главной странице ──────── #
-            # Все записи открываются на page — сессия гарантированно одна.
+            # ── 6. СКРАПИНГ ОТФИЛЬТРОВАННЫХ ЗАПИСЕЙ (одна сессия) ─────── #
+            # All records open on the same `page` — the session stays one.
             results_url = page.url
             records: list = []
-
-            def _all_to_scrape():
-                return qualified  # будет переопределено после advanced
-
-            to_scrape = list(qualified)
-
-            for i, r in enumerate(to_scrape, 1):
+            for i, r in enumerate(qualified, 1):
                 if _done(): break
-                _prog(20 + int(55 * i / len(to_scrape)),
-                      f"[{i}/{len(to_scrape)}] {r['name'][:60]}...")
-
+                _prog(30 + int(64 * i / len(qualified)),
+                      f"[{i}/{len(qualified)}] {r['name'][:60]}...")
                 det = await _scrape_page(ctx, page, r["url"], r["name"],
                                          images_root, logged_in_ref,
                                          email or "", password or "", log)
@@ -1327,8 +1361,6 @@ async def run_scraper(
                 det["relationships"] = r.get("rels", "")
                 records.append(det)
                 log(f"  ✓  {det['title'][:70]}  ({r['score']}%)")
-
-                # Вернуться на results_url напрямую (go_back ненадёжен после login redirect chain)
                 await page.goto(results_url,
                                 wait_until="domcontentloaded", timeout=20000)
                 try:
@@ -1336,52 +1368,7 @@ async def run_scraper(
                 except Exception:
                     await asyncio.sleep(3)
 
-                # После первой записи: если есть advanced search
-                if i == 1 and has_adv:
-                    _prog(78, "Advanced Search: обязательный reload...")
-                    await page.reload(wait_until="domcontentloaded", timeout=20000)
-                    await asyncio.sleep(3)
-                    await _click_hr(page, log)
-                    await asyncio.sleep(1)
-                    _prog(82, "Advanced Search...")
-                    await _advanced(page, adv, log)
-                    await asyncio.sleep(2)
-                    await _ensure_year_in_url(page, birth_year, log, exact=exact)
-                    await _set_60(page, log)
-                    _prog(85, "Сбор результатов после Advanced Search...")
-                    raw_adv   = await _collect(page, qname, log)
-                    qualified = [r for r in raw_adv if r["score"] >= MIN_MATCH]
-                    log(f"  После Advanced: {len(qualified)}")
-                    results_url = page.url
-                    # Перезапустить цикл по всем результатам
-                    to_scrape = list(qualified)
-                    records   = []
-                    break  # выйти из первого цикла, войти во второй
-
-            # Если был advanced — второй проход по всем результатам
-            if has_adv and to_scrape:
-                for i, r in enumerate(to_scrape, 1):
-                    if _done(): break
-                    _prog(85 + int(10 * i / len(to_scrape)),
-                          f"[{i}/{len(to_scrape)}] {r['name'][:60]}...")
-                    det = await _scrape_page(ctx, page, r["url"], r["name"],
-                                             images_root, logged_in_ref,
-                                             email or "", password or "", log)
-                    det["score"]         = r["score"]
-                    det["collection"]    = r.get("coll", "")
-                    det["events"]        = r.get("evts", "")
-                    det["relationships"] = r.get("rels", "")
-                    records.append(det)
-                    log(f"  ✓  {det['title'][:70]}  ({r['score']}%)")
-                    await page.goto(results_url,
-                                    wait_until="domcontentloaded", timeout=20000)
-                    try:
-                        await page.wait_for_selector("tbody tr", timeout=8000)
-                    except Exception:
-                        await asyncio.sleep(3)
-
-
-            # ── 6. СОХРАНЕНИЕ ──────────────────────────────────────── #
+            # ── 7. СОХРАНЕНИЕ ──────────────────────────────────────── #
             _prog(96, "Сохранение файлов...")
             docx_p = output_folder / f"{file_base}.docx"
             xlsx_p = output_folder / f"{file_base}.xlsx"
