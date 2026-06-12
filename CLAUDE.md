@@ -294,6 +294,16 @@ no_viewport=True, accept_downloads=True
 
 ---
 
+## Jewish Pogroms (pogroms_scraper.py + gui/pogroms.py)
+
+`jewishpogroms.info` — жертвы еврейских погромов в Российской империи (ПМВ/Гражданская). Карточка в лончере ПЕРЕД «Мемориалом», key `Pogromslogo`. **Полностью открытый WordPress, логина нет. Браузер НЕ нужен** (urllib, как wikisource): поиск = WP-AJAX POST `admin-ajax.php` `action=pogroms_search`, ответ — готовый HTML таблицы; карточки — обычные GET-страницы.
+
+- **406 Not Acceptable на голый urllib** — слать браузерные заголовки (UA Chrome + Accept + Accept-Language), для AJAX ещё `X-Requested-With: XMLHttpRequest` и `Referer`.
+- **Форма**: `family_name` (ТОЛЬКО латиница — сайт сам режет ввод `[A-Za-z *]`), чекбокс `soundslike=yes` (невыбранный чекбокс в POST НЕ передаётся — это и есть точное совпадение), 10 дропдаунов: `region, city, rec_type, incident, notes, found, register, case_number, archive, is_alive`. Их опции (значения из БД сайта, ~13к строк) лежат в **`config/pogroms_options.json`** — извлечены из инлайн-`<select>` главной; GUI грузит оттуда (комбо editable, `setMinimumContentsLength` — иначе длинные опции раздувают окно до 1500px).
+- **Таблица результатов**: `<td class='pogroms-optional pogroms-<key>'>` с `<strong>метка</strong><span><a href='карточка'>значение</a></span>`; КАЖДАЯ ячейка строки ссылается на карточку ЭТОГО человека (`/pogroms_people/pogroms-post/?id=N`, у каждой строки свой id). Колонки: Region, Page, City, Record type, Family name, Name, Patronymic, Age, Incident, Is Alive, Notes, Found, Register, Case, Archive. Таблица → Word И Excel.
+- **Карточка**: `h1.pogroms-person-title` (полное имя), `ul.pogroms-person-info` → `<li><span class="pogroms-person-info-type">Метка: </span> значение</li>` (Registration/Age/Incident/Is alive/Source), `div.pogroms-person-description`, `div.pogroms-person-notes`. Карточка → **ТОЛЬКО Word**. **Пустые метки ПИСАТЬ ВСЕГДА** (метка слева, пустая ячейка справа — требование пользователя). Фото `ul.pogroms-person-photos` — почти всегда пустой URL-каталог `uploads/pogroms/<id>/` (битая иконка) → качать best-effort, сохранять только реальные image-bytes (magic-check).
+- Word: альбомная, шапка «Jewish Pogroms — результаты поиска», таблица результатов 15 колонок, затем по человеку: heading + 2-колоночная таблица всех меток + «Источник» ссылкой. Excel: `#, База (=Jewish Pogroms), <15 колонок>, URL («Открыть»)`. Файлы `pogroms_{Family}.docx/.xlsx`, конфликт overwrite/append/skip как в MH/FS.
+
 ## Memsearch (memsearch_scraper.py + gui/memsearch.py)
 
 Мета-поиск по базам жертв советских репрессий (Memorial / GULAG.CZ), `memsearch.org`. **Это и есть бывшая карточка «Мемориал»** — НЕ создавать вторую (объединено в одну, key `Memlogo`). Логина нет. SPA. Сайт мне напрямую недоступен (Chrome MCP блокирует домен + сервер отдаёт 403) → структуру брал у пользователя из DevTools, Playwright на её машине сайт открывает.
@@ -351,7 +361,7 @@ no_viewport=True, accept_downloads=True
 ### Сохранение СКАНА документа (пользователь дала кнопку с ПЕРВОГО раза — я прошляпил)
 - **НАЖАТЬ `#btnSaveLocalImage`** (aria «Сохранить изображение»), когда документ загрузился (`img[usemap]` готов — скан это **image-map**, `<area>` = кликабельные строки), и поймать скачивание (`expect_download`). По каждой карточке.
 - **НЕ ТРОГАТЬ «Скачать документы»** (`#heroCardBookletForm`, class `hero-card-booklet`) — это генератор **альбома**, не нужен.
-- **Пустая карточка ↔ реальный документ — различать по ВИДИМОСТИ кнопки** `#btnSaveLocalImage` (`offsetParent !== null`): скрытая копия кнопки сидит в DOM даже у карточек БЕЗ документа (наличие в DOM = ложный «документ есть» → зависания на пустых). Кнопка НЕ видима ~2-3с → пропуск сразу. Кнопка ВИДИМА → документ точно есть → скан **ЖДАТЬ долго** (до ~30с; правило пользователя: «если кнопка видима, скан надо ЖДАТЬ — и 6с может не хватить»), потом жать сохранение даже если image-map не декодировался. **НЕ перезагружать страницу** при незагрузившемся скане — reload-retry удваивал ожидание.
+- **НЕ «оптимизировать» ожидания сканов — документы ДОРОЖЕ времени** («Лучше уж подвисай»). Я дважды пытался ускорить пустые карточки и оба раза ТЕРЯЛ реальные документы → пользователь велела откатить всё (git checkout 881ae6e). Что НЕ работает: (а) проверка кнопки `#btnSaveLocalImage` по `offsetParent !== null` — у реальных документов кнопка бывает «невидимой» по этому критерию → записи с 3-4 документами получали «документов нет»; (б) пропуск карточки без декодированного image-map — терял сканы; (в) удаление reload-retry — повторная загрузка СПАСАЕТ незагрузившиеся сканы. РАБОЧАЯ схема (оставить как есть): кнопка в DOM (4×1с) → ждать image-map 14×1с → жать сохранение В ЛЮБОМ СЛУЧАЕ (`expect_download` 15с + фолбэк `_find_scan`) → если ничего не сохранилось, reload страницы и второй полный проход.
 
 ### Word
 - **Отдельная таблица на КАЖДУЮ карточку** (тип в заголовке) + шапка (сводка/боевой путь/доп.). Между карточками — **один** пустой абзац (НИКОГДА не два).

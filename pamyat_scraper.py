@@ -539,48 +539,41 @@ async def _find_scan(page, secs: int) -> str:
     return ""
 
 
-async def _grab_scan(page, images_dir, base, rec, log):
+async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
     """For each document card: select it, wait for its scan to load, then CLICK
     the «Сохранить изображение» button (#btnSaveLocalImage) and capture the
-    download. Cards without a document are skipped fast. Returns
-    (saved_any, saw_document) — saw_document=True means a real document was found,
-    so the caller may reload once if the scan stalled; False means there's nothing
-    to wait for and the caller must NOT reload (что и вешало на пустых страницах)."""
+    download. Cards without a document are skipped fast. Returns True if ≥1 saved."""
     cards = page.locator(".hero-card-docs-item")
     try:
         nc = await cards.count()
     except Exception:
         nc = 0
-    saved, saw_doc = 0, False
-    _vis_btn_js = ("() => { const b=document.querySelector('#btnSaveLocalImage');"
-                   " return !!(b && b.offsetParent !== null); }")
+    saved = 0
     for k in range(min(nc, 12)):
         try:
             await cards.nth(k).scroll_into_view_if_needed(timeout=2000)
             await cards.nth(k).click(timeout=2500)
         except Exception:
             continue
-        # Does this card actually carry a document? The save button must be
-        # VISIBLE (offsetParent) — a hidden #btnSaveLocalImage sits in the DOM
-        # even on document-less cards and made us wait/reload for nothing.
-        # Check immediately, then poll ~2s max → empty card skipped fast.
+        # Does this card actually carry a document? The save button appears in the
+        # DOM only then — no button after a few seconds → no document → skip fast
+        # (this is what stops the minute-long hang on document-less cards).
         has_btn = False
-        for _ in range(3):
+        for _ in range(4):
+            await asyncio.sleep(1)
             try:
-                has_btn = await page.evaluate(_vis_btn_js)
+                has_btn = await page.evaluate(
+                    "() => !!document.querySelector('#btnSaveLocalImage')")
             except Exception:
                 has_btn = False
             if has_btn:
                 break
-            await asyncio.sleep(1)
         if not has_btn:
             continue                        # no document on this card → skip fast
-        saw_doc = True
-        # Visible button → the document is REAL and its scan WILL load («если
-        # кнопка видима, скан надо ЖДАТЬ — и 6с может не хватить»). Wait up to
-        # ~30s, continuing the moment it's decoded; only EMPTY cards skip fast.
-        ready = False
-        for _ in range(30):
+        # It HAS a document → it loads SLOWLY, so wait (much longer than before) for
+        # the image-map scan to finish AND the button to become visible.
+        for _ in range(14):
+            await asyncio.sleep(1)
             try:
                 ready = await page.evaluate(
                     "() => { const b=document.querySelector('#btnSaveLocalImage');"
@@ -590,8 +583,7 @@ async def _grab_scan(page, images_dir, base, rec, log):
                 ready = False
             if ready:
                 break
-            await asyncio.sleep(1)
-        # Even if the image-map check didn't pass, the button IS visible →
+        # Whether or not the strict image-map check passed, a button exists here →
         # attempt the save anyway (some documents may not be image-maps).
         # talking filename built from THIS card's own document name
         label = ""
@@ -635,7 +627,7 @@ async def _grab_scan(page, images_dir, base, rec, log):
                             log(f"      🖼 документ сохранён (img): {dest.name}")
             except Exception:
                 pass
-    return saved > 0, saw_doc
+    return saved > 0
 
 
 async def _save_img_url(page, url, dest) -> bool:
@@ -818,13 +810,18 @@ async def _save_media(page, rec, images_dir, base, log):
     try:
         await _tab_block(page, ["документ", "documents"], 1.5, log)
         await asyncio.sleep(1.5)
-        # ONE pass, NO reload-retry: страницы без документов уходят за секунды,
-        # незагрузившийся скан просто пропускается (перезагрузка удваивала
-        # ожидание на каждой пустой записи — пользователь требовала убрать).
-        ok, saw_doc = await _grab_scan(page, images_dir, base, rec, log)
-        if not ok:
-            log("      (документов у этой записи нет — пропускаю)" if not saw_doc
-                else "      (скан документа не загрузился — пропускаю)")
+        if await _grab_scan(page, images_dir, base, rec, log, secs=12):
+            return
+        log("      ↻ скан долго грузится — обновляю страницу")
+        try:
+            await page.reload(wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(2.5)
+            await _tab_block(page, ["документ", "documents"], 1.5, log)
+            if await _grab_scan(page, images_dir, base, rec, log, secs=12):
+                return
+        except Exception:
+            pass
+        log("      (скан документа так и не загрузился)")
     except Exception:
         pass
 
@@ -1000,6 +997,10 @@ def _docx_add_person(doc, i, rec):
     if docs:
         doc.add_paragraph().add_run(f"Документы ({len(docs)})").bold = True
     for j, d in enumerate(docs, 1):
+        if j > 1:
+            doc.add_paragraph("")      # spacing BETWEEN cards only — nothing
+                                       # after the last one (kept an extra blank
+                                       # before «Источник»)
         title = d.get("name") or "Документ"
         if d.get("type"):
             title += f" — {d['type']}"
@@ -1008,7 +1009,6 @@ def _docx_add_person(doc, i, rec):
             _kv_table(doc, d["fields"])
         elif d.get("text"):
             doc.add_paragraph(d["text"])
-        doc.add_paragraph("")          # ← spacing between cards
 
     # Document SCANS (the slow-loading archival pages): saved to disk; embedded
     # at a moderate size (was too large before — «УМЕНЬШАЙ»).
