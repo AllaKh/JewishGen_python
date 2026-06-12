@@ -227,28 +227,28 @@ class MyHeritageApp(QMainWindow):
         self._build_ui()
         self._load()
 
-    def _match_btn(self, label, options):
-        """Build a per-field dropdown («match ▾») whose popup menu holds the
-        field's checkable match options — like MyHeritage's own right-click menu
-        on each input. `options`: list of (key, text, default). The checkable
-        QActions are stored in self._match_actions[key] for save/load/payload."""
-        btn = QToolButton()
-        btn.setText(label)
-        btn.setPopupMode(QToolButton.InstantPopup)
-        btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet("QToolButton{padding:4px 8px;} "
-                          "QToolButton::menu-indicator{image:none;}")
-        menu = QMenu(btn)
+    def _match_row(self, label, options):
+        """A row of ALWAYS-VISIBLE match-option checkboxes (shown like the docx /
+        xlsx checkboxes, not hidden behind a dropdown). `options`: list of
+        (key, text, default). Stored in self._match_actions[key] as QCheckBox —
+        same isChecked/setChecked/toggled interface, so save/load/payload are
+        unchanged."""
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(14)
+        if label:
+            lab = QLabel(label)
+            lab.setStyleSheet("color:#555;")
+            lay.addWidget(lab)
         for key, text, default in options:
-            act = QAction(text, menu)
-            act.setCheckable(True)
-            act.setChecked(default)
-            act.toggled.connect(self._save)
-            menu.addAction(act)
-            self._match_actions[key] = act
-        btn.setMenu(menu)
-        return btn
+            cb = QCheckBox(text)
+            cb.setChecked(default)
+            cb.toggled.connect(self._save)
+            self._match_actions[key] = cb
+            lay.addWidget(cb)
+        lay.addStretch()
+        return w
 
     def _build_ui(self):
         self._match_actions = {}
@@ -303,25 +303,25 @@ class MyHeritageApp(QMainWindow):
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
         _LBLW = 170
-        # Each field carries its OWN «match ▾» dropdown (like MyHeritage's per-field
-        # right-click menu), NOT one shared list. First name → 4 options; surname →
-        # strict. The QActions live in self._match_actions for save/load/payload.
-        nm_btn = self._match_btn("match ▾", [
-            ("name_strict",     "Strict — exactly  /  Искать совпадения строго по имени", False),
-            ("name_variants",   "Spelling variants  /  Варианты написания",              True),
-            ("name_initials",   "Initial matching  /  Совпадение инициалов",             True),
-            ("name_startswith", "Starts with  /  Начинается с сочетания букв",           False),
+        # Each field's match options are ALWAYS-VISIBLE checkboxes shown under the
+        # field (not a dropdown). First name → 4 options; surname → strict.
+        nm_row = self._match_row("Name match:", [
+            ("name_strict",     "Strict",      False),
+            ("name_variants",   "Variants",    True),
+            ("name_initials",   "Initials",    True),
+            ("name_startswith", "Starts with", False),
         ])
-        sn_btn = self._match_btn("match ▾", [
-            ("surname_strict",  "Strict — exactly  /  Искать совпадения строго",         False),
+        sn_row = self._match_row("Surname match:", [
+            ("surname_strict",  "Strict (exact surname)", False),
         ])
         r1 = QHBoxLayout(); r1.setSpacing(8)
         _l1 = QLabel("First name / Patronymic:"); _l1.setFixedWidth(_LBLW)
-        r1.addWidget(_l1); r1.addWidget(self.f_first, 1); r1.addWidget(nm_btn)
+        r1.addWidget(_l1); r1.addWidget(self.f_first, 1)
         r2 = QHBoxLayout(); r2.setSpacing(8)
         _l2 = QLabel("Surname:"); _l2.setFixedWidth(_LBLW)
-        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1); r2.addWidget(sn_btn)
-        mv.addLayout(r1); mv.addLayout(r2)
+        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1)
+        mv.addLayout(r1); mv.addWidget(nm_row)
+        mv.addLayout(r2); mv.addWidget(sn_row)
         self._outer.addWidget(ms)
 
         # ── Advanced toggle ──────────────────────────────────────────────── #
@@ -352,21 +352,20 @@ class MyHeritageApp(QMainWindow):
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
         self.f_ex  = QCheckBox("Exact match for all parameters")
-        # Per-field match options (MyHeritage's per-field right-click menu):
-        # birth-year tolerance (its own dropdown, like on the site) and a «place
-        # must match» dropdown next to the place field.
+        # Per-field match options: birth-year tolerance (combo) + a visible
+        # «place must match» checkbox next to the place field.
         self.f_ym  = QComboBox()
         self.f_ym.addItems(["—", "Exact", "± 1", "± 2", "± 5", "± 10", "± 20"])
         self.f_ym.setCurrentText("± 5")
         self.f_ym.setFixedWidth(110)
-        pl_btn = self._match_btn("match ▾", [
-            ("place_match", "Location must match  /  Место должно соответствовать", False),
+        pl_row = self._match_row("", [
+            ("place_match", "Location must match", False),
         ])
         _byrow = QHBoxLayout(); _byrow.setSpacing(8)
         _byrow.addWidget(self.f_by); _byrow.addWidget(QLabel("match:"))
         _byrow.addWidget(self.f_ym); _byrow.addStretch()
         _bprow = QHBoxLayout(); _bprow.setSpacing(8)
-        _bprow.addWidget(self.f_bp, 1); _bprow.addWidget(pl_btn)
+        _bprow.addWidget(self.f_bp, 1); _bprow.addWidget(pl_row)
         af.addRow("Birth year:",  _byrow)
         af.addRow("Birth place:", _bprow)
         af.addRow("Father (name):",    self.f_fa)

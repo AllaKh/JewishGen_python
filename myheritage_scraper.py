@@ -1503,25 +1503,29 @@ async def _set_year_match(root, page, params, log):
         fld = root.locator('[data-pw-rf="year"]').first
         if await fld.count():
             await fld.click(timeout=2500)
-            await asyncio.sleep(0.7)
-        # STEP 1 — tick the exact-match checkbox (this REVEALS the radios). By
-        # LOCATOR, not text: it is the single checkbox inside the year's
-        # «…matching_options_dropdown» container -> works in every site language.
+            await asyncio.sleep(0.5)
+        # ONE tick of the exact-match checkbox (reveals the radios), then ONE click
+        # on the tolerance radio — the VISIBLE copy only, no «дёрганья» over dups.
+        # Located by container/locator (language-independent).
         await root.evaluate(r"""() => {
-            [...document.querySelectorAll(
+            const ex = [...document.querySelectorAll(
                 '[data-automations="birth_year_open_field_filter_matching_options_dropdown"]'
                 + ' [role=checkbox][data-automations=check_box_control_label]')]
-                .forEach(b => { if (b.getAttribute('aria-checked') !== 'true') b.click(); });
+                .filter(b => b.getBoundingClientRect().width > 0);
+            const b = ex[0] || document.querySelector(
+                '[data-automations="birth_year_open_field_filter_matching_options_dropdown"]'
+                + ' [role=checkbox][data-automations=check_box_control_label]');
+            if (b && b.getAttribute('aria-checked') !== 'true') b.click();
         }""")
-        await asyncio.sleep(0.7)                       # let the radios render
-        # STEP 2 — click the tolerance radio. exact → ±0 («В этом году»), else ±N.
+        await asyncio.sleep(0.5)                        # let the radios render
         n = "0" if re.search(r"exact|точн|^0$", ym) else (re.sub(r"\D", "", ym) or "5")
         res = await root.evaluate(r"""(n) => {
             const rs = [...document.querySelectorAll(
                 '[data-automations="birth_year_open_field_filter_match_plus_minus_' + n + '"]')];
-            let did = false;
-            for (const r of rs) { r.click(); did = true; }   // input + all dups
-            return did ? ('±' + n) : ('нет радио ±' + n);
+            const vis = rs.filter(r => r.getBoundingClientRect().width > 0);
+            const r = vis[0] || rs[0];                  // ONE click, prefer visible
+            if (r) { r.click(); return '±' + n; }
+            return 'нет радио ±' + n;
         }""", n)
         log(f"  → Совпадение года: {'точно (В этом году)' if n == '0' and res.startswith('±') else res}")
     except Exception as e:
