@@ -20,9 +20,10 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QInputDialog,
     QApplication, QGroupBox, QComboBox, QSpinBox,
     QScrollArea, QRadioButton, QButtonGroup, QFrame, QGridLayout,
+    QToolButton, QMenu,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
-from PySide6.QtGui import QPixmap, QIcon, QValidator
+from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction
 from gui._app_icon import app_icon, make_header
 
 
@@ -226,7 +227,31 @@ class MyHeritageApp(QMainWindow):
         self._build_ui()
         self._load()
 
+    def _match_btn(self, label, options):
+        """Build a per-field dropdown («match ▾») whose popup menu holds the
+        field's checkable match options — like MyHeritage's own right-click menu
+        on each input. `options`: list of (key, text, default). The checkable
+        QActions are stored in self._match_actions[key] for save/load/payload."""
+        btn = QToolButton()
+        btn.setText(label)
+        btn.setPopupMode(QToolButton.InstantPopup)
+        btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet("QToolButton{padding:4px 8px;} "
+                          "QToolButton::menu-indicator{image:none;}")
+        menu = QMenu(btn)
+        for key, text, default in options:
+            act = QAction(text, menu)
+            act.setCheckable(True)
+            act.setChecked(default)
+            act.toggled.connect(self._save)
+            menu.addAction(act)
+            self._match_actions[key] = act
+        btn.setMenu(menu)
+        return btn
+
     def _build_ui(self):
+        self._match_actions = {}
         root = QWidget(); self.setCentralWidget(root)
         self._outer = QVBoxLayout(root)
         self._outer.setContentsMargins(18, 12, 18, 12)
@@ -278,26 +303,25 @@ class MyHeritageApp(QMainWindow):
         self.f_first   = QLineEdit(); self.f_first.setPlaceholderText("e.g.  Ivan Ivanovich")
         self.f_surname = QLineEdit(); self.f_surname.setPlaceholderText("e.g.  Ivanov")
         _LBLW = 170
+        # Each field carries its OWN «match ▾» dropdown (like MyHeritage's per-field
+        # right-click menu), NOT one shared list. First name → 4 options; surname →
+        # strict. The QActions live in self._match_actions for save/load/payload.
+        nm_btn = self._match_btn("match ▾", [
+            ("name_strict",     "Strict — exactly  /  Искать совпадения строго по имени", False),
+            ("name_variants",   "Spelling variants  /  Варианты написания",              True),
+            ("name_initials",   "Initial matching  /  Совпадение инициалов",             True),
+            ("name_startswith", "Starts with  /  Начинается с сочетания букв",           False),
+        ])
+        sn_btn = self._match_btn("match ▾", [
+            ("surname_strict",  "Strict — exactly  /  Искать совпадения строго",         False),
+        ])
         r1 = QHBoxLayout(); r1.setSpacing(8)
         _l1 = QLabel("First name / Patronymic:"); _l1.setFixedWidth(_LBLW)
-        r1.addWidget(_l1); r1.addWidget(self.f_first, 1)
+        r1.addWidget(_l1); r1.addWidget(self.f_first, 1); r1.addWidget(nm_btn)
         r2 = QHBoxLayout(); r2.setSpacing(8)
         _l2 = QLabel("Surname:"); _l2.setFixedWidth(_LBLW)
-        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1)
+        r2.addWidget(_l2); r2.addWidget(self.f_surname, 1); r2.addWidget(sn_btn)
         mv.addLayout(r1); mv.addLayout(r2)
-        # Name-matching options — the dropdown under the «Имя» field on MyHeritage.
-        # These decide whether spelling / initial variants are surfaced (e.g.
-        # «Alexander-Wolf Sanders (Shenderovich)» for «Alexander W Sanders»).
-        nml = QLabel("Name matching / Совпадение по имени:")
-        nml.setStyleSheet("font-weight:bold;margin-top:4px;")
-        mv.addWidget(nml)
-        self.f_nm_strict   = QCheckBox("Strict — search the name exactly  /  Искать совпадения строго по имени")
-        self.f_nm_variants = QCheckBox("Spelling variants  /  Варианты написания")
-        self.f_nm_initials = QCheckBox("Initial matching  /  Совпадение инициалов")
-        self.f_nm_starts   = QCheckBox("Starts with the letters  /  Начинается с определённого сочетания букв")
-        self.f_nm_variants.setChecked(True); self.f_nm_initials.setChecked(True)
-        for _cb in (self.f_nm_strict, self.f_nm_variants, self.f_nm_initials, self.f_nm_starts):
-            mv.addWidget(_cb)
         self._outer.addWidget(ms)
 
         # ── Advanced toggle ──────────────────────────────────────────────── #
@@ -328,8 +352,23 @@ class MyHeritageApp(QMainWindow):
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
         self.f_ex  = QCheckBox("Exact match for all parameters")
-        af.addRow("Birth year:",  self.f_by)
-        af.addRow("Birth place:", self.f_bp)
+        # Per-field match options (MyHeritage's per-field right-click menu):
+        # birth-year tolerance (its own dropdown, like on the site) and a «place
+        # must match» dropdown next to the place field.
+        self.f_ym  = QComboBox()
+        self.f_ym.addItems(["—", "Exact", "± 1", "± 2", "± 5", "± 10", "± 20"])
+        self.f_ym.setCurrentText("± 5")
+        self.f_ym.setFixedWidth(110)
+        pl_btn = self._match_btn("match ▾", [
+            ("place_match", "Location must match  /  Место должно соответствовать", False),
+        ])
+        _byrow = QHBoxLayout(); _byrow.setSpacing(8)
+        _byrow.addWidget(self.f_by); _byrow.addWidget(QLabel("match:"))
+        _byrow.addWidget(self.f_ym); _byrow.addStretch()
+        _bprow = QHBoxLayout(); _bprow.setSpacing(8)
+        _bprow.addWidget(self.f_bp, 1); _bprow.addWidget(pl_btn)
+        af.addRow("Birth year:",  _byrow)
+        af.addRow("Birth place:", _bprow)
         af.addRow("Father (name):",    self.f_fa)
         af.addRow("Father (surname):", self.f_fa_last)
         af.addRow("Mother (name):",    self.f_mo)
@@ -450,12 +489,22 @@ class MyHeritageApp(QMainWindow):
                 return opt
         return RECORD_TYPE_OPTIONS[0]
 
+    def _year_match(self) -> str:
+        """Combo text → scraper value: «—»→«» (don't set), «Exact»→«exact»,
+        «± 5»→«5»."""
+        t = self.f_ym.currentText().lower()
+        if t.strip() in ("—", "-", ""):
+            return ""
+        if "exact" in t or "точ" in t:
+            return "exact"
+        m = "".join(ch for ch in t if ch.isdigit())
+        return m or ""
+
     # ── Field list ────────────────────────────────────────────────────────── #
     def _all_fields(self):
         return [self.f_site, self.f_email, self.f_pass, self.f_imap_pass,
                 self.f_first, self.f_surname,
-                self.f_nm_strict, self.f_nm_variants, self.f_nm_initials, self.f_nm_starts,
-                self.f_by, self.f_bp,
+                self.f_by, self.f_ym, self.f_bp,
                 self.f_fa, self.f_fa_last, self.f_mo, self.f_mo_last,
                 self.f_sp, self.f_sp_last,
                 self.f_dy, self.f_dp, self.f_res, self.f_mil, self.f_imm,
@@ -471,10 +520,13 @@ class MyHeritageApp(QMainWindow):
             "imap_password": self.f_imap_pass.text(),
             "first_name":    self.f_first.text(),
             "surname":       self.f_surname.text(),
-            "name_strict":     self.f_nm_strict.isChecked(),
-            "name_variants":   self.f_nm_variants.isChecked(),
-            "name_initials":   self.f_nm_initials.isChecked(),
-            "name_startswith": self.f_nm_starts.isChecked(),
+            "name_strict":     self._match_actions["name_strict"].isChecked(),
+            "name_variants":   self._match_actions["name_variants"].isChecked(),
+            "name_initials":   self._match_actions["name_initials"].isChecked(),
+            "name_startswith": self._match_actions["name_startswith"].isChecked(),
+            "surname_strict":  self._match_actions["surname_strict"].isChecked(),
+            "year_match":      self.f_ym.currentText(),
+            "place_match":     self._match_actions["place_match"].isChecked(),
             "birth_year":    self.f_by.value(),
             "birth_place":   self.f_bp.text(),
             "father":        self.f_fa.text(),
@@ -525,8 +577,11 @@ class MyHeritageApp(QMainWindow):
         s(self.f_email,     "email");    s(self.f_pass,      "password")
         s(self.f_imap_pass, "imap_password")
         s(self.f_first,  "first_name"); s(self.f_surname, "surname")
-        s(self.f_nm_strict, "name_strict"); s(self.f_nm_variants, "name_variants")
-        s(self.f_nm_initials, "name_initials"); s(self.f_nm_starts, "name_startswith")
+        for _k in ("name_strict", "name_variants", "name_initials",
+                   "name_startswith", "surname_strict", "place_match"):
+            if _k in d and _k in self._match_actions:
+                self._match_actions[_k].setChecked(bool(d[_k]))
+        s(self.f_ym, "year_match")
         s(self.f_by,     "birth_year"); s(self.f_bp,  "birth_place")
         s(self.f_fa,     "father");     s(self.f_fa_last, "father_last")
         s(self.f_mo,     "mother");     s(self.f_mo_last, "mother_last")
@@ -561,10 +616,13 @@ class MyHeritageApp(QMainWindow):
             "site_preset":   self.f_site.currentText(),
             "first_name":    self.f_first.text().strip(),
             "surname":       self.f_surname.text().strip(),
-            "name_strict":     self.f_nm_strict.isChecked(),
-            "name_variants":   self.f_nm_variants.isChecked(),
-            "name_initials":   self.f_nm_initials.isChecked(),
-            "name_startswith": self.f_nm_starts.isChecked(),
+            "name_strict":     self._match_actions["name_strict"].isChecked(),
+            "name_variants":   self._match_actions["name_variants"].isChecked(),
+            "name_initials":   self._match_actions["name_initials"].isChecked(),
+            "name_startswith": self._match_actions["name_startswith"].isChecked(),
+            "surname_strict":  self._match_actions["surname_strict"].isChecked(),
+            "year_match":      self._year_match(),
+            "place_match":     self._match_actions["place_match"].isChecked(),
             "birth_year":    str(self.f_by.value()) if self.f_by.value() else "",
             "birth_place":   self.f_bp.text().strip(),
             "father":        self.f_fa.text().strip(),

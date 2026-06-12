@@ -1364,37 +1364,106 @@ async def _set_name_match(root, page, params, log):
     for «Alexander W Sanders». The desired state comes from the GUI checkboxes.
     Checkboxes are role=checkbox spans (data-automations=check_box_control_label)."""
     DESIRED = [
-        ["строго по имени", bool(params.get("name_strict"))],
-        ["Варианты написани", bool(params.get("name_variants", True))],
-        ["Совпадение инициал", bool(params.get("name_initials", True))],
-        ["Начинается с", bool(params.get("name_startswith"))],
+        ("строго по имени",   bool(params.get("name_strict"))),
+        ("Варианты написани", bool(params.get("name_variants"))),
+        ("Совпадение инициал", bool(params.get("name_initials"))),
+        ("Начинается с",      bool(params.get("name_startswith"))),
     ]
+    # EXACT mirror GUI → site. Two lessons baked in:
+    #  • only ONE popup is open at a time (focusing «Имя» opens ITS popup, closes
+    #    others), so there's no «строго по имени» ambiguity — NO offsetParent
+    #    filter (it wrongly dropped «Варианты»/«Инициалы»: the popup is an overlay
+    #    whose option spans report offsetParent===null).
+    #  • use a REAL Playwright click, NOT JS .click() — a synthetic click flips
+    #    aria-checked but MyHeritage's React reverts it, so the galka «не
+    #    передавалась». A trusted pointer event is applied for real.
     try:
         fn = root.locator('[data-pw-rf="first"]').first
         if await fn.count():
-            await fn.click(timeout=2500)          # focus → the options dropdown opens
-            await asyncio.sleep(0.6)
-        res = await root.evaluate(r"""(desired) => {
-            const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-            const boxes = Array.from(document.querySelectorAll(
-                '[role="checkbox"][data-automations="check_box_control_label"]'));
-            const out = [];
-            for (const pair of desired) {
-                const frag = pair[0], want = pair[1];
-                const b = boxes.find(x => norm(x.textContent).includes(frag));
-                if (!b) continue;
-                const checked = b.getAttribute('aria-checked') === 'true';
-                if (checked !== want) { b.click(); out.push(frag + ' → ' + want); }
-                else { out.push(frag + ' (ok)'); }
-            }
-            return out;
-        }""", DESIRED)
-        if res:
-            log(f"  → Совпадение по имени: {', '.join(res)}")
-        else:
-            log("  !! опции совпадения по имени не найдены (выпадашка не открылась)")
+            await fn.click(timeout=2500)          # focus → the options popup opens
+            await asyncio.sleep(0.7)
+        changed = []                              # log ONLY what we actually changed
+        for frag, want in DESIRED:
+            cb = root.locator(
+                '[role="checkbox"][data-automations="check_box_control_label"]',
+                has_text=frag).first
+            if not await cb.count():
+                continue
+            checked = (await cb.get_attribute("aria-checked")) == "true"
+            if checked != want:
+                try:
+                    await cb.scroll_into_view_if_needed(timeout=2000)
+                    await cb.click(timeout=3000)   # REAL pointer event → React applies
+                    changed.append(frag + (" вкл" if want else " выкл"))
+                except Exception:
+                    pass
+            await asyncio.sleep(0.2)
+        if changed:
+            log(f"  → Имя, опции совпадения: {', '.join(changed)}")
     except Exception as e:
         log(f"  !! опции имени: {type(e).__name__}: {e}")
+
+
+async def _set_field_checkbox(root, page, field_tag, frag, want, label, log):
+    """Each form field (Фамилия / Место / …) has its OWN match popup that opens
+    when the field is focused, with role=checkbox spans (data-automations=
+    check_box_control_label) — same markup as the «Имя» options. Focus the field,
+    then set the VISIBLE checkbox whose text contains `frag` to `want`. Only one
+    popup is open at a time, so the text alone targets the right field. Uses a
+    REAL Playwright click (JS .click() is reverted by MyHeritage's React)."""
+    try:
+        fld = root.locator(f'[data-pw-rf="{field_tag}"]').first
+        if await fld.count():
+            await fld.click(timeout=2500)             # focus → its popup opens
+            await asyncio.sleep(0.6)
+        cb = root.locator(
+            '[role="checkbox"][data-automations="check_box_control_label"]',
+            has_text=frag).first
+        if not await cb.count():
+            log(f"  → {label}: нет опции")
+            return
+        checked = (await cb.get_attribute("aria-checked")) == "true"
+        if checked != want:                          # log ONLY a real change
+            await cb.scroll_into_view_if_needed(timeout=2000)
+            await cb.click(timeout=3000)
+            log(f"  → {label}: {'вкл' if want else 'выкл'}")
+    except Exception as e:
+        log(f"  !! {label}: {type(e).__name__}")
+
+
+async def _set_year_match(root, page, params, log):
+    """The «Год рождения» field's popup has «Точное совпадение года» (exact) plus
+    tolerance radios (data-automations=birth_year_open_field_filter_match_plus_
+    minus_{1,2,5,10,20}). `year_match` from the GUI: «exact» or «1/2/5/10/20»."""
+    ym = str(params.get("year_match") or "").strip().lower()
+    if not ym or not params.get("birth_year"):
+        return
+    try:
+        fld = root.locator('[data-pw-rf="year"]').first
+        if await fld.count():
+            await fld.click(timeout=2500)
+            await asyncio.sleep(0.6)
+        if re.search(r"exact|точн|^0$", ym):
+            cb = root.locator(
+                '[role="checkbox"][data-automations="check_box_control_label"]',
+                has_text="Точное совпадение года").first
+            if not await cb.count():
+                return
+            if (await cb.get_attribute("aria-checked")) != "true":
+                await cb.click(timeout=3000)
+                log("  → Совпадение года: точно")
+        else:
+            n = re.sub(r"\D", "", ym) or "5"
+            rb = root.locator(
+                f'[data-automations="birth_year_open_field_filter_match_plus_minus_{n}"], '
+                f'[data-automations="birth_year_open_field_filter_match_plus_minus_{n}_container"]'
+            ).first
+            if not await rb.count():
+                log(f"  → Совпадение года: нет радио ±{n}"); return
+            await rb.click(timeout=3000)            # real click → React applies
+            log(f"  → Совпадение года: ±{n}")
+    except Exception as e:
+        log(f"  !! год match: {type(e).__name__}")
 
 
 async def _fill_research_basic(root, page, params, log) -> bool:
@@ -1456,12 +1525,23 @@ async def _fill_research_basic(root, page, params, log) -> bool:
             log(f"  !! {label}: {e}")
 
     await _type("first", params.get("first_name", ""), "First name")
-    # set the name-matching options (variants + initials) while the «Имя» field is
-    # focused and its options dropdown is open — BEFORE moving to the next field.
+    # set each field's match options while THAT field is focused and its options
+    # popup is open — BEFORE moving on. Name: 4 checkboxes; surname: «строго по
+    # имени»; year: exact / ±N; place: «должно соответствовать».
     await _set_name_match(root, page, params, log)
     await _type("last",  params.get("surname", ""),    "Surname")
+    # Mirror the GUI state to the site (check OR uncheck), so it's visible there.
+    if params.get("surname"):
+        await _set_field_checkbox(root, page, "last", "строго",
+                                  bool(params.get("surname_strict")),
+                                  "Совпадение фамилии (строго)", log)
     await _type("year",  params.get("birth_year", ""), "Birth year")
+    await _set_year_match(root, page, params, log)
     await _type("place", params.get("birth_place", ""), "Birth place")
+    if params.get("birth_place"):
+        await _set_field_checkbox(root, page, "place", "должно соответств",
+                                  bool(params.get("place_match")),
+                                  "Совпадение места", log)
     return bool(tagged and (tagged.get("first") or tagged.get("last")))
 
 
@@ -3103,6 +3183,9 @@ async def run_scraper(*,
     site_preset    = "Israel (.co.il)",
     first_name     = "", surname       = "",
     name_strict = False, name_variants = True, name_initials = True, name_startswith = False,
+    surname_strict = False,                    # «Искать совпадения строго по имени» (фамилия)
+    year_match     = "",                       # «exact» / «1» / «2» / «5» / «10» / «20»
+    place_match    = False,                    # «Местоположение должно соответствовать»
     birth_year     = "", birth_place   = "",
     father         = "", father_last   = "",
     mother         = "", mother_last   = "",
@@ -3160,6 +3243,8 @@ async def run_scraper(*,
         first_name=first_name, surname=surname,
         name_strict=name_strict, name_variants=name_variants,
         name_initials=name_initials, name_startswith=name_startswith,
+        surname_strict=surname_strict, year_match=year_match,
+        place_match=place_match,
         birth_year=birth_year, birth_place=birth_place,
         father=father, father_last=father_last,
         mother=mother, mother_last=mother_last,
