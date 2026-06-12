@@ -370,35 +370,47 @@ def safe_fn(s, n=80):
     return re.sub(r'\s+', '_', re.sub(r'[\\/*?:"<>|]', '_', s.strip()))[:n] or "result"
 
 # ── Cookie banner ─────────────────────────────────────────────────────────── #
-async def _accept_cookies(page, log):
-    """Accept cookie banner — only appears on .co.il."""
-    await asyncio.sleep(1.5)
-    # Exact button texts seen on myheritage.co.il
-    for text in ["לקבל הכל", "לקבל רק מה שהכרחי",
-                 "Accept all", "Accept All", "Accept", "OK",
-                 "Принять все", "Принять"]:
-        try:
-            btn = page.get_by_role("button", name=re.compile(re.escape(text), re.I))
-            if await btn.count():
-                await btn.first.click(timeout=4000)
-                log(f"  ✓ Cookie banner accepted ('{text}')")
-                await asyncio.sleep(0.8)
-                return
-        except Exception:
-            pass
-    # CSS fallback
-    for sel in ["#onetrust-accept-btn-handler", ".onetrust-accept-btn-handler",
+_COOKIE_TEXTS = ["Принять все", "Принять всё", "Принять", "Соглашаюсь",
+                 "Разрешить все", "Accept all", "Accept All", "Accept",
+                 "I Agree", "Agree", "Allow all", "OK",
+                 "לקבל הכל", "אישור", "קבל הכל"]
+_COOKIE_SELS = ["#onetrust-accept-btn-handler", ".onetrust-accept-btn-handler",
+                '[data-testid*="accept" i]', '[aria-label*="Accept" i]',
+                '[id*="accept-all" i]', 'button[id*="accept" i]',
                 '[class*="cookie"] button', '[id*="cookie"] button',
-                '[class*="consent"] button']:
-        try:
-            el = page.locator(sel).first
-            if await el.count():
-                await el.click(timeout=3000)
-                log(f"  ✓ Cookie banner (selector: {sel})")
-                await asyncio.sleep(0.8)
-                return
-        except Exception:
-            pass
+                '[class*="consent"] button', '[class*="gdpr"] button']
+
+
+async def _accept_cookies(page, log):
+    """Accept the cookie / consent banner wherever it shows — the MAIN frame OR an
+    iframe (MyHeritage's form lives in one), and it can load a moment after the
+    page, so retry a few times. Always safe to call (no-op when there's no banner).
+    Returns True once a banner was dismissed."""
+    for _ in range(3):                                # banner can load late
+        await asyncio.sleep(1.0)
+        for fr in page.frames:                        # includes the main frame
+            for text in _COOKIE_TEXTS:
+                try:
+                    btn = fr.get_by_role(
+                        "button", name=re.compile(re.escape(text), re.I))
+                    if await btn.count():
+                        await btn.first.click(timeout=3000)
+                        log(f"  ✓ Cookie banner accepted ('{text}')")
+                        await asyncio.sleep(0.6)
+                        return True
+                except Exception:
+                    pass
+            for sel in _COOKIE_SELS:
+                try:
+                    el = fr.locator(sel).first
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=2500)
+                        log(f"  ✓ Cookie banner accepted ({sel})")
+                        await asyncio.sleep(0.6)
+                        return True
+                except Exception:
+                    pass
+    return False
 
 # ── Fill input field ─────────────────────────────────────────────────────── #
 async def _fill(page, selectors, value, label, log):
@@ -937,10 +949,9 @@ async def _login(page, login_url, has_cookies,
     await asyncio.sleep(2)
     log(f"     Landed: {page.url}")
 
-    # Step 1: cookies
-    if has_cookies:
-        await _accept_cookies(page, log)
-        await asyncio.sleep(0.5)
+    # Step 1: cookies (always — the consent banner can show on any locale)
+    await _accept_cookies(page, log)
+    await asyncio.sleep(0.5)
 
     # Step 0: ALREADY logged in? With the persistent profile MyHeritage
     # redirects away from /login (e.g. to the family-site home). If we are not
@@ -2043,8 +2054,9 @@ async def _search(page, search_url, params, has_cookies, log):
     except Exception as exc:
         log(f"  !! Cannot open search page: {exc}")
         return False
-    if has_cookies:
-        await _accept_cookies(page, log)
+    # ALWAYS try (not just .co.il): the consent banner can reappear on any locale
+    # and overlays the form, blocking the field clicks.
+    await _accept_cookies(page, log)
     await _close_social_tabs(page.context, page, log)
 
     # Wait for the research form (searches the main frame AND any iframe)
@@ -2053,6 +2065,9 @@ async def _search(page, search_url, params, has_cookies, log):
     if root is None:
         log("  !! Форма поиска не появилась — пробую главный фрейм")
         root = page.main_frame
+    # The banner sometimes loads only after the form — sweep once more so it
+    # doesn't sit on top of the inputs while we fill them.
+    await _accept_cookies(page, log)
 
     # Fill basic fields (JS-tag the form's inputs, then type) — robust to the
     # varying selectors; works in main frame or iframe.
@@ -2416,8 +2431,7 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
          "doc_bytes": None, "doc_ext": ""}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=35000)
-        if has_cookies:
-            await _accept_cookies(page, log)
+        await _accept_cookies(page, log)          # always — banner can reappear
         await asyncio.sleep(1.2)
         # PAYWALL: a free account gets a LIMITED number of full record views per
         # run; once exhausted MyHeritage redirects record links to
