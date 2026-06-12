@@ -17,6 +17,7 @@ import io
 import re
 import sys
 from pathlib import Path
+from docx_util import set_cell_lines
 from urllib.parse import urljoin, urlencode, quote
 
 if getattr(sys, "frozen", False):
@@ -373,7 +374,7 @@ def write_docx(path: Path, records: list, query_info: dict):
                     run.bold = True
             for k, v in fields.items():
                 r = tbl.add_row().cells
-                r[0].text = str(k); r[1].text = str(v)
+                r[0].text = str(k); set_cell_lines(r[1], v)
 
         # Image
         img_path = rec.get("image_path")
@@ -391,11 +392,11 @@ def write_docx(path: Path, records: list, query_info: dict):
             except Exception:
                 pass
 
-        # Source link — at the very end
+        # Source link — at the very end (hidden hyperlink, not the raw URL)
         if rec.get("url"):
             pp = doc.add_paragraph()
             pp.add_run("Источник: ").bold = True
-            _add_hyperlink(pp, rec["url"], rec["url"])
+            _add_hyperlink(pp, "Открыть запись", rec["url"])
 
         doc.add_paragraph("")
 
@@ -410,6 +411,7 @@ def write_xlsx(path: Path, records: list, query_info: dict):
     wb = Workbook(); ws = wb.active; ws.title = "Скарб"
     HF = PatternFill("solid", fgColor="2A4A7F")
     HN = Font(bold=True, color="FFFFFF", size=11)
+    LINKF = Font(color="0563C1", underline="single")
     TS = Side(style="thin", color="B0B8C8")
     T  = Border(left=TS, right=TS, top=TS, bottom=TS)
 
@@ -436,7 +438,11 @@ def write_xlsx(path: Path, records: list, query_info: dict):
                 + [fields.get(f, "") for f in all_fields]
                 + [has_img, rec.get("url", "")])
         for ci, val in enumerate(vals, 1):
-            c = ws.cell(row=ri, column=ci, value=val)
+            c = ws.cell(row=ri, column=ci)
+            if cols[ci-1] == "URL" and val:          # hidden hyperlink, not raw URL
+                c.value = "Открыть"; c.hyperlink = val; c.font = LINKF
+            else:
+                c.value = val
             c.border = T
             c.alignment = Alignment(wrap_text=True, vertical="top")
 

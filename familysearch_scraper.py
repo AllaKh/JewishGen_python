@@ -26,6 +26,7 @@ familysearch_scraper.py
 
 import asyncio, difflib, io, json, os, re, shutil, sys
 from pathlib import Path
+from docx_util import set_cell_lines
 
 if getattr(sys, "frozen", False):
     bd = Path(sys.executable).resolve().parent / "ms-playwright"
@@ -1048,7 +1049,7 @@ def write_docx(path: Path, records: list, qlines: list):
                     run.bold = True
             for f, v in rows_data:
                 r = tbl.add_row().cells
-                r[0].text = f; r[1].text = v
+                r[0].text = f; set_cell_lines(r[1], v)
 
         doc.add_paragraph("")
 

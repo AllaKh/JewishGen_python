@@ -26,6 +26,7 @@ import io
 import re
 import sys
 from pathlib import Path
+from docx_util import set_cell_lines
 from urllib.parse import urljoin, urlparse
 
 if getattr(sys, "frozen", False):
@@ -642,7 +643,7 @@ def _docx_add_record(doc, i, rec):
                 run.bold = True
         for k, v in fields.items():
             r = tbl.add_row().cells
-            r[0].text = str(k); r[1].text = str(v)
+            r[0].text = str(k); set_cell_lines(r[1], v)
     elif rec.get("summary"):
         doc.add_paragraph(rec["summary"])
     tb = rec.get("thumb_bytes")
@@ -656,7 +657,7 @@ def _docx_add_record(doc, i, rec):
     if rec.get("url"):
         p = doc.add_paragraph()
         p.add_run("Источник: ").bold = True
-        _add_hyperlink(p, rec.get("source") or rec["url"], rec["url"])
+        _add_hyperlink(p, rec.get("source") or "Открыть запись", rec["url"])
     doc.add_paragraph("")
 
 

@@ -24,6 +24,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from docx_util import set_cell_lines
 from urllib.parse import urlencode, urlparse, urljoin
 
 if getattr(sys, "frozen", False):
@@ -517,7 +518,7 @@ def _kv_table(doc, pairs):
     tbl = doc.add_table(rows=0, cols=2); tbl.style = "Table Grid"
     for k, v in pairs:
         r = tbl.add_row().cells
-        r[0].text = str(k); r[1].text = str(v)
+        r[0].text = str(k); set_cell_lines(r[1], v)
         for run in r[0].paragraphs[0].runs:
             run.bold = True
 
