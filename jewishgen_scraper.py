@@ -318,7 +318,7 @@ def _set_cell_lines(cell, lines, bold=False):
             text = seg.get("t") or ""
             href = seg.get("h")
             if href:
-                _add_hyperlink(paragraph, text or href, href, bold=bold)
+                _add_hyperlink(paragraph, text or "ссылка", href, bold=bold)
             elif text:
                 r = paragraph.add_run(text)
                 if bold:
@@ -490,12 +490,12 @@ def _cell_to_text_and_link(cell_val):
                 href = seg.get("h")
                 if href:
                     if first_url is None:
-                        first_url = href
-                        parts.append(txt or href)
+                        first_url = href            # click target (hidden), not raw text
+                        parts.append(txt or "ссылка")
                     else:
-                        # Inline secondary links as "text (url)" so the
-                        # information isn't lost.
-                        parts.append(f"{txt} ({href})" if txt else href)
+                        # Secondary links: keep the anchor text only — Excel allows
+                        # one hyperlink per cell, and we never show the raw URL.
+                        parts.append(txt or "ссылка")
                 elif txt:
                     parts.append(txt)
             joined = " ".join(p for p in parts if p).strip()

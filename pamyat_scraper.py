@@ -539,16 +539,19 @@ async def _find_scan(page, secs: int) -> str:
     return ""
 
 
-async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
+async def _grab_scan(page, images_dir, base, rec, log):
     """For each document card: select it, wait for its scan to load, then CLICK
     the «Сохранить изображение» button (#btnSaveLocalImage) and capture the
-    download. Cards without a document are skipped fast. Returns True if ≥1 saved."""
+    download. Cards without a document are skipped fast. Returns
+    (saved_any, saw_document) — saw_document=True means a real document was found,
+    so the caller may reload once if the scan stalled; False means there's nothing
+    to wait for and the caller must NOT reload (что и вешало на пустых страницах)."""
     cards = page.locator(".hero-card-docs-item")
     try:
         nc = await cards.count()
     except Exception:
         nc = 0
-    saved = 0
+    saved, saw_doc = 0, False
     for k in range(min(nc, 12)):
         try:
             await cards.nth(k).scroll_into_view_if_needed(timeout=2000)
@@ -556,10 +559,10 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
         except Exception:
             continue
         # Does this card actually carry a document? The save button appears in the
-        # DOM only then — no button after a few seconds → no document → skip fast
+        # DOM only then — no button after ~3s → no document → skip fast
         # (this is what stops the minute-long hang on document-less cards).
         has_btn = False
-        for _ in range(4):
+        for _ in range(3):
             await asyncio.sleep(1)
             try:
                 has_btn = await page.evaluate(
@@ -570,9 +573,10 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
                 break
         if not has_btn:
             continue                        # no document on this card → skip fast
-        # It HAS a document → it loads SLOWLY, so wait (much longer than before) for
-        # the image-map scan to finish AND the button to become visible.
-        for _ in range(14):
+        saw_doc = True
+        # It HAS a document → it can load slowly, so wait (up to ~8s) for the
+        # image-map scan to finish AND the button to become visible.
+        for _ in range(8):
             await asyncio.sleep(1)
             try:
                 ready = await page.evaluate(
@@ -627,7 +631,7 @@ async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
                             log(f"      🖼 документ сохранён (img): {dest.name}")
             except Exception:
                 pass
-    return saved > 0
+    return saved > 0, saw_doc
 
 
 async def _save_img_url(page, url, dest) -> bool:
@@ -810,14 +814,22 @@ async def _save_media(page, rec, images_dir, base, log):
     try:
         await _tab_block(page, ["документ", "documents"], 1.5, log)
         await asyncio.sleep(1.5)
-        if await _grab_scan(page, images_dir, base, rec, log, secs=12):
+        ok, saw_doc = await _grab_scan(page, images_dir, base, rec, log)
+        if ok:
             return
-        log("      ↻ скан долго грузится — обновляю страницу")
+        # Reload+retry ТОЛЬКО если документ реально есть, но скан не догрузился.
+        # Если документов нет вовсе (saw_doc=False) — НЕ перезагружать (иначе
+        # висим на каждой пустой странице — на это пользователь и жаловалась).
+        if not saw_doc:
+            log("      (документов у этой записи нет — пропускаю)")
+            return
+        log("      ↻ скан долго грузится — обновляю страницу (один раз)")
         try:
             await page.reload(wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(2.5)
+            await asyncio.sleep(2)
             await _tab_block(page, ["документ", "documents"], 1.5, log)
-            if await _grab_scan(page, images_dir, base, rec, log, secs=12):
+            ok, _ = await _grab_scan(page, images_dir, base, rec, log)
+            if ok:
                 return
         except Exception:
             pass

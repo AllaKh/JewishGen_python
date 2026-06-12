@@ -4,14 +4,18 @@
     "password": "Rogin5496172",
     "country": "Ukraine",
     "keywords": [
-      "Bendery",
-      "Aron"
+      "Uman"
     ],
     "rows": [
       {
         "data_type": "Surname",
         "search_type": "is Exactly",
-        "text": "Etlis"
+        "text": "Kushnir"
+      },
+      {
+        "data_type": "Given Name",
+        "search_type": "Phonetically Like",
+        "text": "Shai"
       }
     ],
     "output_folder": "I:/Python Projects/JewishGen_python/results",
