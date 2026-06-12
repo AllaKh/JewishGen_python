@@ -1492,9 +1492,10 @@ async def _set_field_checkbox(root, page, field_tag, frag, want, label, log,
 
 
 async def _set_year_match(root, page, params, log):
-    """Birth-year match: «Точное совпадение года» (exact) or a ± tolerance radio
-    (data-automations=birth_year_open_field_filter_match_plus_minus_{1,2,5,10,20}).
-    Scoped to the year's own «…matching_options_dropdown» container; JS .click()."""
+    """Birth-year match. VERIFIED on the live DOM: the ± tolerance radios render
+    ONLY AFTER «Точное совпадение года» is TICKED («сначала точное, потом разброс»).
+    So: tick exact → the radios appear → click «match_plus_minus_{N}» (N=0 is «В
+    этом году» = exact). `year_match`: «exact»/«0» → ±0; «1/2/5/10/20» → that radio."""
     ym = str(params.get("year_match") or "").strip().lower()
     if not ym or not params.get("birth_year"):
         return
@@ -1502,56 +1503,27 @@ async def _set_year_match(root, page, params, log):
         fld = root.locator('[data-pw-rf="year"]').first
         if await fld.count():
             await fld.click(timeout=2500)
-            await asyncio.sleep(0.6)
-        want_exact = bool(re.search(r"exact|точн|^0$", ym))
-        n = re.sub(r"\D", "", ym) or "5"
-        if want_exact:
-            # tick «Точное совпадение года» (all dups, no visibility filter)
-            res = await root.evaluate(r"""() => {
-                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                const ex = [...document.querySelectorAll(
-                    '[role=checkbox][data-automations=check_box_control_label]')]
-                    .filter(x => /точное совпадение года/i.test(norm(x.textContent)));
-                let did = false;
-                for (const b of ex)
-                    if (b.getAttribute('aria-checked') !== 'true') { b.click(); did = true; }
-                return ex.length ? 'точно' : 'нет опции';
-            }""")
-        else:
-            # «сначала точное, потом разброс»: UNTICK exact first so the tolerance
-            # radios render, wait, THEN pick ±N.
-            await root.evaluate(r"""() => {
-                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                [...document.querySelectorAll(
-                    '[role=checkbox][data-automations=check_box_control_label]')]
-                    .filter(x => /точное совпадение года/i.test(norm(x.textContent)))
-                    .forEach(b => { if (b.getAttribute('aria-checked') === 'true') b.click(); });
-            }""")
-            await asyncio.sleep(0.6)                  # let the ± radios appear
-            res = await root.evaluate(r"""(n) => {
-                const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-                // 1) by the radio's own data-automation
-                let rs = [...document.querySelectorAll(
-                    '[data-automations="birth_year_open_field_filter_match_plus_minus_' + n + '"]')];
-                // 2) fallback: the «styled_radio_label_paragraph» whose ± number == n
-                //    («+/- 1 год» / «+/- 5 года» / «+/20 года/лет» …). ±20 had no
-                //    data-automation in the page the user gave.
-                if (!rs.length) {
-                    const want = parseInt(n, 10);
-                    for (const lab of document.querySelectorAll(
-                            '[class*="styled_radio_label_paragraph"]')) {
-                        const t = norm(lab.textContent);
-                        const m = t.match(/(\d+)/);
-                        if (m && parseInt(m[1], 10) === want && /[+\/±-]/.test(t))
-                            rs.push(lab);
-                    }
-                }
-                let did = false;
-                for (const r of rs) { r.click(); did = true; }
-                return did ? ('±' + n) : ('нет радио ±' + n);
-            }""", n)
-        if res:
-            log(f"  → Совпадение года: {res}")
+            await asyncio.sleep(0.7)
+        # STEP 1 — tick the exact-match checkbox (this REVEALS the radios). By
+        # LOCATOR, not text: it is the single checkbox inside the year's
+        # «…matching_options_dropdown» container -> works in every site language.
+        await root.evaluate(r"""() => {
+            [...document.querySelectorAll(
+                '[data-automations="birth_year_open_field_filter_matching_options_dropdown"]'
+                + ' [role=checkbox][data-automations=check_box_control_label]')]
+                .forEach(b => { if (b.getAttribute('aria-checked') !== 'true') b.click(); });
+        }""")
+        await asyncio.sleep(0.7)                       # let the radios render
+        # STEP 2 — click the tolerance radio. exact → ±0 («В этом году»), else ±N.
+        n = "0" if re.search(r"exact|точн|^0$", ym) else (re.sub(r"\D", "", ym) or "5")
+        res = await root.evaluate(r"""(n) => {
+            const rs = [...document.querySelectorAll(
+                '[data-automations="birth_year_open_field_filter_match_plus_minus_' + n + '"]')];
+            let did = false;
+            for (const r of rs) { r.click(); did = true; }   // input + all dups
+            return did ? ('±' + n) : ('нет радио ±' + n);
+        }""", n)
+        log(f"  → Совпадение года: {'точно (В этом году)' if n == '0' and res.startswith('±') else res}")
     except Exception as e:
         log(f"  !! год match: {type(e).__name__}")
 
@@ -3277,10 +3249,10 @@ def write_xlsx(path, records, qlines, append=False):
 async def run_scraper(*,
     site_preset    = "Israel (.co.il)",
     first_name     = "", surname       = "",
-    name_strict = False, name_variants = True, name_initials = True, name_startswith = False,
-    surname_strict = False,                    # «Искать совпадения строго по имени» (фамилия)
-    year_match     = "",                       # «exact» / «1» / «2» / «5» / «10» / «20»
-    place_match    = False,                    # «Местоположение должно соответствовать»
+    name_strict    = False, name_variants = True, name_initials = True, name_startswith = False,
+    surname_strict = False, # «Искать совпадения строго по имени» (фамилия)
+    year_match     = True, year_exact = True,  year_1 = False, year_2 = False, year_5 = False, year_10 = False, year_20 = False, # «exact» / «1» / «2» / «5» / «10» / «20»
+    place_match    = False, # «Местоположение должно соответствовать»
     birth_year     = "", birth_place   = "",
     father         = "", father_last   = "",
     mother         = "", mother_last   = "",
