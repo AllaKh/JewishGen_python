@@ -72,6 +72,7 @@ BAD_PATHS     = ["/records/images", "/search/linker", "/linker",
                  "/catalog", "/wiki", "/books", "/films"]
 _dl           = _CFG.get("downloads_dir", "")
 DOWNLOADS_DIR = Path(_dl) if _dl else Path.home() / "Downloads"
+FS_PROFILE_DIR = _HERE / ".fs_profile"     # persistent login/cookies between runs
 HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
                  "officeDocument/2006/relationships/hyperlink")
 _IMG_SKIP     = ("icon", "logo", "sprite", "avatar", "pixel", "placeholder",
@@ -108,6 +109,65 @@ def _abs(href: str) -> str:
     return FS_BASE + href if href.startswith("/") else href
 
 
+def _year_range(year, span: int = 2):
+    """(from, to) for the FS birth-year filter — ±span around the entered year (FS
+    treats a birth year as a small range), so «1897» also returns the 1898 census
+    records. With span=0 (Exact ticked) it's from=to=year. (None, None) if no year."""
+    try:
+        y = int(re.sub(r"\D", "", str(year))[:4])
+    except Exception:
+        y = 0
+    return (y - span, y + span) if y else (None, None)
+
+
+def _apply_exact(url: str, exact: dict) -> str:
+    """Add `.exact=on` to whichever q.* params FS already put in the results URL,
+    for the fields the user ticked «Exact». Field-name-agnostic — we read what FS
+    actually used (q.givenName / q.surname / q.anyPlace / q.birthLikePlace / …) and
+    flag it, instead of guessing FS's param names."""
+    if not exact:
+        return url
+    from urllib.parse import urlparse, parse_qsl, urlencode
+    pr    = urlparse(url)
+    pairs = parse_qsl(pr.query, keep_blank_values=True)
+    keys  = {k for k, _ in pairs}
+    want  = []
+    if exact.get("name"):
+        want += [k for k in keys if k.startswith("q.givenName")
+                 and not k.endswith(".exact")]
+    if exact.get("surname"):
+        want += [k for k in keys if k.startswith("q.surname")
+                 and not k.endswith(".exact")]
+    if exact.get("place"):
+        want += [k for k in keys
+                 if (k.startswith("q.anyPlace") or "Place" in k)
+                 and not k.endswith(".exact") and "birthLikeDate" not in k]
+    for k in want:
+        if f"{k}.exact" not in keys:
+            pairs.append((f"{k}.exact", "on"))
+            keys.add(f"{k}.exact")
+    return pr._replace(query=urlencode(pairs)).geturl()
+
+
+# Relationship roles glue to the name in the results cell («SpouseRebecca M
+# Sanders»). innerText usually separates them, but if FS renders them inline this
+# splits the role from the name and puts each relationship on its own line.
+_REL_ROLES = ("Spouses", "Spouse", "Parents", "Parent", "Father", "Mother",
+              "Children", "Child", "Wife", "Husband", "Son", "Daughter",
+              "Siblings", "Sibling", "Brother", "Sister")
+_REL_ALT   = "|".join(_REL_ROLES)
+_REL_BREAK = re.compile(r"(?<=[A-Za-z.)])(?=(?:" + _REL_ALT + r")[A-Z])")
+_REL_COLON = re.compile(r"^(" + _REL_ALT + r")(?=[A-Z])", re.M)
+
+
+def _split_rels(text: str) -> str:
+    if not text:
+        return text
+    t = _REL_BREAK.sub("\n", text)      # newline before each role
+    t = _REL_COLON.sub(r"\1: ", t)      # «SpouseRebecca» → «Spouse: Rebecca»
+    return t
+
+
 # ── Ввод в поле поиска ────────────────────────────────────────────────────── #
 
 async def _type_field(page, sel: str, val: str, label: str, log) -> bool:
@@ -138,7 +198,8 @@ async def _type_field(page, sel: str, val: str, label: str, log) -> bool:
 
 # ── 1. ПОИСК ──────────────────────────────────────────────────────────────── #
 
-async def _search(page, fn, ln, place, year, log):
+async def _search(page, fn, ln, place, year, log, exact=None):
+    exact = exact or {}
     log(f"  Открываю {HOME_URL}")
     await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(3)
@@ -193,34 +254,46 @@ async def _search(page, fn, ln, place, year, log):
     # results URL doesn't carry the birth date, add it (q.birthLikeDate.from/to)
     # and reload. Without it the search isn't limited to e.g. 1897 and the right
     # person never reaches the result list.
-    if year:
-        u = page.url
-        if "birthLikeDate" not in u and "discovery/results" in u:
-            sep = "&" if "?" in u else "?"
-            new_u = (f"{u}{sep}q.birthLikeDate.from={year}"
-                     f"&q.birthLikeDate.to={year}")
+    u = page.url
+    if "discovery/results" in u:
+        new_u, changed = u, False
+        if year and "birthLikeDate" not in u:
+            lo, hi = _year_range(year, 0 if exact.get("year") else 2)
+            if lo:
+                sep = "&" if "?" in new_u else "?"
+                new_u = f"{new_u}{sep}q.birthLikeDate.from={lo}&q.birthLikeDate.to={hi}"
+                changed = True
+                tag = "точно" if exact.get("year") else "±2"
+                log(f"  → год рождения {year} ({tag}) в URL: {lo}–{hi}")
+        u2 = _apply_exact(new_u, exact)
+        if u2 != new_u:
+            new_u = u2; changed = True
+            log(f"  → точное совпадение: {[k for k,v in exact.items() if v]}")
+        if changed:
             try:
                 await page.goto(new_u, wait_until="domcontentloaded", timeout=25000)
                 await asyncio.sleep(5)
-                log(f"  → год рождения добавлен в URL результатов: {year}")
             except Exception as _e:
-                log(f"  !! не вышло добавить год в URL: {type(_e).__name__}")
+                log(f"  !! не вышло уточнить URL: {type(_e).__name__}")
     log(f"  Результаты: {page.url}")
 
 
-async def _ensure_year_in_url(page, year, log):
+async def _ensure_year_in_url(page, year, log, exact=None):
     """Re-add the birth-year filter (q.birthLikeDate.from/to) to the current
     results / records URL. The HR tab and the Advanced-Search reload rebuild the
     URL and can drop it, so we call this right before reading rows — otherwise the
     search isn't limited to the wanted year and the right person never shows up."""
+    exact = exact or {}
     if not year:
         return
     u = page.url
-    if ("tab=records" not in u and "discovery/results" not in u) \
+    lo, hi = _year_range(year, 0 if exact.get("year") else 2)
+    if not lo or ("tab=records" not in u and "discovery/results" not in u) \
             or "birthLikeDate" in u:
         return
     sep = "&" if "?" in u else "?"
-    new_u = f"{u}{sep}q.birthLikeDate.from={year}&q.birthLikeDate.to={year}"
+    new_u = _apply_exact(
+        f"{u}{sep}q.birthLikeDate.from={lo}&q.birthLikeDate.to={hi}", exact)
     try:
         await page.goto(new_u, wait_until="domcontentloaded", timeout=25000)
         try:
@@ -471,8 +544,15 @@ async def _collect(page, qname: str, log) -> list:
 
             if not name:
                 continue
-            evts = (await cells[idx+1].text_content() or "").strip() if len(cells)>idx+1 else ""
-            rels = (await cells[idx+2].text_content() or "").strip() if len(cells)>idx+2 else ""
+            # innerText (NOT text_content) so the role and the name aren't glued
+            # («SpouseRebecca M Sanders») — innerText keeps FS's line breaks.
+            async def _celltext(c):
+                try:
+                    return (await c.evaluate("e => e.innerText") or "").strip()
+                except Exception:
+                    return (await c.text_content() or "").strip()
+            evts = await _celltext(cells[idx+1]) if len(cells) > idx+1 else ""
+            rels = _split_rels(await _celltext(cells[idx+2])) if len(cells) > idx+2 else ""
             score = round(_sim(qname, name), 1)
             results.append({"url": url, "name": name, "coll": coll,
                             "evts": evts, "rels": rels, "score": score})
@@ -1132,6 +1212,7 @@ async def run_scraper(
     birth_year:    str       = "",
     tab:           str       = "Historical Records",
     advanced:      dict|None = None,
+    exact:         dict|None = None,
     output_format: str       = "both",
     output_folder            = Path("."),
     email:         str|None  = None,
@@ -1149,6 +1230,7 @@ async def run_scraper(
         return bool(cancel_event and cancel_event.is_set())
 
     adv       = advanced or {}
+    exact     = exact or {}
     has_adv   = any(v for v in adv.values() if v and v not in (False, "Unspecified"))
     want_docx = output_format in ("docx", "both")
     want_xlsx = output_format in ("xlsx", "both")
@@ -1171,19 +1253,32 @@ async def run_scraper(
     _prog(0, "Запускаю браузер...")
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
+        # PERSISTENT profile → the FamilySearch login (cookies/session) is kept
+        # between runs, so we don't sign in every time («запоминай куки»).
+        for _lk in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            try: (FS_PROFILE_DIR / _lk).unlink()
+            except Exception: pass
+        FS_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        ctx = await pw.chromium.launch_persistent_context(
+            str(FS_PROFILE_DIR),
             headless=False,
+            no_viewport=True,
+            accept_downloads=True,
             args=["--start-maximized",
                   "--disable-blink-features=AutomationControlled"],
         )
-        ctx  = await browser.new_context(no_viewport=True, accept_downloads=True)
-        page = await ctx.new_page()
+        browser = ctx                       # so the rest (ctx/close) stays valid
+        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+        # persistent profile may restore old tabs — keep just one
+        for _p in list(ctx.pages)[1:]:
+            try: await _p.close()
+            except Exception: pass
 
         try:
             # ── 1. ПОИСК ──────────────────────────────────────────────── #
             _prog(5, "Поиск...")
             await _search(page, first_names, last_names,
-                          place_lived, birth_year, log)
+                          place_lived, birth_year, log, exact=exact)
             if _done(): return summary
 
             # ── 2. ТАБ HISTORICAL RECORDS ─────────────────────────────── #
@@ -1193,7 +1288,7 @@ async def run_scraper(
             await _click_hr(page, log)
             if _done(): return summary
             # the HR tab can drop the birth-year filter — re-pin it
-            await _ensure_year_in_url(page, birth_year, log)
+            await _ensure_year_in_url(page, birth_year, log, exact=exact)
 
             # ── 4. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(20, "Сбор результатов...")
@@ -1251,7 +1346,7 @@ async def run_scraper(
                     _prog(82, "Advanced Search...")
                     await _advanced(page, adv, log)
                     await asyncio.sleep(2)
-                    await _ensure_year_in_url(page, birth_year, log)
+                    await _ensure_year_in_url(page, birth_year, log, exact=exact)
                     await _set_60(page, log)
                     _prog(85, "Сбор результатов после Advanced Search...")
                     raw_adv   = await _collect(page, qname, log)

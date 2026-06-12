@@ -1,6 +1,9 @@
 # Browser profiles (persistent sessions — never commit cookies/credentials)
 .mh_profile/
+.fs_profile/
 .profile/
+profile/
+_probe_profile/
 .mh_profile.*
 
 # Python

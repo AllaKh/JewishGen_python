@@ -192,15 +192,28 @@ class FamilySearchApp(QMainWindow):
         self.f_byear = QLineEdit()
         self.f_byear.setPlaceholderText("e.g. 1897")
         self.f_byear.setFixedWidth(120)
+        # Each basic field gets its own "Exact" match checkbox (all considered).
+        self.f_first_exact = QCheckBox("Exact")
+        self.f_last_exact  = QCheckBox("Exact")
+        self.f_place_exact = QCheckBox("Exact")
+        self.f_byear_exact = QCheckBox("Exact")
+        self.f_first_exact.setToolTip("Exact match for the first/middle name")
+        self.f_last_exact.setToolTip("Exact match for the last/maiden name")
+        self.f_place_exact.setToolTip("Exact match for the place")
+        self.f_byear_exact.setToolTip("Exact birth year (otherwise ± 2 years)")
         bf.addWidget(QLabel("First Names:"), 0, 0)
         bf.addWidget(self.f_first,           0, 1)
-        bf.addWidget(QLabel("Last Names:"),  0, 2)
-        bf.addWidget(self.f_last,            0, 3)
+        bf.addWidget(self.f_first_exact,     0, 2)
+        bf.addWidget(QLabel("Last Names:"),  0, 3)
+        bf.addWidget(self.f_last,            0, 4)
+        bf.addWidget(self.f_last_exact,      0, 5)
         bf.addWidget(QLabel("Place Lived:"), 1, 0)
         bf.addWidget(self.f_place,           1, 1)
-        bf.addWidget(QLabel("Birth Year:"),  1, 2)
-        bf.addWidget(self.f_byear,           1, 3)
-        bf.setColumnStretch(1, 2); bf.setColumnStretch(3, 1)
+        bf.addWidget(self.f_place_exact,     1, 2)
+        bf.addWidget(QLabel("Birth Year:"),  1, 3)
+        bf.addWidget(self.f_byear,           1, 4)
+        bf.addWidget(self.f_byear_exact,     1, 5)
+        bf.setColumnStretch(1, 2); bf.setColumnStretch(4, 1)
         self._outer.addWidget(bg)
 
         # Tab selector
@@ -390,6 +403,8 @@ class FamilySearchApp(QMainWindow):
     def _all_widgets(self) -> list:
         ws = [self.f_user, self.f_pass,
               self.f_first, self.f_last, self.f_place, self.f_byear,
+              self.f_first_exact, self.f_last_exact,
+              self.f_place_exact, self.f_byear_exact,
               self.f_tab,
               self.f_alt_first, self.f_alt_last, self.f_sex,
               self.f_country, self.f_state,
@@ -411,6 +426,10 @@ class FamilySearchApp(QMainWindow):
             "last_names":    self.f_last.text(),
             "place_lived":   self.f_place.text(),
             "birth_year":    self.f_byear.text(),
+            "first_exact":   self.f_first_exact.isChecked(),
+            "last_exact":    self.f_last_exact.isChecked(),
+            "place_exact":   self.f_place_exact.isChecked(),
+            "byear_exact":   self.f_byear_exact.isChecked(),
             "tab":           self.f_tab.currentText(),
             "alt_first":     self.f_alt_first.text(),
             "alt_last":      self.f_alt_last.text(),
@@ -460,6 +479,8 @@ class FamilySearchApp(QMainWindow):
         _s(self.f_user,  "username"); _s(self.f_pass,  "password")
         _s(self.f_first, "first_names"); _s(self.f_last,  "last_names")
         _s(self.f_place, "place_lived"); _s(self.f_byear, "birth_year")
+        _s(self.f_first_exact, "first_exact"); _s(self.f_last_exact,  "last_exact")
+        _s(self.f_place_exact, "place_exact"); _s(self.f_byear_exact, "byear_exact")
         _s(self.f_tab,   "tab")
         _s(self.f_alt_first, "alt_first"); _s(self.f_alt_last, "alt_last")
         _s(self.f_sex,   "sex")
@@ -527,6 +548,12 @@ class FamilySearchApp(QMainWindow):
             "birth_year":    self.f_byear.text().strip(),
             "tab":           self.f_tab.currentText(),
             "advanced":      self._build_advanced(),
+            "exact": {
+                "name":    self.f_first_exact.isChecked(),
+                "surname": self.f_last_exact.isChecked(),
+                "place":   self.f_place_exact.isChecked(),
+                "year":    self.f_byear_exact.isChecked(),
+            },
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "email":         self.f_user.text().strip() or None,
