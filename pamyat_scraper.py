@@ -576,10 +576,11 @@ async def _grab_scan(page, images_dir, base, rec, log):
         if not has_btn:
             continue                        # no document on this card → skip fast
         saw_doc = True
-        # Visible button → a document exists; wait up to ~6s for its image-map
-        # scan to finish decoding.
+        # Visible button → the document is REAL and its scan WILL load («если
+        # кнопка видима, скан надо ЖДАТЬ — и 6с может не хватить»). Wait up to
+        # ~30s, continuing the moment it's decoded; only EMPTY cards skip fast.
         ready = False
-        for _ in range(6):
+        for _ in range(30):
             try:
                 ready = await page.evaluate(
                     "() => { const b=document.querySelector('#btnSaveLocalImage');"
@@ -590,10 +591,8 @@ async def _grab_scan(page, images_dir, base, rec, log):
             if ready:
                 break
             await asyncio.sleep(1)
-        if not ready:
-            # scan never decoded → don't burn 15s on a download that won't come
-            log("      (карточка без загрузившегося скана — пропускаю)")
-            continue
+        # Even if the image-map check didn't pass, the button IS visible →
+        # attempt the save anyway (some documents may not be image-maps).
         # talking filename built from THIS card's own document name
         label = ""
         try:
