@@ -755,6 +755,8 @@ class AncestryApp(QMainWindow):
                 "name":    self.f_first_exact.currentText() == "Exact",
                 "surname": self.f_last_exact.currentText() == "Exact",
                 "place":   self.f_place_exact.isChecked(),
+                "name_level":    self.f_first_exact.currentText(),
+                "surname_level": self.f_last_exact.currentText(),
             },
             "filters": {
                 "types":     self._area_filters(self._type_all, self._type_sub),

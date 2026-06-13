@@ -78,6 +78,10 @@ MAX_PAGES  = int(_CFG.get("max_pages", 1))     # result pages (count=50 → page
                                                # plenty; >1 re-collected dups and
                                                # dropped click-applied filters)
 MAX_SCRAPE = int(_CFG.get("max_scrape", 40))   # cap records actually opened
+# Record-type filter → Ancestry category code for /search/categories/<code>/ .
+# Only what's confirmed from a live URL; unknown → that pass is SKIPPED (no garbage).
+CATEGORY_CODES = _CFG.get("category_codes", {}) or {}
+LOCATION_CODES = _CFG.get("location_codes", {}) or {}
 ANC_PROFILE_DIR = _HERE / ".ancestry_profile"  # persistent login/cookies
 _dl           = _CFG.get("downloads_dir", "")
 DOWNLOADS_DIR = Path(_dl) if _dl else Path.home() / "Downloads"
@@ -154,21 +158,45 @@ def _match_name(first_q: str, last_q: str, full: str) -> float:
     return 99.0 if giv else 72.0
 
 
+# Name exactness slider level → Ancestry's name_x code (verified: «Exact, sounds
+# like and similar» = ps; the rest decoded from the same flag letters —
+# p=sounds-like, s=similar, i=initials; «Exact»=1; «Broad»=omit).
+_NAME_X = {
+    "Broad": "",
+    "Exact + similar + sounds + initials": "psi",
+    "Exact + sounds + similar": "ps",
+    "Exact + similar": "s",
+    "Exact": "1",
+}
+
+
+def _name_x_code(exact: dict) -> str:
+    """name_x is ONE param for the whole name → take the first-name level, falling
+    back to the surname level (and to the old bool «exact» flags)."""
+    nx = _NAME_X.get(exact.get("name_level", ""), None)
+    if nx is None:
+        nx = _NAME_X.get(exact.get("surname_level", ""), None)
+    if nx is None:
+        nx = "1" if (exact.get("name") or exact.get("surname")) else ""
+    return nx
+
+
 # ── Search-URL building ────────────────────────────────────────────────────── #
 
 def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
     """Ancestry /search/ URL — built by hand (spaces are a literal «+»).
     name=First+Middle_Last, birth=YEAR&birth_x=<N>-0-0 (N = ± year range, 0=exact),
     residence=…, father/mother/spouse/sibling/child=… (LISTS), count=50.
-    `<field>_x=1` only for the fields whose EXACT box is ticked."""
+    name_x encodes the slider exactness level (_NAME_X)."""
     exact = exact or {}
     adv   = adv or {}
     parts = []
 
     if fn or ln:
         parts.append(("name", f"{_name_part(fn)}_{_name_part(ln)}".strip("_")))
-        if exact.get("name") or exact.get("surname"):
-            parts.append(("name_x", "1"))   # Ancestry name is one unit (given+surname)
+        nx = _name_x_code(exact)
+        if nx:
+            parts.append(("name_x", nx))
     if year:
         y = re.sub(r"\D", "", str(year))[:4]
         if y:
@@ -536,23 +564,54 @@ async def _clear_all_filters(page, log):
 
 
 def _filter_passes(filters: dict) -> list:
-    """Build the filter passes as the CARTESIAN PRODUCT across the three areas:
-    within an area the choices are OR alternatives, across areas they are AND.
-    So each pass = one type-choice AND one location-choice AND one date-choice
-    (any of them may be absent). Each pass is its own document. No filters → one
-    empty pass (plain results)."""
+    """Cartesian product across the three areas → each pass is a dict
+    {type, location, date} (any may be None). Within an area choices are OR
+    (separate passes), across areas AND. Each pass is its own document. No
+    filters → one empty pass (plain results)."""
     filters = filters or {}
     t = [x for x in filters.get("types", []) if x] or [None]
     l = [x for x in filters.get("locations", []) if x] or [None]
     d = [x for x in filters.get("dates", []) if x] or [None]
-    passes = []
+    out, seen = [], set()
     for ti in t:
         for li in l:
             for di in d:
-                p = [x for x in (ti, li, di) if x]
-                if p not in passes:
-                    passes.append(p)
-    return passes or [[]]
+                key = (ti, li, di)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({"type": ti, "location": li, "date": di})
+    return out or [{"type": None, "location": None, "date": None}]
+
+
+def _pass_label(p: dict) -> str:
+    return " · ".join(x for x in (p.get("type"), p.get("location"),
+                                  p.get("date")) if x)
+
+
+def _pass_url(base_url: str, p: dict):
+    """Build the filtered results URL for one pass. Record-type (+ its decade) is a
+    PATH facet: /search/categories/<code>[_<decade>]/ (verified: cen_1890). The
+    location is applied by clicking afterwards (its URL code isn't fully known).
+    Returns (url, need_location) — or (None, …) if a record-type filter has no
+    known code (caller skips the pass instead of saving unfiltered junk)."""
+    url, ptype, pdate = base_url, p.get("type"), p.get("date")
+    decade = ""
+    if pdate:
+        m = re.search(r"(\d{4})", pdate)
+        if m:
+            decade = m.group(1)
+    if ptype:
+        code = CATEGORY_CODES.get(ptype)
+        if not code:
+            return None, bool(p.get("location"))     # unknown category → skip
+        seg = f"{code}_{decade}" if decade else code
+        url = base_url.replace("/search/?", f"/search/categories/{seg}/?", 1)
+    elif decade:
+        # a decade with no record-type has no known URL form → skip rather than
+        # dump unfiltered results under the decade's name.
+        return None, bool(p.get("location"))
+    return url, bool(p.get("location"))
 
 
 async def _diag(page, log):
@@ -1134,27 +1193,28 @@ async def run_scraper(
             if len(passes) > 1 or passes[0]:
                 log(f"  Фильтры: {len(passes)} проход(ов) → отдельный документ на каждый")
             total, saved_docx, last_xlsx = 0, 0, None
-            for pi, pass_labels in enumerate(passes, 1):
+            for pi, p in enumerate(passes, 1):
                 if _done(): break
-                # fresh search URL each pass = filters reset (implicit Clear all)
+                pass_name = _pass_label(p)
+                # record-type (+ decade) → URL path; location → click afterwards
+                url, need_loc = _pass_url(search_url, p)
+                if url is None:
+                    log(f"  → нет кода фильтра для «{pass_name}» — пропускаю "
+                        f"(добавь код категории в config/ancestry.json)")
+                    continue
                 try:
-                    await page.goto(search_url, wait_until="domcontentloaded",
-                                    timeout=40000)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=40000)
                     await asyncio.sleep(4)
                 except Exception:
                     pass
-                pass_name = " · ".join(pass_labels)
-                if pass_labels:
-                    _prog(25, f"Проход {pi}/{len(passes)} — фильтры: {pass_labels}")
-                    ok_all = True
-                    for lbl in pass_labels:
-                        if not await _apply_filter_click(page, lbl, log,
-                                                         parent=fparents.get(lbl)):
-                            ok_all = False
-                    if not ok_all:
-                        # a filter that didn't apply would dump UNFILTERED results
-                        # under this filter's name — skip the whole pass instead.
-                        log(f"  → фильтр(ы) не применились — пропускаю проход "
+                if pass_name:
+                    _prog(25, f"Проход {pi}/{len(passes)} — фильтр: {pass_name}")
+                if need_loc:
+                    loc = p["location"]
+                    if not await _apply_filter_click(page, loc, log,
+                                                     parent=fparents.get(loc)):
+                        # location didn't apply → would save unfiltered junk → skip
+                        log(f"  → место «{loc}» не применилось — пропускаю проход "
                             f"«{pass_name}» (без сохранения)")
                         continue
                     await asyncio.sleep(2)
@@ -1184,7 +1244,7 @@ async def run_scraper(
                     log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
 
                 if not pass_recs:
-                    if pass_labels:
+                    if pass_name:
                         log(f"  (по фильтру «{pass_name}» подходящих записей нет)")
                     else:
                         await _diag(page, log)

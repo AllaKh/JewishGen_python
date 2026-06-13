@@ -3,5 +3,13 @@
   "signin_url": "https://www.ancestry.com/account/signin",
   "min_match": 80,
   "max_pages": 1,
-  "max_scrape": 40
+  "max_scrape": 40,
+
+  "_comment_category_codes": "Record-type filter → Ancestry category code used in /search/categories/<code>/. ONLY 'Census & voter lists'='cen' is confirmed from a live URL. To add more: on the site click a category, look at the URL (…/search/categories/<CODE>/…) and put <CODE> here. A category with no code here is SKIPPED (never saved under the wrong filter).",
+  "category_codes": {
+    "Census & voter lists": "cen"
+  },
+
+  "_comment_location_codes": "Record-location filter → record_f value (e.g. USA seen as record_f=_2). Add as you find them on the site; unmapped locations are skipped.",
+  "location_codes": {}
 }
