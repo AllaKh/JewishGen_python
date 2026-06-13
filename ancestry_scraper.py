@@ -184,6 +184,18 @@ def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
                 parts.append((rel, f"{_name_part(rf)}_{_name_part(rl)}".strip("_")))
                 if person.get("exact"):
                     parts.append((f"{rel}_x", "1"))
+    # life events (Marriage / Death / Lived-In) — year(+range) and/or place
+    _EV = {"marriage": "marriage", "death": "death", "residence": "residence"}
+    for e in adv.get("events", []) or []:
+        key = _EV.get(e.get("type", ""))
+        if not key:
+            continue                       # «Any Event» param unknown → skip
+        y = re.sub(r"\D", "", str(e.get("year", "")))[:4]
+        if y:
+            parts.append((key, y))
+            parts.append((f"{key}_x", f"{int(e.get('range', 1))}-0-0"))
+        if e.get("place"):
+            parts.append((f"{key}place", _name_part(e["place"])))
     if adv.get("keyword"):
         parts.append(("keyword", _name_part(adv["keyword"])))
     g = (adv.get("gender") or "").strip().lower()
@@ -357,7 +369,8 @@ _COLLECT_JS = r"""() => {
         for (let i = 0; i < lines.length - 1; i++)
             if (/^Name$/i.test(lines[i])) { name = lines[i + 1]; break; }
         if (!name) name = (a.innerText || '').trim();
-        name = name.replace(/^(Mr|Mrs|Dr|Miss|Mstr)\.?\s+/i, '')
+        name = (name.split('\n')[0] || '')      // drop a glued «…\nGoodie Family Tree»
+                   .replace(/^(Mr|Mrs|Dr|Miss|Mstr)\.?\s+/i, '')
                    .replace(/\[.*?\]/g, '').trim();
         // collection title (the record's label) = the first labelled line OR
         // the link text
@@ -507,52 +520,60 @@ async def _fetch_bytes(ctx, src: str) -> bytes | None:
 
 
 async def _download_image(ctx, page, dest_dir: Path, title: str, log) -> str | None:
-    """Best-effort: the Ancestry viewer's own download (wrapped in expect_download,
-    like FS), else save the largest image on the page."""
+    """Ancestry record page: «Save» (top-right) → «Save to your computer», caught
+    via expect_download (the exact flow the user gave). Falls back to the largest
+    image on the page."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / (safe_fn(title) + ".jpg")
     try:
-        async with page.expect_download(timeout=25000) as dl_info:
-            done = False
-            for sel in ['button[aria-label*="Download" i]',
-                        '[data-testid*="download" i]',
-                        'button[title*="Download" i]',
-                        'a[aria-label*="Download" i]']:
+        async with page.expect_download(timeout=30000) as dl_info:
+            # 1) open the «Save» dropdown (top-right of the record page)
+            opened = False
+            for sel in ['button.save-btn', 'button[data-tracklink="Save-Open"]',
+                        'button.ancBtn:has-text("Save")', 'button:has-text("Save")']:
                 try:
                     el = page.locator(sel).first
                     if await el.count() and await el.is_visible():
                         await el.click(timeout=4000)
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(1.2)
+                        opened = True
+                        break
+                except Exception:
+                    continue
+            if not opened:
+                raise RuntimeError("кнопка Save не найдена")
+            # 2) «Save to your computer»
+            done = False
+            for sel in ['button.link.item:has-text("Save to your computer")',
+                        'button:has-text("Save to your computer")',
+                        'a:has-text("Save to your computer")',
+                        'li:has-text("Save to your computer")']:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() and await el.is_visible():
+                        await el.click(timeout=4000)
                         done = True
-                        # a confirm step may follow (JPG / Save)
-                        for c in ['button:has-text("Download")',
-                                  'button:has-text("Save")',
-                                  '[data-testid*="confirm" i]']:
-                            try:
-                                cb = page.locator(c).first
-                                if await cb.count() and await cb.is_visible():
-                                    await cb.click(timeout=3000)
-                                    break
-                            except Exception:
-                                continue
                         break
                 except Exception:
                     continue
             if not done:
-                raise RuntimeError("кнопка Download не найдена")
-        dl = await dl_info.value
+                raise RuntimeError("«Save to your computer» не найдено")
+        dl  = await dl_info.value
+        suf = Path(dl.suggested_filename or "doc.jpg").suffix or ".jpg"
+        dest = dest_dir / (safe_fn(title) + suf)
         await dl.save_as(str(dest))
         log(f"    🖼 документ сохранён: {dest.name} ({dest.stat().st_size//1024}KB)")
         return str(dest)
     except Exception as exc:
-        log(f"    (download через вьюер не вышло: {type(exc).__name__}) — беру картинку")
+        log(f"    (Save→компьютер не вышло: {type(exc).__name__}) — беру превью")
 
     src = await _best_img(page)
     if src:
         body = await _fetch_bytes(ctx, src)
         if body:
+            dest = dest_dir / (safe_fn(title) + ".jpg")
             dest.write_bytes(body)
-            log(f"    🖼 изображение сохранено: {dest.name} ({len(body)//1024}KB)")
+            log(f"    🖼 превью сохранено: {dest.name} ({len(body)//1024}KB)")
             return str(dest)
     log("    (изображение документа не найдено)")
     return None
@@ -561,38 +582,48 @@ async def _download_image(ctx, page, dest_dir: Path, title: str, log) -> str | N
 # ── 6. SCRAPE ONE RECORD ──────────────────────────────────────────────────── #
 
 _FIELDS_JS = r"""() => {
-    const out = [];
+    const norm = s => (s||'').replace(/ /g,' ')
+        .replace(/[ \t]+/g,' ').replace(/\n+/g,'\n').trim();
+    const out = [], seen = new Set();
+    const BAD = /^(sign in|search|menu|save|print|share|detail|source|view|home|trees|memories|dna|add or update|report a problem|listen|suggested|neighbo|ancestry|cart|help|browse|filter|hint)/i;
     const push = (k, v) => {
-        k = (k||'').replace(/\s+/g,' ').trim().replace(/:$/,'');
-        v = (v||'').replace(/\s+/g,' ').trim();
-        if (k && v && k.length < 60 && v.length < 600) out.push([k, v]);
+        k = norm(k).replace(/[: ]+$/,''); v = norm(v);
+        if (!k || !v || k === v || k.length > 45 || v.length > 800) return;
+        if (k.includes('\n') || !/[A-Za-z]/.test(k) || BAD.test(k)) return;
+        const key = k.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key); out.push([k, v]);
     };
-    // dl/dt/dd
-    document.querySelectorAll('dl').forEach(dl => {
-        const dts = dl.querySelectorAll('dt'), dds = dl.querySelectorAll('dd');
-        for (let i=0; i<Math.min(dts.length, dds.length); i++)
-            push(dts[i].innerText, dds[i].innerText);
-    });
-    // tables: label | value
-    document.querySelectorAll('table tr').forEach(tr => {
-        const c = tr.querySelectorAll('td,th');
-        if (c.length >= 2) push(c[0].innerText, c[1].innerText);
-    });
-    // Ancestry fact rows (two-cell flex rows with a label + value)
-    document.querySelectorAll('[class*="tableRow"],[class*="recordField"],[class*="fact"]')
-        .forEach(r => {
-            const kids = r.children;
-            if (kids && kids.length >= 2)
-                push(kids[0].innerText, kids[1].innerText);
-        });
-    return out;
+    // any 2-child row = label | value (Ancestry's Detail panel; class-agnostic)
+    for (const el of document.querySelectorAll('tr, li, div, dl')) {
+        const kids = [...el.children].filter(c => norm(c.innerText));
+        if (kids.length === 2) {
+            const k = norm(kids[0].innerText), v = norm(kids[1].innerText);
+            if (k && v && !k.includes('\n') && k.length < 45) push(k, v);
+        }
+    }
+    // Household members table (Name | Age | Relationship)
+    let household = [];
+    for (const tb of document.querySelectorAll('table')) {
+        if (!/Household Members|Relationship/i.test(norm(tb.innerText))) continue;
+        for (const tr of tb.querySelectorAll('tr')) {
+            const c = [...tr.querySelectorAll('td,th')].map(x => norm(x.innerText));
+            if (c.length >= 2 && c[0] && !/^name$/i.test(c[0])) household.push(c);
+        }
+    }
+    // subtitle «in the 1930 United States Federal Census»
+    let sub = "";
+    const h1 = document.querySelector('h1');
+    if (h1 && h1.nextElementSibling)
+        sub = norm(h1.nextElementSibling.innerText).split('\n')[0];
+    return {fields: out, household: household, subtitle: sub};
 }"""
 
 
 async def _scrape_page(ctx, page, url, name_hint, images_root,
                        logged_in_ref, email, password, log) -> dict:
-    rec = {"url": url, "title": name_hint, "name": name_hint,
-           "table_data": {}, "images": [], "thumb_bytes": None,
+    rec = {"url": url, "title": name_hint, "name": name_hint, "subtitle": "",
+           "table_data": {}, "household": [], "images": [], "thumb_bytes": None,
            "collection": "", "score": 0}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=40000)
@@ -613,25 +644,53 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
             log("    !! запись за логином — пропускаю")
             return rec
 
-    # title
+    # title (h1 — drop a glued tree name on the 2nd line)
     for sel in ["h1", '[class*="title" i]', "h2"]:
         try:
             t = (await page.locator(sel).first.inner_text(timeout=2500) or "").strip()
+            t = t.split("\n")[0].strip()
             if 2 < len(t) < 200:
                 rec["title"] = t
                 break
         except Exception:
             pass
 
-    # fields
+    # fields + household + subtitle
     try:
-        pairs = await page.evaluate(_FIELDS_JS)
+        data = await page.evaluate(_FIELDS_JS)
     except Exception:
-        pairs = []
+        data = {"fields": [], "household": [], "subtitle": ""}
     td = {}
-    for k, v in pairs:
-        if k not in td:
-            td[k] = v
+    for k, v in data.get("fields", []):
+        td.setdefault(k, v)
+    rec["household"] = data.get("household", []) or []
+    rec["subtitle"]  = data.get("subtitle", "") or ""
+
+    # Print-page fallback: if the Detail panel gave too little, the print view
+    # (#printPage, ?pf=true) is a clean record dump — parse it instead.
+    if len(td) < 3:
+        try:
+            href = await page.evaluate(
+                "() => { const a = document.querySelector('#printPage');"
+                " return a ? a.href : ''; }")
+            if href:
+                pg = await ctx.new_page()
+                try:
+                    await pg.goto(href, wait_until="domcontentloaded", timeout=40000)
+                    await asyncio.sleep(3)
+                    d2 = await pg.evaluate(_FIELDS_JS)
+                    for k, v in d2.get("fields", []):
+                        td.setdefault(k, v)
+                    if not rec["household"]:
+                        rec["household"] = d2.get("household", []) or []
+                    if not rec["subtitle"]:
+                        rec["subtitle"] = d2.get("subtitle", "") or ""
+                    log(f"    (поля со страницы печати: {len(td)})")
+                finally:
+                    try: await pg.close()
+                    except Exception: pass
+        except Exception as e:
+            log(f"    !! print-страница: {type(e).__name__}")
     rec["table_data"] = td
 
     label = rec["title"] or name_hint
@@ -649,6 +708,7 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
         fp = img_dir / (safe_fn(label) + "_preview.jpg")
         fp.write_bytes(rec["thumb_bytes"])
         rec["images"] = [str(fp)]
+    log(f"    полей: {len(td)}, домочадцев: {len(rec['household'])}")
     return rec
 
 
@@ -669,6 +729,8 @@ def _add_link(para, text, url):
 def _docx_add_record(doc, i, rec):
     title = rec.get("title") or rec.get("name", "—")
     doc.add_heading(f"{i}. {title}", level=2)
+    if rec.get("subtitle"):
+        sp = doc.add_paragraph(); sr = sp.add_run(rec["subtitle"]); sr.italic = True
     if rec.get("url"):
         pp = doc.add_paragraph()
         pp.add_run(f"Источник ({SITE_NAME}): ").bold = True
@@ -679,7 +741,7 @@ def _docx_add_record(doc, i, rec):
         p.add_run(f"{rec.get('score','?')}%")
 
     rows = []
-    if rec.get("collection"):
+    if rec.get("collection") and rec["collection"] != rec.get("subtitle"):
         rows.append(("Коллекция", rec["collection"]))
     for f, v in rec.get("table_data", {}).items():
         rows.append((str(f), str(v)))
@@ -695,6 +757,19 @@ def _docx_add_record(doc, i, rec):
             r = tbl.add_row().cells
             r[0].text = f; set_cell_lines(r[1], v)
     doc.add_paragraph("")
+
+    # Household members table
+    hh = rec.get("household") or []
+    if hh:
+        doc.add_paragraph("Домочадцы:").runs[0].bold = True
+        ncols = max(len(r) for r in hh)
+        htbl = doc.add_table(rows=0, cols=ncols)
+        htbl.style = "Table Grid"
+        for r in hh:
+            cells = htbl.add_row().cells
+            for ci in range(ncols):
+                set_cell_lines(cells[ci], r[ci] if ci < len(r) else "")
+        doc.add_paragraph("")
 
     imgs = rec.get("images", []); tb = rec.get("thumb_bytes")
     if imgs and Path(imgs[0]).exists():
@@ -761,7 +836,7 @@ def write_xlsx(path: Path, records: list, qlines: list, append: bool = False):
         for k in rec.get("table_data", {}):
             if k not in aff:
                 aff.append(k)
-    base_cols = ["#", "База", "Имя", "Совп. %", "Коллекция", "URL"]
+    base_cols = ["#", "База", "Имя", "Запись", "Совп. %", "Домочадцы", "URL"]
 
     existing = append and Path(path).exists()
     if existing:
@@ -792,10 +867,12 @@ def write_xlsx(path: Path, records: list, qlines: list, append: bool = False):
     for n, rec in enumerate(records):
         ri = start_row + n
         td = rec.get("table_data", {})
+        hh = "; ".join(" ".join(c for c in r if c) for r in rec.get("household", []))
         row = {"#": start_num + n + 1, "База": SITE_NAME,
                "Имя": rec.get("title", rec.get("name", "")),
+               "Запись": rec.get("subtitle", "") or rec.get("collection", ""),
                "Совп. %": rec.get("score", ""),
-               "Коллекция": rec.get("collection", ""),
+               "Домочадцы": hh,
                "URL": rec.get("url", "")}
         for f in aff:
             row[f] = td.get(f, "")

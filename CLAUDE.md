@@ -500,13 +500,22 @@ no_viewport=True, accept_downloads=True
 - **Фикс** (`_COLLECT_JS`): для каждой record-ссылки подняться к КОНТЕЙНЕРУ строки (предок с метками `Name/Spouse/Birth/Residence`), взять значение ПОСЛЕ строки-метки «Name» как имя человека, дедуп по строке, выбрать лучший record-link (`discoveryui-content/view` › `family-tree/person` › `imageviewer`). Скорить `_match_name`.
 - **`_match_name` (surname-aware)**: фамилия должна совпасть **≥0.94** (SequenceMatcher) — «Sanders»=1.0 ОК, но «Saunders»≈0.93 / «Sanderson»≈0.88 / «Snyder»≈0.6 ОТВЕРГАЮТСЯ (пользователь хочет именно эту фамилию). Имя — по инициалу/префиксу/sim≥0.7. «Alexander Wolf Sanders» (дерево) проходит (фамилия точная, Wolf≈инициал W). `MIN_MATCH=80`.
 
-### Что СВЕРИТЬ на живом прогоне (defensive)
-- **Детальная карточка** (`_FIELDS_JS`): generic — `dl/dt-dd`, `table tr`, `[class*=tableRow|recordField|fact]` (label|value по `innerText`).
-- **Скан документа**: вьюер платный (у пользователя есть доступ). `_download_image` — best-effort: `expect_download` вокруг `button[aria-label*=Download]`/`[data-testid*=download]` (+ confirm), фолбэк — самый большой `<img>`. **Сейчас тянет мелкие превью (17КБ)** — сверить реальную кнопку скачивания вьюера (пример: `/imageviewer/collections/6224/images/4609286_00021?pId=12494948`).
-- **Релевантные результаты ниже баннера** «Don't miss out…» — мой сбор берёт всю страницу (`count=50`), баннер не мешает.
-- **Gender только m/f, Race — текст, Collection Focus + 4 галки-фильтра** (Historical Records/Family Trees/Stories/Photos) — в GUI есть; gender/race в URL, collection/фильтры пока НЕ в URL (best-effort, параметры не сверены) — дефолт «всё включено» = поиск не ломается.
+### Детальная карточка записи (`/search/collections/<db>/records/<rec>`)
+- **Поля = строки «метка | значение» (`_FIELDS_JS`)**: класс-агностично — любой элемент с РОВНО двумя текстовыми детьми, метка = короткая однострочная (`<45`), фильтр мусора (`BAD`-regex: sign in/save/print/suggested/…), дедуп по метке. Это вытащило Detail-панель (Name/Birth Year/Gender/…/Occupation), которую узкие селекторы не брали (Word был пустой, только превью).
+- **Фолбэк — страница печати**: если полей `<3`, взять `#printPage` href (`…&pf=true`) → открыть новой вкладкой → тот же `_FIELDS_JS` (печатная версия чистая). Пользователь сама предложила Print.
+- **Домочадцы** (`household`): таблица с «Household Members/Relationship» (Name|Age|Relationship) → в Word отдельной таблицей «Домочадцы», в Excel колонкой.
+- **Подзаголовок** (`subtitle`): «in the 1930 United States Federal Census» = `h1.nextElementSibling`; в Word курсивом под именем, в Excel колонка «Запись».
+- Имя из дерева приходит как «Alexander Wolf Sanders\nGoodie Family Tree» → брать ПЕРВУЮ строку (и в сборе, и в `title`).
 
-### GUI
+### Скан документа — кнопка Save (НЕ download-вьюер)
+- На странице записи (справа вверху) **`button.save-btn` («Save», `data-tracklink="Save-Open"`)** → выпадашка → **`button.link.item` «Save to your computer»** → `expect_download`. Точную последовательность дала пользователь. Фолбэк — самый большой `<img>` (мелкое превью ~17КБ; настоящий документ только через Save).
+
+### Релевантность / объём
+- **Лучше БОЛЬШЕ результатов, чем пропустить релевантное** (правило пользователя). `spouse=` у Ancestry — мягкий фильтр (5503 результата), поэтому в выдаче и «Alexander Sanders» без W — это ОК, не ужимать. Релевантные могут быть и ниже баннера «Don't miss out…» — сбор берёт всю страницу (`count=50`).
+
+### GUI (как на сайте)
+- **Add event:** строка-ссылки Marriage/Death/Lived In/Any Event → динамические строки (Year + ±диапазон + Location). В URL: `marriage/death/residence` + `<ev>_x=N-0-0` + `<ev>place` (Any Event — параметр неизвестен, пропуск).
+- **Add family member:** строка-ссылки Father/Mother/Sibling/Spouse/Child. **Father/Mother — ОДИН** (`_FAM_SINGLE`, ссылка дизейблится после добавления, 2+ нельзя); Sibling/Spouse/Child — неограниченно. Каждая строка: First/Last/Exact/✕.
 - Английский, зелёная тема. Креды (username/password+глаз). Basic Search: First/Last/Place/Birth Year, у КАЖДОГО свой чекбокс «Exact» (payload `exact={name,surname,place,year}`). Advanced (сворачиваемый): Family members Father/Mother/Spouse (First/Last + Exact) + Keyword. Конфликт файлов overwrite/append/skip. Файлы `ancestry_{запрос}.docx/.xlsx`, Excel колонка «База»=Ancestry.
 
 ---

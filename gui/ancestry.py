@@ -70,8 +70,13 @@ GENDER_OPTIONS = ["—", "Male", "Female"]
 COLLECTION_OPTIONS = ["All Collections", "USA", "UK & Ireland", "Europe",
                       "Canada", "Australia & New Zealand", "Jewish Family History"]
 FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
-                ("Spouse", "spouse"), ("Sibling", "sibling"), ("Child", "child")]
+                ("Sibling", "sibling"), ("Spouse", "spouse"), ("Child", "child")]
 _FAM_LABEL = {k: l for l, k in FAMILY_TYPES}   # key → display label
+_FAM_SINGLE = {"father", "mother"}             # only ONE of each allowed
+# Add event: links → URL key. Birth stays the basic Birth Year up top.
+EVENT_TYPES = [("Marriage", "marriage"), ("Death", "death"),
+               ("Lived In", "residence"), ("Any Event", "any")]
+_EVENT_LABEL = {k: l for l, k in EVENT_TYPES}
 
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
@@ -245,16 +250,35 @@ class AncestryApp(QMainWindow):
         self._adv = QGroupBox()
         av = QVBoxLayout(self._adv); av.setSpacing(6)
 
-        # Family members — dynamic rows
-        av.addWidget(_sechead("FAMILY MEMBERS  (add as many as you like)"))
-        self._fam_box = QVBoxLayout(); self._fam_box.setSpacing(4)
-        self._fam_containers = {}
+        # Events — "Add event: Marriage Death Lived In Any Event" (link row)
+        ev_head = QHBoxLayout(); ev_head.setSpacing(10)
+        ev_head.addWidget(QLabel("Add event:"))
+        for label, etype in EVENT_TYPES:
+            lk = QPushButton(label); lk.setObjectName("addBtn")
+            lk.clicked.connect(lambda _=False, t=etype: (self._add_event_row(t), self._save()))
+            ev_head.addWidget(lk)
+        ev_head.addStretch()
+        av.addLayout(ev_head)
+        self._events: list = []
+        self._events_box = QVBoxLayout(); self._events_box.setSpacing(3)
+        av.addLayout(self._events_box)
+        av.addWidget(_divider())
+
+        # Family — "Add family member: Father Mother Sibling Spouse Child" (link row,
+        # exactly like the site). Father/Mother single; Sibling/Spouse/Child unlimited.
+        fam_head = QHBoxLayout(); fam_head.setSpacing(10)
+        fam_head.addWidget(QLabel("Add family member:"))
+        self._fam_links = {}
         for label, key in FAMILY_TYPES:
-            head = QHBoxLayout()
-            add = QPushButton(f"+ Add {label}"); add.setObjectName("addBtn")
-            add.clicked.connect(lambda _=False, k=key: (self._add_fam_row(k), self._save()))
-            head.addWidget(add); head.addStretch()
-            self._fam_box.addLayout(head)
+            lk = QPushButton(label); lk.setObjectName("addBtn")
+            lk.clicked.connect(lambda _=False, k=key: (self._add_fam_row(k), self._save()))
+            self._fam_links[key] = lk
+            fam_head.addWidget(lk)
+        fam_head.addStretch()
+        av.addLayout(fam_head)
+        self._fam_box = QVBoxLayout(); self._fam_box.setSpacing(3)
+        self._fam_containers = {}
+        for _label, key in FAMILY_TYPES:
             box = QVBoxLayout(); box.setSpacing(3)
             self._fam_containers[key] = box
             self._fam_box.addLayout(box)
@@ -336,6 +360,8 @@ class AncestryApp(QMainWindow):
 
     # ── Dynamic family-member rows ────────────────────────────────────────── #
     def _add_fam_row(self, key, first="", last="", exact=False):
+        if key in _FAM_SINGLE and self._fam[key]:
+            return None                       # only ONE father / mother
         box = self._fam_containers[key]
         row_w = QWidget()
         rl = QHBoxLayout(row_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
@@ -352,12 +378,49 @@ class AncestryApp(QMainWindow):
         ff.textChanged.connect(self._save); lf.textChanged.connect(self._save)
         cb.stateChanged.connect(self._save)
         rm.clicked.connect(lambda _=False: self._remove_fam_row(key, rec))
+        if key in _FAM_SINGLE and key in getattr(self, "_fam_links", {}):
+            self._fam_links[key].setEnabled(False)   # disable «Father/Mother» link
         self._fit()
         return rec
 
     def _remove_fam_row(self, key, rec):
         try:
             self._fam[key].remove(rec)
+            rec["w"].setParent(None)
+            rec["w"].deleteLater()
+        except Exception:
+            pass
+        if key in _FAM_SINGLE and key in getattr(self, "_fam_links", {}):
+            self._fam_links[key].setEnabled(True)
+        self._save(); self._fit()
+
+    # ── Dynamic event rows ────────────────────────────────────────────────── #
+    def _add_event_row(self, etype, year="", rng=1, place=""):
+        row_w = QWidget()
+        rl = QHBoxLayout(row_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
+        lbl = QLabel(_EVENT_LABEL.get(etype, etype) + ":"); lbl.setFixedWidth(75)
+        yf = QLineEdit(); yf.setPlaceholderText("Year"); yf.setFixedWidth(64); yf.setText(year)
+        rngc = QComboBox()
+        for lbl2, _v in YEAR_OPTIONS:
+            rngc.addItem(lbl2)
+        rngc.setCurrentIndex(next((i for i, (_l, v) in enumerate(YEAR_OPTIONS)
+                                   if v == rng), 1))
+        pf = QLineEdit(); pf.setPlaceholderText("City, County, State, Country"); pf.setText(place)
+        rm = QPushButton("✕"); rm.setObjectName("rmBtn"); rm.setFixedWidth(24)
+        rl.addWidget(lbl); rl.addWidget(yf); rl.addWidget(rngc)
+        rl.addWidget(pf, 2); rl.addWidget(rm)
+        rec = {"w": row_w, "type": etype, "year": yf, "range": rngc, "place": pf}
+        self._events.append(rec)
+        self._events_box.addWidget(row_w)
+        yf.textChanged.connect(self._save); pf.textChanged.connect(self._save)
+        rngc.currentTextChanged.connect(self._save)
+        rm.clicked.connect(lambda _=False: self._remove_event_row(rec))
+        self._fit()
+        return rec
+
+    def _remove_event_row(self, rec):
+        try:
+            self._events.remove(rec)
             rec["w"].setParent(None)
             rec["w"].deleteLater()
         except Exception:
@@ -407,6 +470,9 @@ class AncestryApp(QMainWindow):
             "adv_open": self._adv_btn.isChecked(),
             "fam": {k: [[r["first"].text(), r["last"].text(), r["exact"].isChecked()]
                         for r in rows] for k, rows in self._fam.items()},
+            "events": [[e["type"], e["year"].text(),
+                        YEAR_OPTIONS[e["range"].currentIndex()][1], e["place"].text()]
+                       for e in self._events],
         }
         try:
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2),
@@ -448,6 +514,9 @@ class AncestryApp(QMainWindow):
             if key in self._fam:
                 for r in rows:
                     self._add_fam_row(key, *(r + ["", "", False])[:3])
+        for e in (d.get("events") or []):
+            e = (list(e) + ["", "", 1, ""])[:4]
+            self._add_event_row(e[0], str(e[1]), int(e[2] or 1), str(e[3]))
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
 
@@ -478,6 +547,12 @@ class AncestryApp(QMainWindow):
                       if r["first"].text().strip() or r["last"].text().strip()]
             if people:
                 adv[key] = people
+        adv["events"] = [
+            {"type": e["type"], "year": e["year"].text().strip(),
+             "range": YEAR_OPTIONS[e["range"].currentIndex()][1],
+             "place": e["place"].text().strip()}
+            for e in self._events
+            if e["year"].text().strip() or e["place"].text().strip()]
         return adv
 
     def _payload(self) -> dict:
