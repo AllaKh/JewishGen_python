@@ -120,71 +120,82 @@ def _name_part(s: str) -> str:
     return "+".join((s or "").split())
 
 
+# ── Name matching (surname-aware — score by the PERSON, not the collection) ──── #
+
+def _ratio(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _match_name(first_q: str, last_q: str, full: str) -> float:
+    """Score a result's PERSON name against the query. Surname must match closely
+    (≥0.90 — «Sanders» keeps «Alexander Wolf Sanders» but rejects «Snyder» /
+    «Sanderson» / «Saunders»); the given name matches by initial / prefix / sim."""
+    toks = re.findall(r"[A-Za-zА-Яа-яёЁ]+", (full or "").lower())
+    if not toks:
+        return 0.0
+    lastq  = (last_q or "").strip().lower()
+    firstq = (first_q or "").strip().lower().split()
+    sur = max((_ratio(lastq, t) for t in toks), default=0.0) if lastq else 1.0
+    # surname must match closely: «Sanders»=1.0 kept; «Saunders»≈0.93 /
+    # «Sanderson»≈0.88 / «Snyder»≈0.6 rejected (user wants exactly this surname).
+    if lastq and sur < 0.94:
+        return round(sur * 60, 1)
+    if not firstq:
+        return round(85 + 14 * sur, 1)
+    g = firstq[0]
+    giv = any(
+        t == g
+        or (len(g) == 1 and t.startswith(g))
+        or (len(g) > 1 and t.startswith(g[:2]))
+        or _ratio(g, t) >= 0.7
+        for t in toks)
+    return 99.0 if giv else 72.0
+
+
 # ── Search-URL building ────────────────────────────────────────────────────── #
 
-def _build_search_url(fn, ln, place, year, exact, adv) -> str:
-    """Ancestry /search/ URL. name=First+Middle_Last, birth=YEAR, residence=…,
-    spouse/father/mother=…, with `<field>_x=1` for the EXACT flags. Spaces are a
-    literal «+», so the query is assembled by hand (urlencode would escape it)."""
+def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
+    """Ancestry /search/ URL — built by hand (spaces are a literal «+»).
+    name=First+Middle_Last, birth=YEAR&birth_x=<N>-0-0 (N = ± year range, 0=exact),
+    residence=…, father/mother/spouse/sibling/child=… (LISTS), count=50.
+    `<field>_x=1` only for the fields whose EXACT box is ticked."""
     exact = exact or {}
     adv   = adv or {}
     parts = []
 
-    name = ""
     if fn or ln:
-        name = f"{_name_part(fn)}_{_name_part(ln)}".strip("_")
-    if name:
-        parts.append(("name", name))
+        parts.append(("name", f"{_name_part(fn)}_{_name_part(ln)}".strip("_")))
         if exact.get("name") or exact.get("surname"):
             parts.append(("name_x", "1"))   # Ancestry name is one unit (given+surname)
     if year:
         y = re.sub(r"\D", "", str(year))[:4]
         if y:
             parts.append(("birth", y))
-            if exact.get("year"):
-                parts.append(("birth_x", "1"))
+            n = 1 if year_range is None else int(year_range)
+            parts.append(("birth_x", f"{n}-0-0"))     # ±N years (0 = this year)
     if place:
         parts.append(("residence", _name_part(place)))
         if exact.get("place"):
             parts.append(("residence_x", "1"))
-    for rel in ("spouse", "father", "mother"):
-        rf, rl = adv.get(f"{rel}_first", ""), adv.get(f"{rel}_last", "")
-        if rf or rl:
-            parts.append((rel, f"{_name_part(rf)}_{_name_part(rl)}".strip("_")))
-            if adv.get(f"{rel}_exact"):
-                parts.append((f"{rel}_x", "1"))
+    for rel in ("father", "mother", "spouse", "sibling", "child"):
+        for person in adv.get(rel, []) or []:
+            rf, rl = person.get("first", ""), person.get("last", "")
+            if rf or rl:
+                parts.append((rel, f"{_name_part(rf)}_{_name_part(rl)}".strip("_")))
+                if person.get("exact"):
+                    parts.append((f"{rel}_x", "1"))
     if adv.get("keyword"):
         parts.append(("keyword", _name_part(adv["keyword"])))
-    # query string with literal '+' for spaces, '_' kept intact
-    q = "&".join(f"{k}={quote(v, safe='+_')}" for k, v in parts)
+    g = (adv.get("gender") or "").strip().lower()
+    if g.startswith("m"):
+        parts.append(("gender", "m"))
+    elif g.startswith("f"):
+        parts.append(("gender", "f"))
+    if adv.get("race"):
+        parts.append(("race", _name_part(adv["race"])))
+    parts.append(("count", "50"))                     # 50 results per page
+    q = "&".join(f"{k}={quote(v, safe='+_-')}" for k, v in parts)
     return f"{SEARCH_URL}?{q}" if q else SEARCH_URL
-
-
-def _apply_exact_to_results(url: str, exact: dict, adv: dict) -> str:
-    """Add the `_x=1` flags / spouse-parent params to whatever Ancestry already
-    put in the results URL after the form search, then return the new URL."""
-    exact = exact or {}; adv = adv or {}
-    pr    = urlparse(url)
-    pairs = parse_qsl(pr.query, keep_blank_values=True)
-    keys  = {k for k, _ in pairs}
-
-    def _add(k, v):
-        if k not in keys:
-            pairs.append((k, v)); keys.add(k)
-
-    if ("name" in keys) and (exact.get("name") or exact.get("surname")):
-        _add("name_x", "1")
-    if ("birth" in keys) and exact.get("year"):
-        _add("birth_x", "1")
-    if exact.get("place") and ("residence" in keys or "anyplace" in keys):
-        _add("residence_x", "1")
-    for rel in ("spouse", "father", "mother"):
-        rf, rl = adv.get(f"{rel}_first", ""), adv.get(f"{rel}_last", "")
-        if rf or rl:
-            _add(rel, f"{_name_part(rf)}_{_name_part(rl)}".strip("_"))
-            if adv.get(f"{rel}_exact"):
-                _add(f"{rel}_x", "1")
-    return pr._replace(query=urlencode(pairs, safe="+_")).geturl()
 
 
 # ── Field typing ──────────────────────────────────────────────────────────── #
@@ -211,67 +222,15 @@ async def _type_field(page, sel: str, val: str, label: str, log) -> bool:
         return False
 
 
-# ── 1. SEARCH (home form) ─────────────────────────────────────────────────── #
+# ── 1. SEARCH (built URL — the home form selectors are unreliable) ──────────── #
 
-async def _search(page, fn, ln, place, year, exact, adv, log):
-    log(f"  Открываю {HOME_URL}")
-    await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=40000)
-    await asyncio.sleep(3)
-
-    # wait for the home search form
-    for sel in ["#firstName", 'input[name="firstName"]']:
-        try:
-            await page.locator(sel).first.wait_for(state="visible", timeout=10000)
-            break
-        except Exception:
-            continue
-
-    filled = await _type_field(page, '#firstName, input[name="firstName"]',
-                               fn, "First Name", log)
-    filled |= await _type_field(page, '#lastName, input[name="lastName"]',
-                                ln, "Last Name", log)
-    if place:
-        await _type_field(page, '#place, input[name="place"]',
-                          place, "Place", log)
-    if year:
-        await _type_field(page, '#birthYear, input[name="birthYear"]',
-                          year, "Birth Year", log)
-
-    clicked = False
-    for sel in ['button.ancBtn[type="submit"]', 'button[type="submit"]',
-                'button:has-text("Search")']:
-        try:
-            el = page.locator(sel).first
-            if await el.count() and await el.is_visible():
-                await el.click(timeout=6000)
-                log(f"  Search нажат ({sel})")
-                clicked = True
-                break
-        except Exception:
-            continue
-    if not clicked:
-        # last resort: build the search URL directly
-        log("  !! кнопка Search не найдена — иду по URL")
-        await page.goto(_build_search_url(fn, ln, place, year, exact, adv),
-                        wait_until="domcontentloaded", timeout=40000)
-
-    try:
-        await page.wait_for_url(lambda u: "/search" in u, timeout=20000)
-    except Exception:
-        pass
+async def _search(page, fn, ln, place, year, year_range, exact, adv, log) -> str:
+    url = _build_search_url(fn, ln, place, year, year_range, exact, adv)
+    log(f"  Поиск: {url}")
+    await page.goto(url, wait_until="domcontentloaded", timeout=40000)
     await asyncio.sleep(5)
-
-    # narrow the result set BEFORE scraping: exact flags + spouse/parents
-    if "/search" in page.url:
-        u2 = _apply_exact_to_results(page.url, exact, adv)
-        if u2 != page.url:
-            log(f"  → уточняю выдачу (exact/родня): {[k for k,v in (exact or {}).items() if v]}")
-            try:
-                await page.goto(u2, wait_until="domcontentloaded", timeout=40000)
-                await asyncio.sleep(5)
-            except Exception as e:
-                log(f"  !! не вышло уточнить URL: {type(e).__name__}")
     log(f"  Результаты: {page.url}")
+    return url
 
 
 # ── 2. LOGIN ──────────────────────────────────────────────────────────────── #
@@ -372,29 +331,51 @@ async def _sign_in_if_needed(page, email, password, logged_in_ref, log) -> bool:
 # ── 3. COLLECT RESULTS ────────────────────────────────────────────────────── #
 
 _COLLECT_JS = r"""() => {
-    const seen = new Set(), out = [];
+    const out = [], seenRow = new Set(), seenHref = new Set();
     const pats = ["/discoveryui-content/view/", "/imageviewer/",
                   "/family-tree/person/", "recordpid", "/cgi-bin/sse.dll"];
     const isRec = h => h && pats.some(p => h.toLowerCase().includes(p));
+    const labRe = /\b(Name|Spouse|Birth|Residence|Death|Marriage|Relative)\b/;
     for (const a of document.querySelectorAll('a[href]')) {
         const href = a.href || '';
-        if (!isRec(href)) continue;
-        if (seen.has(href)) continue;
-        // climb to the row container for the full text
-        let row = a, hops = 0;
-        while (row && hops < 6 &&
-               (row.innerText || '').trim().length < 30) { row = row.parentElement; hops++; }
-        const text = ((row && row.innerText) || a.innerText || '').trim();
-        const name = (a.innerText || '').trim() || text.split('\n')[0] || '';
-        if (!name) continue;
-        seen.add(href);
-        out.push({url: href, name: name, text: text.slice(0, 1500)});
+        if (!isRec(href) || seenHref.has(href)) continue;
+        // climb to the RESULT ROW (an ancestor carrying labelled fields)
+        let row = a, best = null, hops = 0;
+        while (row && hops < 9) {
+            const t = row.innerText || '';
+            if (labRe.test(t)) best = row;
+            if (best && (best.innerText || '').length > 80) break;
+            row = row.parentElement; hops++;
+        }
+        const cont = best || a;
+        if (seenRow.has(cont)) { seenHref.add(href); continue; }
+        seenRow.add(cont); seenHref.add(href);
+        const text = (cont.innerText || '').trim();
+        // the PERSON name = the value on the line after a «Name» label
+        const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+        let name = '';
+        for (let i = 0; i < lines.length - 1; i++)
+            if (/^Name$/i.test(lines[i])) { name = lines[i + 1]; break; }
+        if (!name) name = (a.innerText || '').trim();
+        name = name.replace(/^(Mr|Mrs|Dr|Miss|Mstr)\.?\s+/i, '')
+                   .replace(/\[.*?\]/g, '').trim();
+        // collection title (the record's label) = the first labelled line OR
+        // the link text
+        let coll = (a.innerText || '').trim();
+        // pick the best record link inside this row
+        const links = [...cont.querySelectorAll('a[href]')]
+            .map(x => x.href).filter(isRec);
+        const recUrl =
+            links.find(h => /discoveryui-content\/view/.test(h)) ||
+            links.find(h => /family-tree\/person/.test(h)) ||
+            links.find(h => /imageviewer/.test(h)) || href;
+        out.push({url: recUrl, name: name, coll: coll, text: text.slice(0, 2000)});
     }
     return out;
 }"""
 
 
-async def _collect(page, qname: str, log) -> list:
+async def _collect(page, first_q, last_q, log) -> list:
     await asyncio.sleep(2)
     try:
         raw = await page.evaluate(_COLLECT_JS)
@@ -403,29 +384,30 @@ async def _collect(page, qname: str, log) -> list:
         raw = []
     out = []
     for r in raw:
-        if not _is_record(r["url"]):
+        if not _is_record(r["url"]) or not r.get("name"):
             continue
-        r["score"] = round(_sim(qname, r["name"]), 1)
+        r["score"] = _match_name(first_q, last_q, r["name"])
         out.append(r)
-        log(f"    {r['score']:5.1f}%  {r['name'][:60]}")
+        log(f"    {r['score']:5.1f}%  {r['name'][:45]:45}  | {r.get('coll','')[:40]}")
     log(f"  Кандидатов на странице: {len(out)}")
     return out
 
 
-async def _collect_all(page, qname, base_url, log) -> list:
-    """Walk up to MAX_PAGES result pages (Ancestry paginates with &page=N)."""
+async def _collect_all(page, first_q, last_q, base_url, log) -> list:
+    """Walk up to MAX_PAGES result pages (Ancestry paginates with &page=N). The
+    relevant records are top-ranked, so this rarely needs more than 1-2 pages."""
     all_rows, seen = [], set()
     for pg in range(1, MAX_PAGES + 1):
         if pg > 1:
-            sep = "&" if "?" in base_url else "?"
-            nu = re.sub(r"([?&])page=\d+", r"\1", base_url).rstrip("?&")
-            nu = f"{nu}{sep}page={pg}"
+            base = re.sub(r"([?&])page=\d+", r"\1", base_url).rstrip("?&")
+            sep = "&" if "?" in base else "?"
+            nu = f"{base}{sep}page={pg}"
             try:
                 await page.goto(nu, wait_until="domcontentloaded", timeout=40000)
                 await asyncio.sleep(4)
             except Exception:
                 break
-        rows = await _collect(page, qname, log)
+        rows = await _collect(page, first_q, last_q, log)
         new = [r for r in rows if r["url"] not in seen]
         for r in new:
             seen.add(r["url"])
@@ -846,6 +828,7 @@ async def run_scraper(
     last_names:    str       = "",
     place_lived:   str       = "",
     birth_year:    str       = "",
+    year_range:    int       = 1,    # ± years (0 = exact); birth_x=<N>-0-0
     advanced:      dict|None = None,
     exact:         dict|None = None,
     output_format: str       = "both",
@@ -878,11 +861,14 @@ async def run_scraper(
         f"First Names: {first_names}", f"Last Names: {last_names}",
         f"Place: {place_lived}", f"Birth Year: {birth_year}",
     ] if not ln.endswith(": ")]
-    for rel in ("spouse", "father", "mother"):
-        nm = " ".join(p for p in (adv.get(f"{rel}_first", ""),
-                                  adv.get(f"{rel}_last", "")) if p)
-        if nm:
-            qlines.append(f"{rel.capitalize()}: {nm}")
+    if birth_year:
+        qlines.append(f"Year range: ±{year_range}" if year_range else "Year: exact")
+    for rel in ("father", "mother", "spouse", "sibling", "child"):
+        for person in adv.get(rel, []) or []:
+            nm = " ".join(p for p in (person.get("first", ""),
+                                      person.get("last", "")) if p)
+            if nm:
+                qlines.append(f"{rel.capitalize()}: {nm}")
     summary   = {"ok": False}
     file_base = safe_fn(f"ancestry_{qname}") if qname else "ancestry_results"
     logged_in_ref = [False]
@@ -909,22 +895,25 @@ async def run_scraper(
             except Exception: pass
 
         try:
-            # 1. SEARCH
-            _prog(5, "Поиск...")
-            await _search(page, first_names, last_names, place_lived,
-                          birth_year, exact, adv, log)
-            if _done(): return summary
-
-            # 2. SIGN IN ONCE (before opening records)
-            _prog(15, "Sign in...")
+            # 1. SIGN IN ONCE up front (persistent profile usually already has it)
+            _prog(5, "Открываю Ancestry...")
+            await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=40000)
+            await asyncio.sleep(3)
+            _prog(12, "Sign in...")
             await _sign_in_if_needed(page, email or "", password or "",
                                      logged_in_ref, log)
             if _done(): return summary
 
-            # 3. COLLECT (logged-in results)
+            # 2. SEARCH (built URL, count=50)
+            _prog(20, "Поиск...")
+            await _search(page, first_names, last_names, place_lived,
+                          birth_year, year_range, exact, adv, log)
+            if _done(): return summary
+
+            # 3. COLLECT — score by the PERSON name, not the collection title
             _prog(25, "Сбор результатов...")
             base_url = page.url
-            raw = await _collect_all(page, qname, base_url, log)
+            raw = await _collect_all(page, first_names, last_names, base_url, log)
             qualified = [r for r in raw if r["score"] >= MIN_MATCH][:MAX_SCRAPE]
             log(f"  Подходящих (≥{MIN_MATCH}%): {len(qualified)}")
 
@@ -945,6 +934,8 @@ async def run_scraper(
                                          images_root, logged_in_ref,
                                          email or "", password or "", log)
                 det["score"] = r["score"]
+                if r.get("coll") and not det.get("collection"):
+                    det["collection"] = r["coll"]
                 records.append(det)
                 log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
 

@@ -481,22 +481,30 @@ no_viewport=True, accept_downloads=True
 
 `ancestry.com` — крупнейшая платная генеалогическая база. **Логин обязателен, анти-бот** (как FamilySearch/MyHeritage). Карточка в лончере key `Ancestry` (лого `config/Ancestry.png`), `action=open_window`. Построен **по образцу FamilySearch** (персистентный профиль, вход ОДИН раз до записей, per-field exact, один проход, Word+Excel с названием сайта, конфликт overwrite/append/skip, не падать). Сайт мне **недоступен напрямую** (Chrome-расширение блокирует домен `ancestry.com` → `Navigation to this domain is not allowed`; залогинена пользователь в Brave) → строил по её скринам/селекторам + знанию URL-схемы Ancestry; **результат-строки / детальная карточка / вьюер сверять по ЖИВОМУ прогону** (есть `_diag`-дамп при 0 результатов).
 
-### Что ТОЧНО известно (от пользователя)
+### Вход / профиль
 - **Персистентный профиль `.ancestry_profile`** (`launch_persistent_context`, БЕЗ хардкода user_agent). Вход один раз, дальше помнит. В `.gitignore`.
-- **Логин**: `https://www.ancestry.com/account/signin` → `#username`, `#password`, кнопка Sign in (`#signInBtn`/`button[type=submit]`/текст). Вход ОДИН раз ДО открытия записей (`_sign_in_if_needed`: определяет залогиненность по отсутствию короткой ссылки «Log in/Sign in» в nav).
-- **Домашняя форма** (`/`): `#firstName`, `#lastName`, `#place` (autocomplete combobox), `#birthYear`; кнопка `button.ancBtn[type="submit"]` («Search»). Заполнять печатью (как FS), не URL.
-- **Результаты** (`/search/`): кнопка Edit `[data-testid="btnEditForm"]`, More options `[data-testid="moreOptionsBtnTestId"]` (открывает расширенный). Галок на домашней нет; exact — ползунки Broad↔Exact в панели «Your search» / «Match all terms exactly».
+- **Вход ОДИН раз ДО поиска**: открыть `/`, `_sign_in_if_needed` (залогиненность = НЕТ короткой ссылки «Log in/Sign in» в nav) → `/account/signin` → `#username`, `#password`, Sign in (`#signInBtn`). ПОТОМ поиск.
 
-### URL-схема поиска (знание + скрин URL)
-- `/search/?name=First+Middle_Last&birth=YEAR&residence=PLACE&spouse=First_Last&...`
-- **Имя = одно поле** `name=Имя+Отч_Фамилия` (пробел=`+`, между именем и фамилией `_`). Exact на имя → `name_x=1` (покрывает И имя, И фамилию — отдельных given/surname-exact в URL нет, поэтому first-exact ИЛИ last-exact в GUI → один `name_x=1`).
-- Год → `birth=YEAR`; exact года → `birth_x=1` (без него Ancestry сам даёт диапазон). Место → `residence=...` (+`residence_x=1`). Родня: `spouse/father/mother=First_Last` (+`<rel>_x=1`).
-- `_build_search_url` собирает строку ВРУЧНУЮ (literal `+` для пробелов; `urlencode` экранировал бы `+`→`%2B`). `_apply_exact_to_results` дописывает `_x`/родню к URL ПОСЛЕ формы (как FS `_apply_exact`) → сужает выдачу ДО скрапинга.
+### Поиск — ТОЛЬКО через URL (домашняя форма ненадёжна)
+- `#firstName/#lastName/#birthYear` на главной **НЕ находились** (форма меняется) → строю URL и `goto`, форму не заполняю.
+- **URL** (сверено с целевым URL пользователя): `/search/?name=First+Middle_Last&birth=YEAR&birth_x=<N>-0-0&residence=PLACE&father/mother/spouse/sibling/child=First_Last&keyword=…&gender=m|f&race=…&count=50`.
+  - **Имя = одно поле** `name=Имя+Отч_Фамилия` (пробел=`+`, имя↔фамилия через `_`). Exact имени → `name_x=1` (покрывает И имя И фамилию; отдельного given/surname-exact в URL нет → first-exact ИЛИ last-exact = один `name_x=1`).
+  - **Год = диапазон `birth_x=<N>-0-0`**, N = ±лет (0 = точный год). Подтверждено: «+/-1 yr» → `birth_x=1-0-0`. В GUI — выпадашка как в MH (Exact/±1/±2/±5/±10), N передаётся `year_range`. БЕЗ диапазона записи 1898 (переписи) выпадают.
+  - **`count=50`** обязательно (50 на страницу — релевантные все на 1-й странице).
+  - **Родня — СПИСКИ** (неограниченно): `adv[rel]` = list of `{first,last,exact}`; в URL повторяющиеся `spouse=…&spouse=…`. GUI: кнопки «+ Add Father/Mother/Spouse/Sibling/Child», динамические строки с ✕.
+  - **Галки Exact по умолчанию ВЫКЛ** (пользователь их НЕ ставила; её правильный URL без `name_x`/`spouse_x`).
+- `_build_search_url` собирает строку ВРУЧНУЮ (literal `+`; `urlencode` сломал бы `+`→`%2B`).
 
-### Что СВЕРИТЬ на живом прогоне (мои селекторы — defensive)
-- **Сбор результатов** (`_COLLECT_JS`): сейчас берёт `a[href]` с паттернами `/discoveryui-content/view/`, `/imageviewer/`, `/family-tree/person/`, `recordpid`, `/cgi-bin/sse.dll`; имя = текст ссылки, строка по `innerText` родителя (un-glue). Пагинация `&page=N` до `MAX_PAGES`. **При 0 — `_diag` дампит url/title/счётчики/sample-ссылки в лог** (живой сайт мне недоступен, без дампа не угадать).
-- **Детальная карточка** (`_FIELDS_JS`): generic — `dl/dt-dd`, `table tr`, `[class*=tableRow|recordField|fact]` (label|value по `innerText`). Пример записи-картинки: `/imageviewer/collections/6224/images/4609286_00021?pId=12494948`.
-- **Скан документа**: вьюер платный (у пользователя есть доступ). `_download_image` — best-effort: `expect_download` вокруг клика `button[aria-label*=Download]`/`[data-testid*=download]` (+ confirm), фолбэк — самый большой `<img>` через отдельную вкладку. Сверить реальную кнопку вьюера.
+### Сбор результатов — СЧИТАТЬ по ИМЕНИ ЧЕЛОВЕКА, не по названию коллекции (ГЛАВНЫЙ баг)
+- **БАГ, который я допустил**: ссылка в строке результата = НАЗВАНИЕ КОЛЛЕКЦИИ («1930 United States Federal Census»), а ИМЯ человека («Alexander W Sanders») — в отдельном поле строки. Я скорил по тексту ссылки → релевантные записи получали 30%, мусор (где в тексте было имя) — 90%. Сохранились 2 нерелевантные, ни одной нужной.
+- **Фикс** (`_COLLECT_JS`): для каждой record-ссылки подняться к КОНТЕЙНЕРУ строки (предок с метками `Name/Spouse/Birth/Residence`), взять значение ПОСЛЕ строки-метки «Name» как имя человека, дедуп по строке, выбрать лучший record-link (`discoveryui-content/view` › `family-tree/person` › `imageviewer`). Скорить `_match_name`.
+- **`_match_name` (surname-aware)**: фамилия должна совпасть **≥0.94** (SequenceMatcher) — «Sanders»=1.0 ОК, но «Saunders»≈0.93 / «Sanderson»≈0.88 / «Snyder»≈0.6 ОТВЕРГАЮТСЯ (пользователь хочет именно эту фамилию). Имя — по инициалу/префиксу/sim≥0.7. «Alexander Wolf Sanders» (дерево) проходит (фамилия точная, Wolf≈инициал W). `MIN_MATCH=80`.
+
+### Что СВЕРИТЬ на живом прогоне (defensive)
+- **Детальная карточка** (`_FIELDS_JS`): generic — `dl/dt-dd`, `table tr`, `[class*=tableRow|recordField|fact]` (label|value по `innerText`).
+- **Скан документа**: вьюер платный (у пользователя есть доступ). `_download_image` — best-effort: `expect_download` вокруг `button[aria-label*=Download]`/`[data-testid*=download]` (+ confirm), фолбэк — самый большой `<img>`. **Сейчас тянет мелкие превью (17КБ)** — сверить реальную кнопку скачивания вьюера (пример: `/imageviewer/collections/6224/images/4609286_00021?pId=12494948`).
+- **Релевантные результаты ниже баннера** «Don't miss out…» — мой сбор берёт всю страницу (`count=50`), баннер не мешает.
+- **Gender только m/f, Race — текст, Collection Focus + 4 галки-фильтра** (Historical Records/Family Trees/Stories/Photos) — в GUI есть; gender/race в URL, collection/фильтры пока НЕ в URL (best-effort, параметры не сверены) — дефолт «всё включено» = поиск не ломается.
 
 ### GUI
 - Английский, зелёная тема. Креды (username/password+глаз). Basic Search: First/Last/Place/Birth Year, у КАЖДОГО свой чекбокс «Exact» (payload `exact={name,surname,place,year}`). Advanced (сворачиваемый): Family members Father/Mother/Spouse (First/Last + Exact) + Keyword. Конфликт файлов overwrite/append/skip. Файлы `ancestry_{запрос}.docx/.xlsx`, Excel колонка «База»=Ancestry.

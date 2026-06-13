@@ -1,13 +1,18 @@
 """
 gui/ancestry.py
 ================
-Ancestry.com search window. English GUI, green Ancestry theme.
+Ancestry.com search window. English GUI, green Ancestry theme. Mirrors the live
+advanced search (which is MyHeritage-like):
 
-Basic fields (First Names, Last Names, Place, Birth Year) each have their own
-"Exact" checkbox (Ancestry's exact-match), all passed to the scraper. Advanced
-section adds family members (Father / Mother / Spouse, each with First/Last +
-Exact) and a Keyword. Login is required (persistent profile keeps the session).
-Logo: Ancestry.png. Autosave: .ancestry_autosave.json
+- Basic: First Names / Last Names / Place — each with its own "Exact" checkbox
+  (default OFF); Birth Year with a ± dropdown (Exact / ±1 / ±2 / ±5 / ±10).
+- Advanced: family members (Father / Mother / Spouse / Sibling / Child) — add as
+  many as you like with the "+ Add" buttons, each with First/Last + Exact;
+  Keyword; Gender (Male/Female); Race/Nationality (text); Collection Focus
+  dropdown; and the four result-type filter checkboxes.
+
+Login required (persistent profile keeps the session). Logo: Ancestry.png.
+Autosave: .ancestry_autosave.json
 """
 
 import json, sys, threading
@@ -15,7 +20,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QCheckBox,
+    QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
     QFileDialog, QProgressBar, QMessageBox,
     QApplication, QGroupBox, QFrame, QGridLayout, QScrollArea,
 )
@@ -58,6 +63,16 @@ try:
 except ImportError:
     _SCRAPER_OK = False
 
+# Birth-year ± dropdown → year_range (birth_x=<N>-0-0)
+YEAR_OPTIONS = [("Exact (this year)", 0), ("± 1 year", 1), ("± 2 years", 2),
+                ("± 5 years", 5), ("± 10 years", 10)]
+GENDER_OPTIONS = ["—", "Male", "Female"]
+COLLECTION_OPTIONS = ["All Collections", "USA", "UK & Ireland", "Europe",
+                      "Canada", "Australia & New Zealand", "Jewish Family History"]
+FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
+                ("Spouse", "spouse"), ("Sibling", "sibling"), ("Child", "child")]
+_FAM_LABEL = {k: l for l, k in FAMILY_TYPES}   # key → display label
+
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
 QGroupBox{font-weight:bold;font-size:11px;border:1px solid #b7cfa0;
@@ -74,6 +89,11 @@ QPushButton#startBtn{background:#6B8E23;color:white;font-weight:bold;
   font-size:13px;padding:8px 20px;border:none;border-radius:5px;}
 QPushButton#startBtn:hover{background:#7da82b;}
 QPushButton#startBtn:disabled{background:#aac178;}
+QPushButton#addBtn{color:#4a6b1f;background:transparent;border:none;
+  font-weight:bold;text-align:left;padding:1px 0;}
+QPushButton#addBtn:hover{color:#6B8E23;}
+QPushButton#rmBtn{color:#a33;background:transparent;border:none;font-weight:bold;
+  max-width:24px;padding:0;}
 QPushButton#eyeBtn{border:none;background:transparent;padding:0;}
 QPushButton#advBtn{text-align:left;border:none;background:transparent;
   color:#4a6b1f;font-weight:bold;font-size:11px;padding:2px 0;}
@@ -158,9 +178,10 @@ class AncestryApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Ancestry")
-        self.setMinimumWidth(900)
+        self.setMinimumWidth(920)
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
+        self._fam: dict = {k: [] for _l, k in FAMILY_TYPES}   # rel → [row dicts]
         self._build_ui()
         self._load()
 
@@ -177,26 +198,27 @@ class AncestryApp(QMainWindow):
         # Credentials
         cg = QGroupBox("Account credentials")
         cl = QHBoxLayout(cg); cl.setSpacing(8)
-        self.f_user = QLineEdit()
-        self.f_user.setPlaceholderText("Ancestry email or username")
-        self.f_pass = PwdEdit()
-        self.f_pass.setPlaceholderText("Password")
+        self.f_user = QLineEdit(); self.f_user.setPlaceholderText("Ancestry email or username")
+        self.f_pass = PwdEdit(); self.f_pass.setPlaceholderText("Password")
         cl.addWidget(QLabel("Username:")); cl.addWidget(self.f_user, 2)
         cl.addWidget(QLabel("Password:")); cl.addWidget(self.f_pass, 2)
         self._outer.addWidget(cg)
 
-        # Basic Search — each field has its own Exact checkbox
+        # Basic Search
         bg = QGroupBox("Basic Search")
         bf = QGridLayout(bg); bf.setSpacing(8)
         self.f_first = QLineEdit(); self.f_first.setPlaceholderText("First & Middle Name(s)")
         self.f_last  = QLineEdit(); self.f_last.setPlaceholderText("Last Name")
         self.f_place = QLineEdit(); self.f_place.setPlaceholderText("City, county, state, country")
         self.f_byear = QLineEdit(); self.f_byear.setPlaceholderText("e.g. 1897")
-        self.f_byear.setFixedWidth(120)
+        self.f_byear.setFixedWidth(90)
+        self.f_year_range = QComboBox()
+        for lbl, _v in YEAR_OPTIONS:
+            self.f_year_range.addItem(lbl)
+        self.f_year_range.setCurrentIndex(1)        # ± 1 year (default)
         self.f_first_exact = QCheckBox("Exact")
         self.f_last_exact  = QCheckBox("Exact")
         self.f_place_exact = QCheckBox("Exact")
-        self.f_byear_exact = QCheckBox("Exact")
         bf.addWidget(QLabel("First Names:"), 0, 0)
         bf.addWidget(self.f_first,           0, 1)
         bf.addWidget(self.f_first_exact,     0, 2)
@@ -207,8 +229,9 @@ class AncestryApp(QMainWindow):
         bf.addWidget(self.f_place,           1, 1)
         bf.addWidget(self.f_place_exact,     1, 2)
         bf.addWidget(QLabel("Birth Year:"),  1, 3)
-        bf.addWidget(self.f_byear,           1, 4)
-        bf.addWidget(self.f_byear_exact,     1, 5)
+        yr = QHBoxLayout(); yr.setSpacing(4)
+        yr.addWidget(self.f_byear); yr.addWidget(self.f_year_range, 1)
+        bf.addLayout(yr, 1, 4, 1, 2)
         bf.setColumnStretch(1, 2); bf.setColumnStretch(4, 1)
         self._outer.addWidget(bg)
 
@@ -221,28 +244,50 @@ class AncestryApp(QMainWindow):
 
         self._adv = QGroupBox()
         av = QVBoxLayout(self._adv); av.setSpacing(6)
-        av.addWidget(_sechead("FAMILY MEMBERS"))
-        fg = QGridLayout(); fg.setSpacing(6)
-        self._fam_fields: dict = {}
-        fams = [("Father", "father"), ("Mother", "mother"), ("Spouse", "spouse")]
-        fg.addWidget(QLabel("Member"),      0, 0)
-        fg.addWidget(QLabel("First Names"), 0, 1)
-        fg.addWidget(QLabel("Last Names"),  0, 2)
-        fg.addWidget(QLabel("Exact"),       0, 3)
-        for ri, (label, key) in enumerate(fams, 1):
-            fg.addWidget(QLabel(label + ":"), ri, 0)
-            ff = QLineEdit(); lf = QLineEdit(); cb = QCheckBox()
-            cb.setToolTip("Exact match for this family member")
-            self._fam_fields[key] = (ff, lf, cb)
-            fg.addWidget(ff, ri, 1); fg.addWidget(lf, ri, 2); fg.addWidget(cb, ri, 3)
-        fg.setColumnStretch(1, 2); fg.setColumnStretch(2, 2)
-        av.addLayout(fg)
+
+        # Family members — dynamic rows
+        av.addWidget(_sechead("FAMILY MEMBERS  (add as many as you like)"))
+        self._fam_box = QVBoxLayout(); self._fam_box.setSpacing(4)
+        self._fam_containers = {}
+        for label, key in FAMILY_TYPES:
+            head = QHBoxLayout()
+            add = QPushButton(f"+ Add {label}"); add.setObjectName("addBtn")
+            add.clicked.connect(lambda _=False, k=key: (self._add_fam_row(k), self._save()))
+            head.addWidget(add); head.addStretch()
+            self._fam_box.addLayout(head)
+            box = QVBoxLayout(); box.setSpacing(3)
+            self._fam_containers[key] = box
+            self._fam_box.addLayout(box)
+        av.addLayout(self._fam_box)
         av.addWidget(_divider())
-        kr = QHBoxLayout(); kr.setSpacing(8)
+
+        # Keyword / Gender / Race
+        gr = QGridLayout(); gr.setSpacing(6)
         self.f_keyword = QLineEdit()
-        self.f_keyword.setPlaceholderText("Keyword (occupation, etc.)")
-        kr.addWidget(QLabel("Keyword:")); kr.addWidget(self.f_keyword, 1)
-        av.addLayout(kr)
+        self.f_keyword.setPlaceholderText("Occupation, street address, etc.")
+        self.f_gender = QComboBox(); self.f_gender.addItems(GENDER_OPTIONS)
+        self.f_race = QLineEdit(); self.f_race.setPlaceholderText("Race / Nationality")
+        gr.addWidget(QLabel("Keyword:"), 0, 0); gr.addWidget(self.f_keyword, 0, 1, 1, 3)
+        gr.addWidget(QLabel("Gender:"),  1, 0); gr.addWidget(self.f_gender, 1, 1)
+        gr.addWidget(QLabel("Race/Nat.:"), 1, 2); gr.addWidget(self.f_race, 1, 3)
+        gr.setColumnStretch(1, 1); gr.setColumnStretch(3, 1)
+        av.addLayout(gr)
+        av.addWidget(_divider())
+
+        # Collection focus + result-type filters
+        cr = QHBoxLayout(); cr.setSpacing(8)
+        self.f_collection = QComboBox(); self.f_collection.addItems(COLLECTION_OPTIONS)
+        cr.addWidget(QLabel("Collection Focus:")); cr.addWidget(self.f_collection)
+        cr.addStretch()
+        av.addLayout(cr)
+        fr2 = QGridLayout(); fr2.setSpacing(4)
+        self.f_hist   = QCheckBox("Historical Records"); self.f_hist.setChecked(True)
+        self.f_trees  = QCheckBox("Family Trees");       self.f_trees.setChecked(True)
+        self.f_stories= QCheckBox("Stories & Publications"); self.f_stories.setChecked(True)
+        self.f_photos = QCheckBox("Photos & Maps");      self.f_photos.setChecked(True)
+        fr2.addWidget(self.f_hist, 0, 0);   fr2.addWidget(self.f_trees, 0, 1)
+        fr2.addWidget(self.f_stories, 1, 0); fr2.addWidget(self.f_photos, 1, 1)
+        av.addLayout(fr2)
 
         self._adv_scroll = QScrollArea()
         self._adv_scroll.setWidget(self._adv)
@@ -283,10 +328,41 @@ class AncestryApp(QMainWindow):
         self._outer.addWidget(
             QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
-        for w in self._all_widgets():
+        for w in self._static_widgets():
             if   isinstance(w, QLineEdit): w.textChanged.connect(self._save)
+            elif isinstance(w, QComboBox): w.currentTextChanged.connect(self._save)
             elif isinstance(w, QCheckBox): w.stateChanged.connect(self._save)
         self._fit()
+
+    # ── Dynamic family-member rows ────────────────────────────────────────── #
+    def _add_fam_row(self, key, first="", last="", exact=False):
+        box = self._fam_containers[key]
+        row_w = QWidget()
+        rl = QHBoxLayout(row_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
+        lbl = QLabel(_FAM_LABEL[key] + ":"); lbl.setFixedWidth(60)
+        ff = QLineEdit(); ff.setPlaceholderText("First & Middle Name(s)"); ff.setText(first)
+        lf = QLineEdit(); lf.setPlaceholderText("Last Name"); lf.setText(last)
+        cb = QCheckBox("Exact"); cb.setChecked(bool(exact))
+        rm = QPushButton("✕"); rm.setObjectName("rmBtn"); rm.setFixedWidth(24)
+        rl.addWidget(lbl); rl.addWidget(ff, 2); rl.addWidget(lf, 2); rl.addWidget(cb)
+        rl.addWidget(rm)
+        rec = {"w": row_w, "first": ff, "last": lf, "exact": cb}
+        self._fam[key].append(rec)
+        box.addWidget(row_w)
+        ff.textChanged.connect(self._save); lf.textChanged.connect(self._save)
+        cb.stateChanged.connect(self._save)
+        rm.clicked.connect(lambda _=False: self._remove_fam_row(key, rec))
+        self._fit()
+        return rec
+
+    def _remove_fam_row(self, key, rec):
+        try:
+            self._fam[key].remove(rec)
+            rec["w"].setParent(None)
+            rec["w"].deleteLater()
+        except Exception:
+            pass
+        self._save(); self._fit()
 
     # ── Advanced toggle / fit ─────────────────────────────────────────────── #
     def _toggle_adv(self, on: bool):
@@ -301,36 +377,37 @@ class AncestryApp(QMainWindow):
         QApplication.processEvents()
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
         hint = self.centralWidget().sizeHint()
-        self.resize(self.width(), hint.height() + 42)
+        scr = QApplication.primaryScreen().availableGeometry()
+        self.resize(self.width(), min(hint.height() + 42, scr.height() - 24))
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
-    def _all_widgets(self) -> list:
-        ws = [self.f_user, self.f_pass, self.f_first, self.f_last,
-              self.f_place, self.f_byear, self.f_first_exact, self.f_last_exact,
-              self.f_place_exact, self.f_byear_exact, self.f_keyword,
-              self.f_folder, self.f_docx, self.f_xlsx]
-        for ff, lf, cb in self._fam_fields.values():
-            ws += [ff, lf, cb]
-        return ws
+    def _static_widgets(self) -> list:
+        return [self.f_user, self.f_pass, self.f_first, self.f_last, self.f_place,
+                self.f_byear, self.f_year_range, self.f_first_exact,
+                self.f_last_exact, self.f_place_exact, self.f_keyword,
+                self.f_gender, self.f_race, self.f_collection,
+                self.f_hist, self.f_trees, self.f_stories, self.f_photos,
+                self.f_folder, self.f_docx, self.f_xlsx]
 
     def _save(self, *_):
         d = {
             "username": self.f_user.text(), "password": self.f_pass.text(),
             "first_names": self.f_first.text(), "last_names": self.f_last.text(),
             "place_lived": self.f_place.text(), "birth_year": self.f_byear.text(),
+            "year_range_i": self.f_year_range.currentIndex(),
             "first_exact": self.f_first_exact.isChecked(),
             "last_exact":  self.f_last_exact.isChecked(),
             "place_exact": self.f_place_exact.isChecked(),
-            "byear_exact": self.f_byear_exact.isChecked(),
-            "keyword": self.f_keyword.text(),
+            "keyword": self.f_keyword.text(), "gender": self.f_gender.currentText(),
+            "race": self.f_race.text(), "collection": self.f_collection.currentText(),
+            "hist": self.f_hist.isChecked(), "trees": self.f_trees.isChecked(),
+            "stories": self.f_stories.isChecked(), "photos": self.f_photos.isChecked(),
             "output_folder": self.f_folder.text(),
             "fmt_docx": self.f_docx.isChecked(), "fmt_xlsx": self.f_xlsx.isChecked(),
             "adv_open": self._adv_btn.isChecked(),
+            "fam": {k: [[r["first"].text(), r["last"].text(), r["exact"].isChecked()]
+                        for r in rows] for k, rows in self._fam.items()},
         }
-        for key, (ff, lf, cb) in self._fam_fields.items():
-            d[f"{key}_first"] = ff.text()
-            d[f"{key}_last"]  = lf.text()
-            d[f"{key}_exact"] = cb.isChecked()
         try:
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2),
                              encoding="utf-8")
@@ -354,12 +431,23 @@ class AncestryApp(QMainWindow):
         _s(self.f_user, "username"); _s(self.f_pass, "password")
         _s(self.f_first, "first_names"); _s(self.f_last, "last_names")
         _s(self.f_place, "place_lived"); _s(self.f_byear, "birth_year")
+        if isinstance(d.get("year_range_i"), int):
+            self.f_year_range.setCurrentIndex(d["year_range_i"])
         _s(self.f_first_exact, "first_exact"); _s(self.f_last_exact, "last_exact")
-        _s(self.f_place_exact, "place_exact"); _s(self.f_byear_exact, "byear_exact")
-        _s(self.f_keyword, "keyword"); _s(self.f_folder, "output_folder")
+        _s(self.f_place_exact, "place_exact"); _s(self.f_keyword, "keyword")
+        i = self.f_gender.findText(str(d.get("gender", "—")))
+        if i >= 0: self.f_gender.setCurrentIndex(i)
+        _s(self.f_race, "race")
+        i = self.f_collection.findText(str(d.get("collection", "All Collections")))
+        if i >= 0: self.f_collection.setCurrentIndex(i)
+        _s(self.f_hist, "hist"); _s(self.f_trees, "trees")
+        _s(self.f_stories, "stories"); _s(self.f_photos, "photos")
+        _s(self.f_folder, "output_folder")
         _s(self.f_docx, "fmt_docx"); _s(self.f_xlsx, "fmt_xlsx")
-        for key, (ff, lf, cb) in self._fam_fields.items():
-            _s(ff, f"{key}_first"); _s(lf, f"{key}_last"); _s(cb, f"{key}_exact")
+        for key, rows in (d.get("fam") or {}).items():
+            if key in self._fam:
+                for r in rows:
+                    self._add_fam_row(key, *(r + ["", "", False])[:3])
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
 
@@ -374,11 +462,22 @@ class AncestryApp(QMainWindow):
         return "both" if d and x else ("docx" if d else "xlsx" if x else "both")
 
     def _build_advanced(self) -> dict:
-        adv = {"keyword": self.f_keyword.text().strip()}
-        for key, (ff, lf, cb) in self._fam_fields.items():
-            adv[f"{key}_first"] = ff.text().strip()
-            adv[f"{key}_last"]  = lf.text().strip()
-            adv[f"{key}_exact"] = cb.isChecked()
+        adv = {"keyword": self.f_keyword.text().strip(),
+               "gender": self.f_gender.currentText().strip(),
+               "race": self.f_race.text().strip(),
+               "collection": self.f_collection.currentText().strip(),
+               "filters": {"historical": self.f_hist.isChecked(),
+                           "trees": self.f_trees.isChecked(),
+                           "stories": self.f_stories.isChecked(),
+                           "photos": self.f_photos.isChecked()}}
+        for key, rows in self._fam.items():
+            people = [{"first": r["first"].text().strip(),
+                       "last": r["last"].text().strip(),
+                       "exact": r["exact"].isChecked()}
+                      for r in rows
+                      if r["first"].text().strip() or r["last"].text().strip()]
+            if people:
+                adv[key] = people
         return adv
 
     def _payload(self) -> dict:
@@ -387,12 +486,12 @@ class AncestryApp(QMainWindow):
             "last_names":  self.f_last.text().strip(),
             "place_lived": self.f_place.text().strip(),
             "birth_year":  self.f_byear.text().strip(),
+            "year_range":  YEAR_OPTIONS[self.f_year_range.currentIndex()][1],
             "advanced":    self._build_advanced(),
             "exact": {
                 "name":    self.f_first_exact.isChecked(),
                 "surname": self.f_last_exact.isChecked(),
                 "place":   self.f_place_exact.isChecked(),
-                "year":    self.f_byear_exact.isChecked(),
             },
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
