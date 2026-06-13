@@ -534,18 +534,23 @@ async def _clear_all_filters(page, log):
 
 
 def _filter_passes(filters: dict) -> list:
-    """Build the filter passes. Record-type entries are OR → one pass each;
-    Record-location + Record-date are AND-applied in EVERY pass. No filters → one
+    """Build the filter passes as the CARTESIAN PRODUCT across the three areas:
+    within an area the choices are OR alternatives, across areas they are AND.
+    So each pass = one type-choice AND one location-choice AND one date-choice
+    (any of them may be absent). Each pass is its own document. No filters → one
     empty pass (plain results)."""
     filters = filters or {}
-    types = [t for t in filters.get("types", []) if t]
-    common = [x for x in (filters.get("locations", []) +
-                          filters.get("dates", [])) if x]
-    if types:
-        return [[t] + common for t in types]
-    if common:
-        return [common]
-    return [[]]
+    t = [x for x in filters.get("types", []) if x] or [None]
+    l = [x for x in filters.get("locations", []) if x] or [None]
+    d = [x for x in filters.get("dates", []) if x] or [None]
+    passes = []
+    for ti in t:
+        for li in l:
+            for di in d:
+                p = [x for x in (ti, li, di) if x]
+                if p not in passes:
+                    passes.append(p)
+    return passes or [[]]
 
 
 async def _diag(page, log):
@@ -1117,94 +1122,100 @@ async def run_scraper(
             search_url = await _search(page, first_names, last_names, place_lived,
                                        birth_year, year_range, exact, adv, log)
 
-            # 3-4. COLLECT + SCRAPE, once per FILTER PASS. Record-type filters are
-            # OR (a pass each); location + date are AND in every pass. Records are
-            # de-duped by URL across passes (a record found under several filters
-            # is saved once).
-            passes = _filter_passes(filters)
+            # 3-5. Per FILTER PASS: collect + scrape + SAVE its OWN document and
+            # its OWN images folder (named by the filter), so every filter is
+            # separable. Passes = cartesian product across areas (see
+            # _filter_passes): the all-checkbox AND a specific child run as
+            # separate passes. No filters → one plain pass.
+            passes   = _filter_passes(filters)
+            fparents = filters.get("parents", {})
             if len(passes) > 1 or passes[0]:
-                log(f"  Фильтры: {len(passes)} проход(ов): {passes}")
-            records, seen_urls = [], set()
+                log(f"  Фильтры: {len(passes)} проход(ов) → отдельный документ на каждый")
+            total, saved_docx, last_xlsx = 0, 0, None
             for pi, pass_labels in enumerate(passes, 1):
                 if _done(): break
-                if pi > 1 or pass_labels:
-                    # fresh search URL each pass = filters reset (implicit Clear all)
-                    try:
-                        await page.goto(search_url, wait_until="domcontentloaded",
-                                        timeout=40000)
-                        await asyncio.sleep(4)
-                    except Exception:
-                        pass
+                # fresh search URL each pass = filters reset (implicit Clear all)
+                try:
+                    await page.goto(search_url, wait_until="domcontentloaded",
+                                    timeout=40000)
+                    await asyncio.sleep(4)
+                except Exception:
+                    pass
+                pass_name = " · ".join(pass_labels)
                 if pass_labels:
                     _prog(25, f"Проход {pi}/{len(passes)} — фильтры: {pass_labels}")
-                    fparents = filters.get("parents", {})
                     for lbl in pass_labels:
                         await _apply_filter_click(page, lbl, log,
                                                   parent=fparents.get(lbl))
                     await asyncio.sleep(2)
 
-                raw = await _collect_all(page, first_names, last_names, page.url, log)
-                qual = [r for r in raw if r["score"] >= MIN_MATCH]
-                qual = [r for r in qual if r["url"] not in seen_urls][:MAX_SCRAPE]
-                log(f"  Подходящих новых (≥{MIN_MATCH}%): {len(qual)}")
+                raw, seen, qual = (await _collect_all(
+                    page, first_names, last_names, page.url, log)), set(), []
+                for r in raw:
+                    if r["score"] >= MIN_MATCH and r["url"] not in seen:
+                        seen.add(r["url"]); qual.append(r)
+                qual = qual[:MAX_SCRAPE]
+                log(f"  Подходящих (≥{MIN_MATCH}%): {len(qual)}")
 
+                suffix    = safe_fn(pass_name) if pass_name else ""
+                pass_imgs = (images_root / suffix) if suffix else images_root
+                pass_recs = []
                 for i, r in enumerate(qual, 1):
                     if _done(): break
-                    seen_urls.add(r["url"])
-                    _prog(25 + int(65 * len(records) / max(len(qual), 1)),
+                    _prog(25 + int(65 * pi / len(passes)),
                           f"[проход {pi}] [{i}/{len(qual)}] {r['name'][:50]}...")
                     det = await _scrape_page(ctx, page, r["url"], r["name"],
-                                             images_root, logged_in_ref,
+                                             pass_imgs, logged_in_ref,
                                              email or "", password or "", log)
                     det["score"] = r["score"]
                     if r.get("coll") and not det.get("collection"):
                         det["collection"] = r["coll"]
-                    records.append(det)
+                    pass_recs.append(det)
                     log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
 
-            if not records:
-                await _diag(page, log)
-                _prog(100, f"Нет записей ≥{MIN_MATCH}%.")
-                summary.update({"ok": True, "n_records": 0,
-                                "message": f"Нет записей ≥{MIN_MATCH}%."})
-                return summary
+                if not pass_recs:
+                    if pass_labels:
+                        log(f"  (по фильтру «{pass_name}» подходящих записей нет)")
+                    else:
+                        await _diag(page, log)
+                    continue
 
-            # 5. SAVE (overwrite / append / skip)
-            _prog(94, "Сохранение файлов...")
-            docx_p = output_folder / f"{file_base}.docx"
-            xlsx_p = output_folder / f"{file_base}.xlsx"
-            existing_names = [p.name for p, want in
-                              ((docx_p, want_docx), (xlsx_p, want_xlsx))
-                              if want and records and p.exists()]
-            decision = "overwrite"
-            if existing_names and ask_file_conflict:
-                try:
-                    decision = (ask_file_conflict(existing_names)
-                                or "overwrite").lower()
-                except Exception as _e:
-                    log(f"  !! диалог конфликта файлов: {_e}")
-                log(f"  → Файл(ы) уже существуют {existing_names} → выбор: {decision}")
-            append = (decision == "append")
+                # save THIS pass to its own files (the filter is in the name)
+                base   = file_base + (f"__{suffix}" if suffix else "")
+                docx_p = output_folder / f"{base}.docx"
+                xlsx_p = output_folder / f"{base}.xlsx"
+                plines = qlines + ([f"Фильтр: {pass_name}"] if pass_name else [])
+                existing = [p.name for p, want in
+                            ((docx_p, want_docx), (xlsx_p, want_xlsx))
+                            if want and p.exists()]
+                decision = "overwrite"
+                if existing and ask_file_conflict:
+                    try:
+                        decision = (ask_file_conflict(existing) or "overwrite").lower()
+                    except Exception:
+                        decision = "overwrite"
+                    log(f"  → {existing} существуют → {decision}")
+                if decision == "skip":
+                    log(f"  → пропуск сохранения «{base}»")
+                    continue
+                append = (decision == "append")
+                if want_docx:
+                    write_docx(docx_p, pass_recs, plines, append=append)
+                    saved_docx += 1
+                    log(f"  Word: {docx_p.name}")
+                if want_xlsx:
+                    write_xlsx(xlsx_p, pass_recs, plines, append=append)
+                    last_xlsx = str(xlsx_p)
+                    log(f"  Excel: {xlsx_p.name}")
+                total += len(pass_recs)
 
-            sd = sx = False
-            if decision == "skip":
-                log("  → Сохранение пропущено по выбору пользователя.")
-            else:
-                if want_docx and records:
-                    write_docx(docx_p, records, qlines, append=append)
-                    sd = True
-                    log(f"  Word: {docx_p}")
-                if want_xlsx and records:
-                    write_xlsx(xlsx_p, records, qlines, append=append)
-                    sx = True
-                    log(f"  Excel: {xlsx_p}")
-            _prog(100, f"Готово — {len(records)} записей.")
+            _prog(100, f"Готово — {total} записей в {saved_docx} документ(ах).")
             summary.update({
                 "ok":            True,
-                "docx_count":    1 if sd else 0,
-                "xlsx_path":     str(xlsx_p) if sx else None,
+                "docx_count":    saved_docx,
+                "xlsx_path":     last_xlsx,
                 "output_folder": str(output_folder),
-                "n_records":     len(records),
+                "n_records":     total,
             })
         except Exception as exc:
             summary.update({"error": "exception",
