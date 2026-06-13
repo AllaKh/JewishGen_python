@@ -542,34 +542,58 @@ async def _find_scan(page, secs: int) -> str:
 async def _grab_scan(page, images_dir, base, rec, log, secs) -> bool:
     """For each document card: select it, wait for its scan to load, then CLICK
     the «Сохранить изображение» button (#btnSaveLocalImage) and capture the
-    download. Cards without a document are skipped fast. Returns True if ≥1 saved."""
+    download. Button rule (user's): no button for 6s → reload the page and retry
+    THIS card once; still no button → move on. Returns True if ≥1 saved."""
     cards = page.locator(".hero-card-docs-item")
     try:
         nc = await cards.count()
     except Exception:
         nc = 0
     saved = 0
-    for k in range(min(nc, 12)):
+
+    async def _btn_present(max_s=6.0):
+        # check-first, 0.5s steps: a present button is seen instantly,
+        # an absent one costs max_s
+        waited = 0.0
+        while True:
+            try:
+                if await page.evaluate(
+                        "() => !!document.querySelector('#btnSaveLocalImage')"):
+                    return True
+            except Exception:
+                pass
+            if waited >= max_s:
+                return False
+            await asyncio.sleep(0.5)
+            waited += 0.5
+
+    async def _open_card(k):
         try:
             await cards.nth(k).scroll_into_view_if_needed(timeout=2000)
             await cards.nth(k).click(timeout=2500)
+            return True
         except Exception:
+            return False
+
+    for k in range(min(nc, 12)):
+        if not await _open_card(k):
             continue
-        # Does this card actually carry a document? The save button appears in the
-        # DOM only then — no button after a few seconds → no document → skip fast
-        # (this is what stops the minute-long hang on document-less cards).
-        has_btn = False
-        for _ in range(4):
-            await asyncio.sleep(1)
+        has_btn = await _btn_present(6.0)
+        if not has_btn:
+            # no button for 6s → refresh the page and retry this card once.
+            # After the reload NO second 6s wait — if the button isn't there
+            # right away (just ~2s for the page to draw), move on.
+            log("      ↻ кнопка сохранения не появилась за 6с — обновляю страницу")
             try:
-                has_btn = await page.evaluate(
-                    "() => !!document.querySelector('#btnSaveLocalImage')")
+                await page.reload(wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(2)
+                await _tab_block(page, ["документ", "documents"], 1.5, log)
+                if await _open_card(k):
+                    has_btn = await _btn_present(2.0)
             except Exception:
                 has_btn = False
-            if has_btn:
-                break
         if not has_btn:
-            continue                        # no document on this card → skip fast
+            continue                        # still no button → move on
         # It HAS a document → it loads SLOWLY, so wait (much longer than before) for
         # the image-map scan to finish AND the button to become visible.
         for _ in range(14):
