@@ -74,7 +74,9 @@ SEARCH_URL = "https://www.ancestry.com/search/"
 ANC_BASE   = "https://www.ancestry.com"
 SITE_NAME  = "Ancestry"
 MIN_MATCH  = int(_CFG.get("min_match", 80))
-MAX_PAGES  = int(_CFG.get("max_pages", 5))     # result pages to walk
+MAX_PAGES  = int(_CFG.get("max_pages", 1))     # result pages (count=50 → page 1 is
+                                               # plenty; >1 re-collected dups and
+                                               # dropped click-applied filters)
 MAX_SCRAPE = int(_CFG.get("max_scrape", 40))   # cap records actually opened
 ANC_PROFILE_DIR = _HERE / ".ancestry_profile"  # persistent login/cookies
 _dl           = _CFG.get("downloads_dir", "")
@@ -1144,9 +1146,17 @@ async def run_scraper(
                 pass_name = " · ".join(pass_labels)
                 if pass_labels:
                     _prog(25, f"Проход {pi}/{len(passes)} — фильтры: {pass_labels}")
+                    ok_all = True
                     for lbl in pass_labels:
-                        await _apply_filter_click(page, lbl, log,
-                                                  parent=fparents.get(lbl))
+                        if not await _apply_filter_click(page, lbl, log,
+                                                         parent=fparents.get(lbl)):
+                            ok_all = False
+                    if not ok_all:
+                        # a filter that didn't apply would dump UNFILTERED results
+                        # under this filter's name — skip the whole pass instead.
+                        log(f"  → фильтр(ы) не применились — пропускаю проход "
+                            f"«{pass_name}» (без сохранения)")
+                        continue
                     await asyncio.sleep(2)
 
                 raw, seen, qual = (await _collect_all(

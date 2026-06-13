@@ -1,10 +1,44 @@
 """gui/_app_icon.py — shared app icon + window-header helpers."""
+import threading
 from pathlib import Path
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QHBoxLayout
+from PySide6.QtWidgets import QLabel, QHBoxLayout, QPushButton
 
 _CONFIG = Path(__file__).resolve().parent.parent / "config"
+
+
+def make_cancel_button(window, row_layout) -> QPushButton:
+    """Add a «Cancel» button to row_layout and wire it to stop a running search.
+
+    Contract for the window (kept uniform across all scraper GUIs):
+      • `_payload()` passes `cancel_event=getattr(self, "_cancel_ev", None)`,
+      • `_start()` sets `self._cancel_ev = threading.Event()` and calls
+        `self.cancel_btn.setEnabled(True)`,
+      • `_done()` calls `self.cancel_btn.setEnabled(False)`.
+    The scrapers poll cancel_event and stop, saving whatever they have."""
+    btn = QPushButton("Cancel")
+    btn.setObjectName("cancelBtn")
+    btn.setEnabled(False)
+    btn.setStyleSheet(
+        "QPushButton#cancelBtn{background:#b23b3b;color:white;font-weight:bold;"
+        "font-size:13px;padding:8px 18px;border:none;border-radius:5px;}"
+        "QPushButton#cancelBtn:hover{background:#c85050;}"
+        "QPushButton#cancelBtn:disabled{background:#d9a9a9;}")
+
+    def _cancel():
+        ev = getattr(window, "_cancel_ev", None)
+        if ev is not None:
+            ev.set()
+        btn.setEnabled(False)
+        lbl = getattr(window, "stlbl", None)
+        if lbl is not None:
+            try: lbl.setText("Cancelling — finishing the current item…")
+            except Exception: pass
+
+    btn.clicked.connect(_cancel)
+    row_layout.addWidget(btn)
+    return btn
 
 
 def app_icon() -> QIcon:

@@ -2,7 +2,7 @@
 gui/skarb.py — АИС Скарб search window
 """
 
-import asyncio, json, sys
+import asyncio, json, sys, threading
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
-from gui._app_icon import app_icon, make_header
+from gui._app_icon import app_icon, make_header, make_cancel_button
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -153,7 +153,9 @@ class SkarbApp(QMainWindow):
         self.start_btn = QPushButton("НАЧАТЬ ПОИСК")
         self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
-        br.addStretch(); br.addWidget(self.start_btn); br.addStretch()
+        br.addStretch(); br.addWidget(self.start_btn)
+        self.cancel_btn = make_cancel_button(self, br)
+        br.addStretch()
         outer.addLayout(br)
 
         outer.addWidget(QLabel("© 2026 Alla Khananashvili",
@@ -195,7 +197,7 @@ class SkarbApp(QMainWindow):
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":           print,
-            "cancel_event":  None,
+            "cancel_event": getattr(self, "_cancel_ev", None),
         }
 
     def _validate(self):
@@ -212,7 +214,9 @@ class SkarbApp(QMainWindow):
     def _start(self):
         if not self._validate():
             return
+        self._cancel_ev = threading.Event()
         self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         self.pbar.setValue(0)
         self.stlbl.setText("Запуск...")
         self.worker = Worker(self._payload())
@@ -223,6 +227,7 @@ class SkarbApp(QMainWindow):
 
     def _done(self, r: dict):
         self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
         if r.get("ok"):
             n = r.get("n_records", 0)
             msg = f"{n} записей"

@@ -23,8 +23,9 @@ Fixes vs original main_window.py
 
 import sys
 import asyncio
+import threading
 from pathlib import Path
-from gui._app_icon import app_icon, make_header
+from gui._app_icon import app_icon, make_header, make_cancel_button
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -360,7 +361,9 @@ class JewishGenApp(QMainWindow):
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
-        btn_row.addStretch(); btn_row.addWidget(self.start_btn); btn_row.addStretch()
+        btn_row.addStretch(); btn_row.addWidget(self.start_btn)
+        self.cancel_btn = make_cancel_button(self, btn_row)
+        btn_row.addStretch()
         outer.addLayout(btn_row)
 
         outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
@@ -492,7 +495,7 @@ class JewishGenApp(QMainWindow):
             "email":         self.email.text().strip() or None,
             "password":      self.password.text() or None,
             "log":           print,
-            "cancel_event":  None,
+            "cancel_event": getattr(self, "_cancel_ev", None),
         }
 
     # ── VALIDATION ───────────────────────────────────────────────────────── #
@@ -596,7 +599,9 @@ class JewishGenApp(QMainWindow):
             return
 
         self._save_autosave()
+        self._cancel_ev = threading.Event()
         self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         self.progress_bar.setValue(0)
         self.status_lbl.setText("Starting…")
 
@@ -611,6 +616,7 @@ class JewishGenApp(QMainWindow):
 
     def _on_done(self, result: dict):
         self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
 
         if result.get("ok"):
             self._save_autosave()

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QApplication,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header
+from gui._app_icon import app_icon, make_header, make_cancel_button
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -180,7 +180,9 @@ class WikisourceApp(QMainWindow):
         br = QHBoxLayout()
         self.start_btn = QPushButton("START"); self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
-        br.addStretch(); br.addWidget(self.start_btn); br.addStretch()
+        br.addStretch(); br.addWidget(self.start_btn)
+        self.cancel_btn = make_cancel_button(self, br)
+        br.addStretch()
         self._outer.addLayout(br)
         self._outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
@@ -228,7 +230,7 @@ class WikisourceApp(QMainWindow):
             "max_docs":      self.sp_max.value(),
             "output_folder": self.f_folder.text().strip() or _DEF_DIR,
             "log":           print,
-            "cancel_event":  None,
+            "cancel_event": getattr(self, "_cancel_ev", None),
         }
 
     def _validate(self):
@@ -248,7 +250,9 @@ class WikisourceApp(QMainWindow):
     def _start(self):
         if not self._validate():
             return
+        self._cancel_ev = threading.Event()
         self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         self.pbar.setValue(0); self.stlbl.setText("Starting…")
         self._worker = Worker(self._payload())
         self._worker.progress.connect(
@@ -271,6 +275,7 @@ class WikisourceApp(QMainWindow):
 
     def _done(self, r: dict):
         self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
         if r.get("ok"):
             n = r.get("n_records", 0); tot = r.get("n_total", n)
             msg = f"Downloaded {n} of {tot} documents."

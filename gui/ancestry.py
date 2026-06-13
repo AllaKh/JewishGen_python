@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox,
     QApplication, QGroupBox, QFrame, QGridLayout, QScrollArea,
 )
-from gui._app_icon import app_icon, make_header
+from gui._app_icon import app_icon, make_header, make_cancel_button
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QIcon
 
@@ -436,7 +436,9 @@ class AncestryApp(QMainWindow):
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
-        br.addStretch(); br.addWidget(self.start_btn); br.addStretch()
+        br.addStretch(); br.addWidget(self.start_btn)
+        self.cancel_btn = make_cancel_button(self, br)
+        br.addStretch()
         self._outer.addLayout(br)
         self._outer.addWidget(
             QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
@@ -765,7 +767,7 @@ class AncestryApp(QMainWindow):
             "email":    self.f_user.text().strip() or None,
             "password": self.f_pass.text() or None,
             "log":      print,
-            "cancel_event": None,
+            "cancel_event": getattr(self, "_cancel_ev", None),
         }
 
     def _validate(self) -> bool:
@@ -802,7 +804,9 @@ class AncestryApp(QMainWindow):
     # ── Start / finish ────────────────────────────────────────────────────── #
     def _start(self):
         if not self._validate(): return
+        self._cancel_ev = threading.Event()
         self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         self.pbar.setValue(0)
         self.stlbl.setText("Starting...")
         self.worker = Worker(self._payload())
@@ -814,6 +818,7 @@ class AncestryApp(QMainWindow):
 
     def _done(self, r: dict):
         self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
         if r.get("ok"):
             n = r.get("n_records", 0)
             parts = (["Word"]  if r.get("docx_count") else []) + \

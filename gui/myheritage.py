@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction
-from gui._app_icon import app_icon, make_header
+from gui._app_icon import app_icon, make_header, make_cancel_button
 
 
 class _YearSpin(QSpinBox):
@@ -445,7 +445,9 @@ class MyHeritageApp(QMainWindow):
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
-        br.addStretch(); br.addWidget(self.start_btn); br.addStretch()
+        br.addStretch(); br.addWidget(self.start_btn)
+        self.cancel_btn = make_cancel_button(self, br)
+        br.addStretch()
         self._outer.addLayout(br)
         self._outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
@@ -647,7 +649,7 @@ class MyHeritageApp(QMainWindow):
             "password":      self.f_pass.text() or None,
             "imap_password": self.f_imap_pass.text() or None,
             "log":           print,
-            "cancel_event":  None,
+            "cancel_event": getattr(self, "_cancel_ev", None),
             # ask_2fa_code injected by Worker
         }
 
@@ -713,7 +715,9 @@ class MyHeritageApp(QMainWindow):
     def _start(self):
         if not self._validate():
             return
+        self._cancel_ev = threading.Event()
         self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         self.pbar.setValue(0)
         self.stlbl.setText("Starting…")
         self._worker = Worker(self._payload(), self)
@@ -726,6 +730,7 @@ class MyHeritageApp(QMainWindow):
 
     def _done(self, r):
         self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
         if r.get("ok"):
             n = r.get("n_records", 0)
             parts = (["Word"] if r.get("docx_count") else []) + \
