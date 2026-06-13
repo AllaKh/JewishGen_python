@@ -514,8 +514,15 @@ no_viewport=True, accept_downloads=True
 - **Лучше БОЛЬШЕ результатов, чем пропустить релевантное** (правило пользователя). `spouse=` у Ancestry — мягкий фильтр (5503 результата), поэтому в выдаче и «Alexander Sanders» без W — это ОК, не ужимать. Релевантные могут быть и ниже баннера «Don't miss out…» — сбор берёт всю страницу (`count=50`).
 
 ### GUI (как на сайте)
+- **Имя/фамилия — выпадашки точности** (как слайдеры сайта): First name 5 уровней (`FIRST_EXACT_OPTIONS`: Broad…Exact), Surname 4 (`SURNAME_EXACT_OPTIONS`). В URL только верхний «Exact» → `name_x=1` (name_x — единый для имени+фамилии, поэтому промежуточные fuzzy-уровни в URL НЕ кодируются — best-effort; Broad = без name_x).
 - **Add event:** строка-ссылки Marriage/Death/Lived In/Any Event → динамические строки (Year + ±диапазон + Location). В URL: `marriage/death/residence` + `<ev>_x=N-0-0` + `<ev>place` (Any Event — параметр неизвестен, пропуск).
 - **Add family member:** строка-ссылки Father/Mother/Sibling/Spouse/Child. **Father/Mother — ОДИН** (`_FAM_SINGLE`, ссылка дизейблится после добавления, 2+ нельзя); Sibling/Spouse/Child — неограниченно. Каждая строка: First/Last/Exact/✕.
+
+### Фильтры результатов (левая панель) — мульти-проход (клик, НЕ URL)
+- Отдельная сворачиваемая секция: **Record type** (категории+подкатегории), **Record location** (6), **Record date** (десятилетия 1800s–2010s) — чекбоксы. Точный текст меток = как на сайте (скрапер кликает по тексту).
+- **Семантика проходов** (`_filter_passes`): record-type — **OR** (по одному проходу на каждый выбранный тип); location+date — **AND** в КАЖДОМ проходе. Пусто → один обычный проход.
+- **Применение** (`_apply_filter_click`): по каждому проходу — свежий `goto(search_url)` (= неявный Clear all), затем клик по каждому фильтру этого прохода (поиск видимого `a/button` по тексту метки, `data-anc-filter`-маркер), собрать+скрапить. Дедуп записей по URL между проходами (повтор под разными фильтрами = одна запись). `_clear_all_filters` — фолбэк (`button.link` «Clear all»).
+- **Клик фильтров мной НЕ проверен живьём** (домен заблокирован) → defensive: не нашёл фильтр — лог и дальше, без падения. Сверить на живом прогоне; при поломке — перейти на URL-параметры фильтров (взять у пользователя URL после клика фильтра).
 - Английский, зелёная тема. Креды (username/password+глаз). Basic Search: First/Last/Place/Birth Year, у КАЖДОГО свой чекбокс «Exact» (payload `exact={name,surname,place,year}`). Advanced (сворачиваемый): Family members Father/Mother/Spouse (First/Last + Exact) + Keyword. Конфликт файлов overwrite/append/skip. Файлы `ancestry_{запрос}.docx/.xlsx`, Excel колонка «База»=Ancestry.
 
 ---

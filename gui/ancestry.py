@@ -69,6 +69,34 @@ YEAR_OPTIONS = [("Exact (this year)", 0), ("± 1 year", 1), ("± 2 years", 2),
 GENDER_OPTIONS = ["—", "Male", "Female"]
 COLLECTION_OPTIONS = ["All Collections", "USA", "UK & Ireland", "Europe",
                       "Canada", "Australia & New Zealand", "Jewish Family History"]
+# Name exactness — the site's slider levels (first name 5, surname 4). Last item
+# "Exact" maps to name_x=1; everything else is broad.
+FIRST_EXACT_OPTIONS   = ["Broad", "Exact + similar + sounds + initials",
+                         "Exact + sounds + similar", "Exact + similar", "Exact"]
+SURNAME_EXACT_OPTIONS = ["Broad", "Exact + sounds + similar",
+                         "Exact + similar", "Exact"]
+
+# Result filters (left panel) — exact site text so the scraper can click them.
+RECORD_TYPES = [
+    ("Census & voter lists", []),
+    ("Birth, marriage & death", ["Birth, baptism & christening",
+        "Marriage & divorce", "Death, burial, cemetery & obituaries"]),
+    ("Military", ["Draft, enlistment and service", "Casualties",
+        "Soldier, veteran & prisoner rolls & lists", "Pensions"]),
+    ("Immigration & emigration", ["Passenger lists",
+        "Border crossings & passports", "Citizenship & naturalization",
+        "Immigration & emigration books"]),
+    ("Pictures", []),
+    ("Stories, memories & histories", ["Family histories, journals & biographies",
+        "Social & place histories"]),
+    ("Directories & member lists", ["City & area directories",
+        "Society & employment directories", "School lists & yearbooks"]),
+    ("Court, land, wills & financial", ["Court, governmental & criminal records"]),
+    ("Family trees", []),
+]
+RECORD_LOCATIONS = ["North America", "Europe", "Oceania", "Asia",
+                    "Africa", "South America"]
+RECORD_DECADES = [f"{y}s" for y in range(1800, 2020, 10)]   # 1800s … 2010s
 FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
                 ("Sibling", "sibling"), ("Spouse", "spouse"), ("Child", "child")]
 _FAM_LABEL = {k: l for l, k in FAMILY_TYPES}   # key → display label
@@ -221,8 +249,12 @@ class AncestryApp(QMainWindow):
         for lbl, _v in YEAR_OPTIONS:
             self.f_year_range.addItem(lbl)
         self.f_year_range.setCurrentIndex(1)        # ± 1 year (default)
-        self.f_first_exact = QCheckBox("Exact")
-        self.f_last_exact  = QCheckBox("Exact")
+        self.f_first_exact = QComboBox(); self.f_first_exact.addItems(FIRST_EXACT_OPTIONS)
+        self.f_first_exact.setToolTip("Name match exactness (like the site's slider)")
+        self.f_first_exact.setMaximumWidth(150)
+        self.f_last_exact  = QComboBox(); self.f_last_exact.addItems(SURNAME_EXACT_OPTIONS)
+        self.f_last_exact.setToolTip("Surname match exactness")
+        self.f_last_exact.setMaximumWidth(150)
         self.f_place_exact = QCheckBox("Exact")
         bf.addWidget(QLabel("First Names:"), 0, 0)
         bf.addWidget(self.f_first,           0, 1)
@@ -321,6 +353,54 @@ class AncestryApp(QMainWindow):
         self._adv_scroll.setVisible(False)
         self._outer.addWidget(self._adv_scroll)
 
+        # ── Result filters (left-panel; applied AFTER the search) ──────────── #
+        self._flt_btn = QPushButton("▶   Filters  (Record type / Location / Date — multi-pass)")
+        self._flt_btn.setObjectName("advBtn")
+        self._flt_btn.setCheckable(True)
+        self._flt_btn.toggled.connect(self._toggle_flt)
+        self._outer.addWidget(self._flt_btn)
+
+        self._flt = QGroupBox()
+        fv = QVBoxLayout(self._flt); fv.setSpacing(6)
+        fv.addWidget(QLabel(
+            "Record-type filters run one at a time (OR); Location + Date are "
+            "combined (AND) with each. Leave empty for a plain search."))
+        self._ftype_cbs, self._floc_cbs, self._fdate_cbs = {}, {}, {}
+
+        fv.addWidget(_sechead("RECORD TYPE"))
+        tg = QGridLayout(); tg.setSpacing(2); trow = 0
+        for cat, subs in RECORD_TYPES:
+            cb = QCheckBox(cat); self._ftype_cbs[cat] = cb
+            tg.addWidget(cb, trow, 0, 1, 2); trow += 1
+            for s in subs:
+                scb = QCheckBox("    " + s); self._ftype_cbs[s] = scb
+                tg.addWidget(scb, trow, 0, 1, 2); trow += 1
+        fv.addLayout(tg)
+        fv.addWidget(_divider())
+
+        fv.addWidget(_sechead("RECORD LOCATION"))
+        lg = QGridLayout(); lg.setSpacing(2)
+        for i, loc in enumerate(RECORD_LOCATIONS):
+            cb = QCheckBox(loc); self._floc_cbs[loc] = cb
+            lg.addWidget(cb, i // 3, i % 3)
+        fv.addLayout(lg)
+        fv.addWidget(_divider())
+
+        fv.addWidget(_sechead("RECORD DATE (decade)"))
+        dg = QGridLayout(); dg.setSpacing(2)
+        for i, dec in enumerate(RECORD_DECADES):
+            cb = QCheckBox(dec); self._fdate_cbs[dec] = cb
+            dg.addWidget(cb, i // 6, i % 6)
+        fv.addLayout(dg)
+
+        self._flt_scroll = QScrollArea()
+        self._flt_scroll.setWidget(self._flt)
+        self._flt_scroll.setWidgetResizable(True)
+        self._flt_scroll.setFrameShape(QFrame.NoFrame)
+        self._flt_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._flt_scroll.setVisible(False)
+        self._outer.addWidget(self._flt_scroll)
+
         # Output
         og = QGroupBox("Output")
         ol = QVBoxLayout(og); ol.setSpacing(6)
@@ -356,6 +436,18 @@ class AncestryApp(QMainWindow):
             if   isinstance(w, QLineEdit): w.textChanged.connect(self._save)
             elif isinstance(w, QComboBox): w.currentTextChanged.connect(self._save)
             elif isinstance(w, QCheckBox): w.stateChanged.connect(self._save)
+        for cb in (list(self._ftype_cbs.values()) + list(self._floc_cbs.values())
+                   + list(self._fdate_cbs.values())):
+            cb.stateChanged.connect(self._save)
+        self._fit()
+
+    def _toggle_flt(self, on: bool):
+        self._flt_scroll.setVisible(on)
+        if on:
+            sh = QApplication.primaryScreen().availableGeometry().height()
+            self._flt_scroll.setMaximumHeight(int(sh * 0.5))
+        self._flt_btn.setText(("▼" if on else "▶") +
+                              "   Filters  (Record type / Location / Date — multi-pass)")
         self._fit()
 
     # ── Dynamic family-member rows ────────────────────────────────────────── #
@@ -458,8 +550,8 @@ class AncestryApp(QMainWindow):
             "first_names": self.f_first.text(), "last_names": self.f_last.text(),
             "place_lived": self.f_place.text(), "birth_year": self.f_byear.text(),
             "year_range_i": self.f_year_range.currentIndex(),
-            "first_exact": self.f_first_exact.isChecked(),
-            "last_exact":  self.f_last_exact.isChecked(),
+            "first_exact_i": self.f_first_exact.currentIndex(),
+            "last_exact_i":  self.f_last_exact.currentIndex(),
             "place_exact": self.f_place_exact.isChecked(),
             "keyword": self.f_keyword.text(), "gender": self.f_gender.currentText(),
             "race": self.f_race.text(), "collection": self.f_collection.currentText(),
@@ -468,6 +560,10 @@ class AncestryApp(QMainWindow):
             "output_folder": self.f_folder.text(),
             "fmt_docx": self.f_docx.isChecked(), "fmt_xlsx": self.f_xlsx.isChecked(),
             "adv_open": self._adv_btn.isChecked(),
+            "flt_open": self._flt_btn.isChecked(),
+            "f_types": [l for l, cb in self._ftype_cbs.items() if cb.isChecked()],
+            "f_locs":  [l for l, cb in self._floc_cbs.items() if cb.isChecked()],
+            "f_dates": [l for l, cb in self._fdate_cbs.items() if cb.isChecked()],
             "fam": {k: [[r["first"].text(), r["last"].text(), r["exact"].isChecked()]
                         for r in rows] for k, rows in self._fam.items()},
             "events": [[e["type"], e["year"].text(),
@@ -499,7 +595,10 @@ class AncestryApp(QMainWindow):
         _s(self.f_place, "place_lived"); _s(self.f_byear, "birth_year")
         if isinstance(d.get("year_range_i"), int):
             self.f_year_range.setCurrentIndex(d["year_range_i"])
-        _s(self.f_first_exact, "first_exact"); _s(self.f_last_exact, "last_exact")
+        if isinstance(d.get("first_exact_i"), int):
+            self.f_first_exact.setCurrentIndex(d["first_exact_i"])
+        if isinstance(d.get("last_exact_i"), int):
+            self.f_last_exact.setCurrentIndex(d["last_exact_i"])
         _s(self.f_place_exact, "place_exact"); _s(self.f_keyword, "keyword")
         i = self.f_gender.findText(str(d.get("gender", "—")))
         if i >= 0: self.f_gender.setCurrentIndex(i)
@@ -517,8 +616,16 @@ class AncestryApp(QMainWindow):
         for e in (d.get("events") or []):
             e = (list(e) + ["", "", 1, ""])[:4]
             self._add_event_row(e[0], str(e[1]), int(e[2] or 1), str(e[3]))
+        for l in (d.get("f_types") or []):
+            if l in self._ftype_cbs: self._ftype_cbs[l].setChecked(True)
+        for l in (d.get("f_locs") or []):
+            if l in self._floc_cbs: self._floc_cbs[l].setChecked(True)
+        for l in (d.get("f_dates") or []):
+            if l in self._fdate_cbs: self._fdate_cbs[l].setChecked(True)
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
+        if d.get("flt_open"):
+            self._flt_btn.setChecked(True)
 
     # ── Helpers ───────────────────────────────────────────────────────────── #
     def _browse(self):
@@ -564,9 +671,15 @@ class AncestryApp(QMainWindow):
             "year_range":  YEAR_OPTIONS[self.f_year_range.currentIndex()][1],
             "advanced":    self._build_advanced(),
             "exact": {
-                "name":    self.f_first_exact.isChecked(),
-                "surname": self.f_last_exact.isChecked(),
+                "name":    self.f_first_exact.currentText() == "Exact",
+                "surname": self.f_last_exact.currentText() == "Exact",
                 "place":   self.f_place_exact.isChecked(),
+            },
+            "filters": {
+                "types":     [l.strip() for l, cb in self._ftype_cbs.items()
+                              if cb.isChecked()],
+                "locations": [l for l, cb in self._floc_cbs.items() if cb.isChecked()],
+                "dates":     [l for l, cb in self._fdate_cbs.items() if cb.isChecked()],
             },
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),

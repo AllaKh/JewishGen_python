@@ -432,6 +432,73 @@ async def _collect_all(page, first_q, last_q, base_url, log) -> list:
     return all_rows
 
 
+# ── Result filters (left panel) ────────────────────────────────────────────── #
+
+async def _apply_filter_click(page, label, log) -> bool:
+    """Click a result filter by its visible text in the left «Filters» panel
+    (record-type category, Record-location, or a Record-date decade). Defensive —
+    logs and returns False if not found, never crashes."""
+    js = """(label) => {
+        const norm = s => (s||'').replace(/\\s+/g,' ').trim();
+        // candidates: links / buttons whose own text starts with the label
+        const cand = [...document.querySelectorAll('a,button,[role=button]')];
+        for (const e of cand) {
+            const t = norm(e.innerText);
+            // match «Label» or «Label 1,234» (a filter row carries a count)
+            if (t === label || t.startsWith(label + ' ') || t.startsWith(label)) {
+                const r = e.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                    e.setAttribute('data-anc-filter', '1'); return true;
+                }
+            }
+        }
+        return false;
+    }"""
+    try:
+        ok = await page.evaluate(js, label)
+        if not ok:
+            log(f"    !! фильтр не найден: {label}")
+            return False
+        el = page.locator('[data-anc-filter="1"]').first
+        await el.click(timeout=4000)
+        await el.evaluate("e => e.removeAttribute('data-anc-filter')")
+        await asyncio.sleep(3)
+        log(f"    фильтр применён: {label}")
+        return True
+    except Exception as e:
+        log(f"    !! фильтр «{label}»: {type(e).__name__}")
+        return False
+
+
+async def _clear_all_filters(page, log):
+    for sel in ['button.link:has-text("Clear all")',
+                'button:has-text("Clear all")', 'a:has-text("Clear all")']:
+        try:
+            el = page.locator(sel).first
+            if await el.count() and await el.is_visible():
+                await el.click(timeout=4000)
+                await asyncio.sleep(2)
+                log("    фильтры сброшены (Clear all)")
+                return
+        except Exception:
+            continue
+
+
+def _filter_passes(filters: dict) -> list:
+    """Build the filter passes. Record-type entries are OR → one pass each;
+    Record-location + Record-date are AND-applied in EVERY pass. No filters → one
+    empty pass (plain results)."""
+    filters = filters or {}
+    types = [t for t in filters.get("types", []) if t]
+    common = [x for x in (filters.get("locations", []) +
+                          filters.get("dates", [])) if x]
+    if types:
+        return [[t] + common for t in types]
+    if common:
+        return [common]
+    return [[]]
+
+
 async def _diag(page, log):
     """Dump page state when 0 results — so the real DOM can be inspected from the
     log (live site is anti-bot / login-walled for me)."""
@@ -908,6 +975,7 @@ async def run_scraper(
     year_range:    int       = 1,    # ± years (0 = exact); birth_x=<N>-0-0
     advanced:      dict|None = None,
     exact:         dict|None = None,
+    filters:       dict|None = None,  # {"types":[…], "locations":[…], "dates":[…]}
     output_format: str       = "both",
     output_folder            = Path("."),
     email:         str|None  = None,
@@ -925,8 +993,9 @@ async def run_scraper(
     def _done():
         return bool(cancel_event and cancel_event.is_set())
 
-    adv   = advanced or {}
-    exact = exact or {}
+    adv     = advanced or {}
+    exact   = exact or {}
+    filters = filters or {}
     want_docx = output_format in ("docx", "both")
     want_xlsx = output_format in ("xlsx", "both")
     output_folder = Path(output_folder)
@@ -983,38 +1052,58 @@ async def run_scraper(
 
             # 2. SEARCH (built URL, count=50)
             _prog(20, "Поиск...")
-            await _search(page, first_names, last_names, place_lived,
-                          birth_year, year_range, exact, adv, log)
-            if _done(): return summary
+            search_url = await _search(page, first_names, last_names, place_lived,
+                                       birth_year, year_range, exact, adv, log)
 
-            # 3. COLLECT — score by the PERSON name, not the collection title
-            _prog(25, "Сбор результатов...")
-            base_url = page.url
-            raw = await _collect_all(page, first_names, last_names, base_url, log)
-            qualified = [r for r in raw if r["score"] >= MIN_MATCH][:MAX_SCRAPE]
-            log(f"  Подходящих (≥{MIN_MATCH}%): {len(qualified)}")
+            # 3-4. COLLECT + SCRAPE, once per FILTER PASS. Record-type filters are
+            # OR (a pass each); location + date are AND in every pass. Records are
+            # de-duped by URL across passes (a record found under several filters
+            # is saved once).
+            passes = _filter_passes(filters)
+            if len(passes) > 1 or passes[0]:
+                log(f"  Фильтры: {len(passes)} проход(ов): {passes}")
+            records, seen_urls = [], set()
+            for pi, pass_labels in enumerate(passes, 1):
+                if _done(): break
+                if pi > 1 or pass_labels:
+                    # fresh search URL each pass = filters reset (implicit Clear all)
+                    try:
+                        await page.goto(search_url, wait_until="domcontentloaded",
+                                        timeout=40000)
+                        await asyncio.sleep(4)
+                    except Exception:
+                        pass
+                if pass_labels:
+                    _prog(25, f"Проход {pi}/{len(passes)} — фильтры: {pass_labels}")
+                    for lbl in pass_labels:
+                        await _apply_filter_click(page, lbl, log)
+                    await asyncio.sleep(2)
 
-            if not qualified:
+                raw = await _collect_all(page, first_names, last_names, page.url, log)
+                qual = [r for r in raw if r["score"] >= MIN_MATCH]
+                qual = [r for r in qual if r["url"] not in seen_urls][:MAX_SCRAPE]
+                log(f"  Подходящих новых (≥{MIN_MATCH}%): {len(qual)}")
+
+                for i, r in enumerate(qual, 1):
+                    if _done(): break
+                    seen_urls.add(r["url"])
+                    _prog(25 + int(65 * len(records) / max(len(qual), 1)),
+                          f"[проход {pi}] [{i}/{len(qual)}] {r['name'][:50]}...")
+                    det = await _scrape_page(ctx, page, r["url"], r["name"],
+                                             images_root, logged_in_ref,
+                                             email or "", password or "", log)
+                    det["score"] = r["score"]
+                    if r.get("coll") and not det.get("collection"):
+                        det["collection"] = r["coll"]
+                    records.append(det)
+                    log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
+
+            if not records:
                 await _diag(page, log)
                 _prog(100, f"Нет записей ≥{MIN_MATCH}%.")
                 summary.update({"ok": True, "n_records": 0,
                                 "message": f"Нет записей ≥{MIN_MATCH}%."})
                 return summary
-
-            # 4. SCRAPE each record on ONE page
-            records = []
-            for i, r in enumerate(qualified, 1):
-                if _done(): break
-                _prog(25 + int(65 * i / len(qualified)),
-                      f"[{i}/{len(qualified)}] {r['name'][:60]}...")
-                det = await _scrape_page(ctx, page, r["url"], r["name"],
-                                         images_root, logged_in_ref,
-                                         email or "", password or "", log)
-                det["score"] = r["score"]
-                if r.get("coll") and not det.get("collection"):
-                    det["collection"] = r["coll"]
-                records.append(det)
-                log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
 
             # 5. SAVE (overwrite / append / skip)
             _prog(94, "Сохранение файлов...")
