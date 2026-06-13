@@ -21,11 +21,11 @@
     "window_cls": "gui.familysearch.FamilySearchApp"
   },
   {
-    "key": "ancestry",
+    "key": "Ancestry",
     "name": "Ancestry",
-    "subtitle": "World's largest online family history resource",
-    "action": "open_url",
-    "url": "https://www.ancestry.com"
+    "subtitle": "World's largest online family history resource — ancestry.com",
+    "action": "open_window",
+    "window_cls": "gui.ancestry.AncestryApp"
   },
   {
     "key": "Pamatlogo",

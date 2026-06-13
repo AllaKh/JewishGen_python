@@ -1,0 +1,7 @@
+{
+  "home_url": "https://www.ancestry.com/",
+  "signin_url": "https://www.ancestry.com/account/signin",
+  "min_match": 80,
+  "max_pages": 5,
+  "max_scrape": 40
+}

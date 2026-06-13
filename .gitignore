@@ -1,6 +1,7 @@
 # Browser profiles (persistent sessions — never commit cookies/credentials)
 .mh_profile/
 .fs_profile/
+.ancestry_profile/
 .profile/
 profile/
 _probe_profile/
@@ -26,6 +27,7 @@ gui/.skarb_autosave.json
 gui/.memsearch_autosave.json
 gui/.pamyat_autosave.json
 gui/.pogroms_autosave.json
+gui/.ancestry_autosave.json
 gui/.gwar_autosave.json
 gui/.yadvashem_autosave.json
 gui/.wikisource_autosave.json
