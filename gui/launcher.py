@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QApplication, QSizePolicy,
+    QLabel, QPushButton, QFrame, QApplication, QSizePolicy, QScrollArea,
 )
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap
@@ -194,36 +194,38 @@ class LauncherWindow(QMainWindow):
         hdr_row.setSpacing(16)
         hdr_row.setContentsMargins(0, 2, 0, 2)
 
+        # Compact header — the old 196px logo + 36px title pushed the cards off
+        # screens below 4K.
         _logo_pix = QPixmap(str(_CONFIG / "app_logo.png"))
         if not _logo_pix.isNull():
             logo_lbl = QLabel()
             logo_lbl.setPixmap(
-                _logo_pix.scaledToWidth(196, Qt.SmoothTransformation))
+                _logo_pix.scaledToWidth(110, Qt.SmoothTransformation))
             logo_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             hdr_row.addWidget(logo_lbl)     # flush left, no spring before it
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(3)
+        title_col.setSpacing(1)
         title_col.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
 
         en_lbl = QLabel("Genealogy Search")
         en_lbl.setAlignment(Qt.AlignHCenter)
         en_lbl.setStyleSheet(
-            "font-size:36px;font-weight:bold;color:#2a4a2a;"
+            "font-size:25px;font-weight:bold;color:#2a4a2a;"
             "font-family:'Palatino Linotype',Palatino,Georgia,serif;"
             "letter-spacing:1px;")
 
         ru_lbl = QLabel("Генеалогический поиск")
         ru_lbl.setAlignment(Qt.AlignHCenter)
         ru_lbl.setStyleSheet(
-            "font-size:22px;font-weight:600;color:#5a7a4a;"
+            "font-size:15px;font-weight:600;color:#5a7a4a;"
             "font-family:'Segoe UI',Arial,sans-serif;letter-spacing:0.5px;")
 
         sub_lbl = QLabel("Select a database  ·  Выберите базу данных")
         sub_lbl.setAlignment(Qt.AlignHCenter)
         sub_lbl.setStyleSheet(
-            "font-size:12px;color:#777;font-style:italic;"
-            "font-family:'Segoe UI',Arial,sans-serif;margin-top:1px;")
+            "font-size:11px;color:#777;font-style:italic;"
+            "font-family:'Segoe UI',Arial,sans-serif;")
 
         title_col.addWidget(en_lbl)
         title_col.addWidget(ru_lbl)
@@ -240,7 +242,9 @@ class LauncherWindow(QMainWindow):
         line.setStyleSheet(STYLES["divider"])
         self._outer.addWidget(line)
 
-        # Card list (plain widget, no scroll area)
+        # Card list inside a scroll area: on a normal screen everything fits and
+        # no scrollbar shows; on a low-resolution screen the window is capped to
+        # the screen height and the cards scroll instead of being cut off.
         self._card_container = QWidget()
         # Don't let the container grow past the cards' total height — otherwise the
         # extra vertical space lands as an empty band between the last card and the
@@ -254,7 +258,14 @@ class LauncherWindow(QMainWindow):
             card = SiteCard(site)
             card_layout.addWidget(card)
 
-        self._outer.addWidget(self._card_container)
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(self._card_container)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.setStyleSheet("QScrollArea{background:transparent;}")
+        self._outer.addWidget(self._scroll)
 
         # Footer
         self._footer = QLabel("© 2026 Alla Khananashvili")
@@ -263,15 +274,29 @@ class LauncherWindow(QMainWindow):
         self._outer.addWidget(self._footer)
 
     # ------------------------------------------------------------------
-    def _fit_to_cards(self):
+    def _fit_to_cards(self, _scr_h=None):
         """Resize the window so all cards are visible, with NO empty gap and the
-        cards stretched to the full width."""
+        cards stretched to the full width. On screens too small for the full
+        list, the window shrinks to the screen and the cards scroll."""
         # Unlock any previously-pinned size so the layout can report its true,
         # fully-settled size (a stale fixed size would otherwise stick).
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
-        final_w = 920                       # snug width; cards fill it
+        scr = QApplication.primaryScreen().availableGeometry()
+        scr_h = _scr_h if _scr_h else scr.height()   # override only in tests
+        final_w = min(920, scr.width() - 16)   # snug width; shrink on narrow screens
         self.setFixedWidth(final_w)
+        # A QScrollArea's own sizeHint is small and unrelated to its content, so
+        # the height must be pinned explicitly: max = content height (taller
+        # would re-open the «empty band at the bottom» bug), min = whatever fits
+        # the screen — the full content on big screens (no scrollbar), the
+        # remaining space on small ones (scrollbar appears).
+        cards_h = self._card_container.sizeHint().height()
+        self._scroll.setMaximumHeight(cards_h + 2)
+        sg, fb0 = self._scroll.geometry(), self._footer.geometry().bottom()
+        chrome = (fb0 - sg.height()) if fb0 > 50 else 200   # header+divider+footer
+        avail  = (scr_h - 16) - chrome - self._outer.contentsMargins().bottom() - 2
+        self._scroll.setMinimumHeight(max(120, min(cards_h + 2, avail)))
         self.centralWidget().resize(final_w, self.centralWidget().height())
         self._card_container.adjustSize()
         self.centralWidget().adjustSize()
@@ -284,8 +309,7 @@ class LauncherWindow(QMainWindow):
             else max(self.centralWidget().sizeHint().height(), 360)
         # Never taller than the screen, and open it HIGH (top-aligned, centred)
         # so the bottom can't run off the lower edge.
-        scr = QApplication.primaryScreen().availableGeometry()
-        final_h = min(final_h, scr.height() - 16)
+        final_h = min(final_h, scr_h - 16)
         self.resize(final_w, final_h)
         self.setFixedHeight(final_h)        # prevent vertical resizing
         self.centralWidget().resize(final_w, final_h)
