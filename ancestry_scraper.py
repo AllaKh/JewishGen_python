@@ -182,7 +182,9 @@ def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
             rf, rl = person.get("first", ""), person.get("last", "")
             if rf or rl:
                 parts.append((rel, f"{_name_part(rf)}_{_name_part(rl)}".strip("_")))
-                if person.get("exact"):
+                # Ancestry's <rel>_x is one unit → exact if either field is exact
+                if (person.get("first_exact") or person.get("last_exact")
+                        or person.get("exact")):
                     parts.append((f"{rel}_x", "1"))
     # life events (Marriage / Death / Lived-In) — year(+range) and/or place
     _EV = {"marriage": "marriage", "death": "death", "residence": "residence"}
@@ -434,32 +436,79 @@ async def _collect_all(page, first_q, last_q, base_url, log) -> list:
 
 # ── Result filters (left panel) ────────────────────────────────────────────── #
 
-async def _apply_filter_click(page, label, log) -> bool:
-    """Click a result filter by its visible text in the left «Filters» panel
-    (record-type category, Record-location, or a Record-date decade). Defensive —
-    logs and returns False if not found, never crashes."""
-    js = """(label) => {
-        const norm = s => (s||'').replace(/\\s+/g,' ').trim();
-        // candidates: links / buttons whose own text starts with the label
-        const cand = [...document.querySelectorAll('a,button,[role=button]')];
-        for (const e of cand) {
-            const t = norm(e.innerText);
-            // match «Label» or «Label 1,234» (a filter row carries a count)
-            if (t === label || t.startsWith(label + ' ') || t.startsWith(label)) {
+_FILTER_FIND_JS = r"""(labels) => {
+    const norm = s => (s||'').replace(/\s+/g,' ').trim();
+    const cand = [...document.querySelectorAll('a,button,[role=button],label,span')];
+    for (const e of cand) {
+        // own text = text minus the count badge (e.g. «Military 193» → «Military»)
+        let t = norm(e.innerText);
+        const m = t.match(/^(.*?)(?:\s+[\d,]+\+?)?$/);
+        const own = m ? norm(m[1]) : t;
+        for (const label of labels) {
+            if (own === label || t === label || own.toLowerCase() === label.toLowerCase()) {
                 const r = e.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
-                    e.setAttribute('data-anc-filter', '1'); return true;
+                    e.setAttribute('data-anc-filter','1'); return true;
+                }
+            }
+        }
+    }
+    return false;
+}"""
+
+
+async def _expand_parent(page, parent, log):
+    """Reveal a collapsed filter group (e.g. «Birth, marriage & death» before its
+    «Marriage & divorce» sub-item, or a century before its decade). Click its
+    expander chevron if present; otherwise click the parent row itself."""
+    if not parent:
+        return
+    js = r"""(parent) => {
+        const norm = s => (s||'').replace(/\s+/g,' ').trim();
+        for (const e of document.querySelectorAll('a,button,[role=button],span,li,div')) {
+            let t = norm(e.innerText);
+            const m = t.match(/^(.*?)(?:\s+[\d,]+\+?)?$/);
+            const own = m ? norm(m[1]) : t;
+            if (own === parent) {
+                if (e.getAttribute('aria-expanded') === 'false' ||
+                    /(›|▸|>|chevron|expand|caret)/i.test(
+                        (e.className||'') + ' ' + e.innerHTML)) {
+                    e.setAttribute('data-anc-exp','1'); return true;
                 }
             }
         }
         return false;
     }"""
     try:
-        ok = await page.evaluate(js, label)
+        if await page.evaluate(js, parent):
+            el = page.locator('[data-anc-exp="1"]').first
+            await el.click(timeout=3000)
+            await el.evaluate("e => e.removeAttribute('data-anc-exp')")
+            await asyncio.sleep(1.5)
+            log(f"    раскрыл «{parent}»")
+    except Exception:
+        pass
+
+
+async def _apply_filter_click(page, label, log, parent=None) -> bool:
+    """Click a result filter by its visible text in the left «Filters» panel.
+    Tries the label and its ±«s» variant; if not found and a parent is given,
+    expands the parent group first. Defensive — logs and continues, never crashes."""
+    variants = [label]
+    if label.endswith("s"):
+        variants.append(label[:-1])          # «1890s» → «1890»
+    else:
+        variants.append(label + "s")
+    try:
+        ok = await page.evaluate(_FILTER_FIND_JS, variants)
+        if not ok and parent:
+            await _expand_parent(page, parent, log)
+            ok = await page.evaluate(_FILTER_FIND_JS, variants)
         if not ok:
             log(f"    !! фильтр не найден: {label}")
             return False
         el = page.locator('[data-anc-filter="1"]').first
+        await el.scroll_into_view_if_needed(timeout=2000)
         await el.click(timeout=4000)
         await el.evaluate("e => e.removeAttribute('data-anc-filter')")
         await asyncio.sleep(3)
@@ -661,21 +710,34 @@ _FIELDS_JS = r"""() => {
         if (seen.has(key)) return;
         seen.add(key); out.push([k, v]);
     };
-    // any 2-child row = label | value (Ancestry's Detail panel; class-agnostic)
-    for (const el of document.querySelectorAll('tr, li, div, dl')) {
-        const kids = [...el.children].filter(c => norm(c.innerText));
-        if (kids.length === 2) {
-            const k = norm(kids[0].innerText), v = norm(kids[1].innerText);
-            if (k && v && !k.includes('\n') && k.length < 45) push(k, v);
-        }
+    // Clean «label | value» rows only. A whole <table> (thead+tbody) or a wide
+    // multi-column row must NOT be captured as one glued pair → require exactly 2
+    // single-line children and skip anything wrapping table structure.
+    for (const el of document.querySelectorAll('li, div, dl, tr')) {
+        let kids;
+        if (el.tagName === 'TR')
+            kids = [...el.querySelectorAll(':scope > td, :scope > th')];
+        else
+            kids = [...el.children].filter(c => norm(c.innerText));
+        if (kids.length !== 2) continue;
+        if (kids.some(c => c.querySelector && c.querySelector('table,td,th,tr,li')))
+            continue;
+        const k = norm(kids[0].innerText), v = norm(kids[1].innerText);
+        if (k.includes('\n') || v.includes('\n')) continue;   // not a clean field
+        if (k.length < 45 && v.length < 200) push(k, v);
     }
-    // Household members table (Name | Age | Relationship)
+    // Household members table — ONLY a real «Household Members» table, short cells
+    // (a wide neighbours table would glue, so reject long cells).
     let household = [];
     for (const tb of document.querySelectorAll('table')) {
-        if (!/Household Members|Relationship/i.test(norm(tb.innerText))) continue;
+        if (!/Household Members/i.test(norm(tb.innerText))) continue;
         for (const tr of tb.querySelectorAll('tr')) {
-            const c = [...tr.querySelectorAll('td,th')].map(x => norm(x.innerText));
-            if (c.length >= 2 && c[0] && !/^name$/i.test(c[0])) household.push(c);
+            const c = [...tr.querySelectorAll(':scope > td, :scope > th')]
+                .map(x => norm(x.innerText));
+            if (c.length < 2 || c.length > 6) continue;
+            if (c.some(x => x.length > 40)) continue;          // glued mega-cell
+            if (/^name$/i.test(c[0]) && /relationship/i.test(c.join(' '))) continue;
+            if (c[0]) household.push(c);
         }
     }
     // subtitle «in the 1930 United States Federal Census»
@@ -1075,8 +1137,10 @@ async def run_scraper(
                         pass
                 if pass_labels:
                     _prog(25, f"Проход {pi}/{len(passes)} — фильтры: {pass_labels}")
+                    fparents = filters.get("parents", {})
                     for lbl in pass_labels:
-                        await _apply_filter_click(page, lbl, log)
+                        await _apply_filter_click(page, lbl, log,
+                                                  parent=fparents.get(lbl))
                     await asyncio.sleep(2)
 
                 raw = await _collect_all(page, first_names, last_names, page.url, log)

@@ -94,9 +94,29 @@ RECORD_TYPES = [
     ("Court, land, wills & financial", ["Court, governmental & criminal records"]),
     ("Family trees", []),
 ]
-RECORD_LOCATIONS = ["North America", "Europe", "Oceania", "Asia",
-                    "Africa", "South America"]
-RECORD_DECADES = [f"{y}s" for y in range(1800, 2020, 10)]   # 1800s … 2010s
+RECORD_LOCATIONS = [
+    ("North America", ["USA", "Canada", "Mexico", "Jamaica", "Cuba", "Bahamas",
+        "Bermuda", "Panama", "Barbados", "Trinidad and Tobago", "Haiti",
+        "Dominican Republic", "Guatemala", "Costa Rica", "Honduras",
+        "El Salvador", "Nicaragua", "Belize", "Greenland"]),
+    ("Europe", ["United Kingdom", "Ireland", "France", "Netherlands", "Germany",
+        "Denmark", "Sweden", "Portugal", "Gibraltar", "Belgium", "Norway",
+        "Italy", "Spain", "Austria", "Hungary", "Poland", "Switzerland",
+        "Greece", "Ukraine", "Romania", "Finland", "Iceland", "Malta",
+        "Latvia", "Estonia", "Czech Republic", "Croatia", "Serbia"]),
+    ("Oceania", ["Australia", "New Zealand", "Papua New Guinea", "Fiji",
+        "Indonesia", "Tonga"]),
+    ("Asia", ["India", "Sri Lanka", "Singapore", "China", "Lebanon", "Russia",
+        "Philippines", "Pakistan", "Malaysia", "Israel", "Japan", "Iraq",
+        "Iran", "Palestine", "Thailand", "Vietnam", "Jordan", "Taiwan",
+        "Bangladesh", "Myanmar"]),
+    ("Africa", []),
+    ("South America", ["Brazil", "Argentina", "Chile", "Uruguay", "Colombia",
+        "Peru", "Bolivia", "Venezuela", "Paraguay", "Guyana", "Suriname"]),
+]
+# Record date — every decade, grouped by century (1700s … 2020s)
+RECORD_DATES = [(f"{c}s", [f"{y}s" for y in range(c, c + 100, 10)])
+                for c in (1700, 1800, 1900, 2000)]
 FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
                 ("Sibling", "sibling"), ("Spouse", "spouse"), ("Child", "child")]
 _FAM_LABEL = {k: l for l, k in FAMILY_TYPES}   # key → display label
@@ -366,32 +386,16 @@ class AncestryApp(QMainWindow):
             "Record-type filters run one at a time (OR); Location + Date are "
             "combined (AND) with each. Leave empty for a plain search."))
         self._ftype_cbs, self._floc_cbs, self._fdate_cbs = {}, {}, {}
+        self._filter_parents = {}            # child label → parent label (to expand)
 
         fv.addWidget(_sechead("RECORD TYPE"))
-        tg = QGridLayout(); tg.setSpacing(2); trow = 0
-        for cat, subs in RECORD_TYPES:
-            cb = QCheckBox(cat); self._ftype_cbs[cat] = cb
-            tg.addWidget(cb, trow, 0, 1, 2); trow += 1
-            for s in subs:
-                scb = QCheckBox("    " + s); self._ftype_cbs[s] = scb
-                tg.addWidget(scb, trow, 0, 1, 2); trow += 1
-        fv.addLayout(tg)
+        fv.addLayout(self._filter_group(RECORD_TYPES, self._ftype_cbs, cols=2))
         fv.addWidget(_divider())
-
         fv.addWidget(_sechead("RECORD LOCATION"))
-        lg = QGridLayout(); lg.setSpacing(2)
-        for i, loc in enumerate(RECORD_LOCATIONS):
-            cb = QCheckBox(loc); self._floc_cbs[loc] = cb
-            lg.addWidget(cb, i // 3, i % 3)
-        fv.addLayout(lg)
+        fv.addLayout(self._filter_group(RECORD_LOCATIONS, self._floc_cbs, cols=3))
         fv.addWidget(_divider())
-
-        fv.addWidget(_sechead("RECORD DATE (decade)"))
-        dg = QGridLayout(); dg.setSpacing(2)
-        for i, dec in enumerate(RECORD_DECADES):
-            cb = QCheckBox(dec); self._fdate_cbs[dec] = cb
-            dg.addWidget(cb, i // 6, i % 6)
-        fv.addLayout(dg)
+        fv.addWidget(_sechead("RECORD DATE (by century / decade)"))
+        fv.addLayout(self._filter_group(RECORD_DATES, self._fdate_cbs, cols=5))
 
         self._flt_scroll = QScrollArea()
         self._flt_scroll.setWidget(self._flt)
@@ -450,8 +454,24 @@ class AncestryApp(QMainWindow):
                               "   Filters  (Record type / Location / Date — multi-pass)")
         self._fit()
 
+    def _filter_group(self, groups, store, cols=3) -> QGridLayout:
+        """Build a checkbox grid for (parent, [children]) groups. «&» is escaped
+        to «&&» for display (Qt eats a lone & as a mnemonic); dict keys stay clean.
+        Records child→parent in self._filter_parents (so the scraper can expand)."""
+        g = QGridLayout(); g.setSpacing(2); row = 0
+        for parent, children in groups:
+            pcb = QCheckBox(parent.replace("&", "&&")); store[parent] = pcb
+            g.addWidget(pcb, row, 0, 1, cols); row += 1
+            for i, ch in enumerate(children):
+                ccb = QCheckBox("  " + ch.replace("&", "&&")); store[ch] = ccb
+                self._filter_parents[ch] = parent
+                g.addWidget(ccb, row + i // cols, i % cols)
+            if children:
+                row += (len(children) + cols - 1) // cols
+        return g
+
     # ── Dynamic family-member rows ────────────────────────────────────────── #
-    def _add_fam_row(self, key, first="", last="", exact=False):
+    def _add_fam_row(self, key, first="", last="", first_exact=False, last_exact=False):
         if key in _FAM_SINGLE and self._fam[key]:
             return None                       # only ONE father / mother
         box = self._fam_containers[key]
@@ -459,16 +479,18 @@ class AncestryApp(QMainWindow):
         rl = QHBoxLayout(row_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
         lbl = QLabel(_FAM_LABEL[key] + ":"); lbl.setFixedWidth(60)
         ff = QLineEdit(); ff.setPlaceholderText("First & Middle Name(s)"); ff.setText(first)
+        cbf = QCheckBox("Exact"); cbf.setChecked(bool(first_exact))
         lf = QLineEdit(); lf.setPlaceholderText("Last Name"); lf.setText(last)
-        cb = QCheckBox("Exact"); cb.setChecked(bool(exact))
+        cbl = QCheckBox("Exact"); cbl.setChecked(bool(last_exact))
         rm = QPushButton("✕"); rm.setObjectName("rmBtn"); rm.setFixedWidth(24)
-        rl.addWidget(lbl); rl.addWidget(ff, 2); rl.addWidget(lf, 2); rl.addWidget(cb)
-        rl.addWidget(rm)
-        rec = {"w": row_w, "first": ff, "last": lf, "exact": cb}
+        rl.addWidget(lbl); rl.addWidget(ff, 2); rl.addWidget(cbf)
+        rl.addWidget(lf, 2); rl.addWidget(cbl); rl.addWidget(rm)
+        rec = {"w": row_w, "first": ff, "last": lf,
+               "first_exact": cbf, "last_exact": cbl}
         self._fam[key].append(rec)
         box.addWidget(row_w)
         ff.textChanged.connect(self._save); lf.textChanged.connect(self._save)
-        cb.stateChanged.connect(self._save)
+        cbf.stateChanged.connect(self._save); cbl.stateChanged.connect(self._save)
         rm.clicked.connect(lambda _=False: self._remove_fam_row(key, rec))
         if key in _FAM_SINGLE and key in getattr(self, "_fam_links", {}):
             self._fam_links[key].setEnabled(False)   # disable «Father/Mother» link
@@ -564,7 +586,8 @@ class AncestryApp(QMainWindow):
             "f_types": [l for l, cb in self._ftype_cbs.items() if cb.isChecked()],
             "f_locs":  [l for l, cb in self._floc_cbs.items() if cb.isChecked()],
             "f_dates": [l for l, cb in self._fdate_cbs.items() if cb.isChecked()],
-            "fam": {k: [[r["first"].text(), r["last"].text(), r["exact"].isChecked()]
+            "fam": {k: [[r["first"].text(), r["last"].text(),
+                         r["first_exact"].isChecked(), r["last_exact"].isChecked()]
                         for r in rows] for k, rows in self._fam.items()},
             "events": [[e["type"], e["year"].text(),
                         YEAR_OPTIONS[e["range"].currentIndex()][1], e["place"].text()]
@@ -612,7 +635,7 @@ class AncestryApp(QMainWindow):
         for key, rows in (d.get("fam") or {}).items():
             if key in self._fam:
                 for r in rows:
-                    self._add_fam_row(key, *(r + ["", "", False])[:3])
+                    self._add_fam_row(key, *(list(r) + ["", "", False, False])[:4])
         for e in (d.get("events") or []):
             e = (list(e) + ["", "", 1, ""])[:4]
             self._add_event_row(e[0], str(e[1]), int(e[2] or 1), str(e[3]))
@@ -649,7 +672,8 @@ class AncestryApp(QMainWindow):
         for key, rows in self._fam.items():
             people = [{"first": r["first"].text().strip(),
                        "last": r["last"].text().strip(),
-                       "exact": r["exact"].isChecked()}
+                       "first_exact": r["first_exact"].isChecked(),
+                       "last_exact": r["last_exact"].isChecked()}
                       for r in rows
                       if r["first"].text().strip() or r["last"].text().strip()]
             if people:
@@ -676,10 +700,10 @@ class AncestryApp(QMainWindow):
                 "place":   self.f_place_exact.isChecked(),
             },
             "filters": {
-                "types":     [l.strip() for l, cb in self._ftype_cbs.items()
-                              if cb.isChecked()],
+                "types":     [l for l, cb in self._ftype_cbs.items() if cb.isChecked()],
                 "locations": [l for l, cb in self._floc_cbs.items() if cb.isChecked()],
                 "dates":     [l for l, cb in self._fdate_cbs.items() if cb.isChecked()],
+                "parents":   self._filter_parents,
             },
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
