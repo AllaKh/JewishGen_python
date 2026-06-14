@@ -1,0 +1,3748 @@
+{
+  "North America": {
+    "code": "_1652393",
+    "countries": {
+      "USA": {
+        "code": "_2",
+        "states": {
+          "New York": {
+            "code": "_35",
+            "places": {
+              "Albany": "_128",
+              "Albertson": "_11005",
+              "Alden": "_10545",
+              "Altamont": "_10036",
+              "Amawalk": "_12241",
+              "Amherst": "_10546",
+              "Amityville": "_11842",
+              "Angola": "_10548",
+              "Arden": null,
+              "Aurora": "_10550",
+              "Babylon": "_11845",
+              "Baiting Hollow": "_1695716",
+              "Baldwin": "_11007",
+              "Baldwinsville": "_11224",
+              "Balmville": null,
+              "Barker": "_11131",
+              "Bay Shore": "_11846",
+              "Bayport": "_11847",
+              "Bayville": "_11009",
+              "Bedford": "_12247",
+              "Bellerose": "_11010",
+              "Bellmore": "_11011",
+              "Bellport": "_11849",
+              "Berne": "_10037",
+              "Bethlehem": "_10038",
+              "Blasdell": "_10552",
+              "Boston": "_10553",
+              "Brentwood": "_11852",
+              "Briarcliff Manor": "_12248",
+              "Brighton": "_10949",
+              "Brockport": "_10950",
+              "Bronx": "_378",
+              "Bronxville": "_12249",
+              "Brookhaven": "_11855",
+              "Buffalo": "_10556",
+              "Calverton": "_11856",
+              "Camillus": "_11229",
+              "Cedarhurst": "_11015",
+              "Center Moriches": "_11857",
+              "Centre Island": "_11016",
+              "Cheektowaga": null,
+              "Chili": "_10951",
+              "Churchville": "_10952",
+              "Cicero": "_11230",
+              "Clarence": "_10560",
+              "Clay": "_11231",
+              "Coeymans": "_10041",
+              "Cohoes": "_10042",
+              "Colden": "_10562",
+              "Collins": "_10563",
+              "Colonie": "_10043",
+              "Commack": "_11862",
+              "Concord": "_10565",
+              "Cornwall": "_11315",
+              "Cornwall-on-Hudson": null,
+              "Cortlandt": "_12253",
+              "Cortlandt Manor": "_12252",
+              "Crawford": null,
+              "Croton Falls": "_12256",
+              "Cuddebackville": null,
+              "Cutchogue": "_11865",
+              "De Witt": "_11232",
+              "Deerpark": null,
+              "Deerpart": null,
+              "Delmar": "_10044",
+              "Depew": "_10567",
+              "Dobbs Ferry": "_12259",
+              "East Aurora": "_10570",
+              "East Berne": "_10046",
+              "East Farmingdale": "_11869",
+              "East Hampton": "_11870",
+              "East Hills": "_11018",
+              "East Meadow": "_11020",
+              "East Northport": "_11874",
+              "East Quogue": "_11876",
+              "East Rochester": "_10954",
+              "East Rockaway": "_11022",
+              "East Syracuse": "_11235",
+              "East Williston": "_11023",
+              "Eastchester": "_12260",
+              "Eden": "_10573",
+              "Elbridge": "_11236",
+              "Elma": "_10575",
+              "Elmont": "_11024",
+              "Elmsford": "_12261",
+              "Erie": "_981",
+              "Evans": "_10576",
+              "Fabius": "_11237",
+              "Fairmount": "_11238",
+              "Fairport": "_10955",
+              "Farmingdale": "_11025",
+              "Fayetteville": "_11239",
+              "Firthcliffe": "_11321",
+              "Fishers Island": "_11882",
+              "Floral Park": "_11026",
+              "Franklin Square": "_11028",
+              "Freeport": "_11029",
+              "Garden City": "_11031",
+              "Gardenville": "_1695762",
+              "Gates": "_10956",
+              "Gates Center": "_1695763",
+              "Geddes": "_11240",
+              "Getzville": "_10578",
+              "Glen Cove": "_11032",
+              "Glenmont": "_10048",
+              "Goshen": "_11326",
+              "Gowanda": "_10580",
+              "Great Neck": "_11037",
+              "Great Neck Estates": "_11035",
+              "Greece": "_10957",
+              "Green Island": "_10049",
+              "Greenburgh": "_12265",
+              "Greenlawn": "_11886",
+              "Greenport": "_11888",
+              "Greenvale": "_11038",
+              "Greenwood Lake": null,
+              "Guilderland": "_10050",
+              "Hamburg": "_10582",
+              "Hamlin": "_10958",
+              "Harrison": "_12267",
+              "Hartland": "_11135",
+              "Hartsdale": "_12268",
+              "Hastings-on-Hudson": "_12269",
+              "Hawthorne": "_12270",
+              "Hempstead": "_11039",
+              "Henrietta": "_10959",
+              "Hewlett": "_11044",
+              "Hicksville": "_11045",
+              "Highlands": "_11334",
+              "Hilton": "_10960",
+              "Holbrook": "_11893",
+              "Honeoye Falls": "_1695777",
+              "Huntington": "_11896",
+              "Huntington Station": "_11895",
+              "Irondequoit": "_10962",
+              "Irvington": "_12271",
+              "Islip": "_11898",
+              "Jordan": "_11242",
+              "Katonah": "_12273",
+              "Kenmore": "_10585",
+              "Kings": "_1610",
+              "Kings Park": "_11900",
+              "Kings Point": "_11050",
+              "Knox": "_10052",
+              "La Salle": "_1700135",
+              "Lackawanna": "_10586",
+              "Lake": null,
+              "Lake Ronkonkoma": "_11902",
+              "Lancaster": "_10589",
+              "Larchmont": "_12274",
+              "Latham": "_10053",
+              "Laurel Hollow": "_11054",
+              "Lawrence": "_11055",
+              "Levittown": "_11056",
+              "Lewisboro": "_12275",
+              "Lewiston": "_11136",
+              "Lindenhurst": "_11904",
+              "Liverpool": "_11245",
+              "Lloyd Harbor": "_11905",
+              "Lockport": "_11137",
+              "Locust Valley": "_11058",
+              "Long Beach": "_11059",
+              "Lynbrook": "_11060",
+              "Lysander": "_11248",
+              "Malverne": "_11061",
+              "Mamaroneck": "_12277",
+              "Manhasset": "_11062",
+              "Manlius": "_11249",
+              "Marcellus": "_11250",
+              "Marilla": "_10591",
+              "Maryknoll": "_12278",
+              "Massapequa": "_11065",
+              "Matinecock": "_11066",
+              "Mattydale": "_11252",
+              "Medford": "_11910",
+              "Melville": "_11911",
+              "Menands": "_10056",
+              "Merrick": "_11067",
+              "Middle Hope": null,
+              "Middletown": "_11344",
+              "Miller Place": "_11913",
+              "Mineola": "_11069",
+              "Minisink": null,
+              "Mohegan Lake": "_12280",
+              "Monroe": "_2063",
+              "Montgomery": "_11348",
+              "Mount Kisco": "_12282",
+              "Mount Pleasant": "_12283",
+              "Mount Vernon": "_12284",
+              "Mumford": "_10964",
+              "Nassau": "_2141",
+              "Nedrow": "_11256",
+              "New Castle": "_12285",
+              "New Hyde Park": "_11074",
+              "New Rochelle": "_12286",
+              "New Scotland": "_10057",
+              "New Windsor": "_11355",
+              "Newburgh": "_11357",
+              "Newfane": "_11140",
+              "Newstead": "_10592",
+              "Newtonville": "_10058",
+              "Niagara": "_2174",
+              "Niagara Falls": "_11141",
+              "North Amityville": "_11920",
+              "North Babylon": "_11921",
+              "North Castle": "_12288",
+              "North Collins": "_10594",
+              "North Hempstead": "_11076",
+              "North Hills": "_11077",
+              "North Pelham": "_1695813",
+              "North Salem": "_12289",
+              "North Sea": "_11928",
+              "North Tonawanda": "_11144",
+              "Northport": "_11929",
+              "Oceanside": "_11084",
+              "Ogden": "_10968",
+              "Olcott": "_11145",
+              "Old Brookville": "_11086",
+              "Old Westbury": "_11087",
+              "Onondaga": "_2233",
+              "Orange": "_2240",
+              "Ossining": "_12291",
+              "Otisco": "_11260",
+              "Oyster Bay": "_11088",
+              "Parma": "_10969",
+              "Patchogue": "_11937",
+              "Peekskill": "_12293",
+              "Pelham": "_12295",
+              "Pelham Manor": "_12294",
+              "Pendleton": "_11146",
+              "Penfield": "_10970",
+              "Perinton": "_10971",
+              "Pine Bush": null,
+              "Pine Valley": "_1695823",
+              "Pittsford": "_10972",
+              "Plandome": "_11094",
+              "Plandome Heights": "_11092",
+              "Pleasantville": "_12296",
+              "Pompey": "_11263",
+              "Port Chester": "_12297",
+              "Port Jefferson": "_11942",
+              "Port Jervis": "_11362",
+              "Port Washington": "_11097",
+              "Porter": "_11147",
+              "Queens": "_2463",
+              "Rensselaerville": "_10061",
+              "Ridge": "_11945",
+              "Riga": "_10973",
+              "Riverhead": "_11946",
+              "Riverside": "_11947",
+              "Rochester": "_10974",
+              "Roosevelt": "_11099",
+              "Roseton": null,
+              "Roslyn": "_11103",
+              "Royalton": "_11149",
+              "Rush": "_10975",
+              "Rye": "_12301",
+              "Salina": "_11264",
+              "Salisbury Mills": null,
+              "Sanborn": "_11150",
+              "Sardinia": "_10597",
+              "Sayville": "_11955",
+              "Scarsdale": "_12302",
+              "Sea Cliff": "_11107",
+              "Seaford": "_11108",
+              "Setauket": "_11957",
+              "Shelter Island": "_11959",
+              "Skaneateles": "_11266",
+              "Sleepy Hollow": "_1695846",
+              "Smithtown": "_11964",
+              "Somers": "_12305",
+              "Somerset": "_11151",
+              "South Salem": "_12306",
+              "South Wales": "_10599",
+              "Southampton": "_11967",
+              "Southold": "_11968",
+              "Spafford": "_11268",
+              "Spencerport": "_10977",
+              "Speonk": "_11969",
+              "Springs": "_11970",
+              "Springville": null,
+              "Stewart Manor": "_11113",
+              "Suffolk": "_2813",
+              "Sweden": "_10978",
+              "Syracuse": "_11269",
+              "Tarrytown": "_12307",
+              "Tonawanda": null,
+              "Tuckahoe": "_12309",
+              "Tuxedo": null,
+              "Uniondale": "_11116",
+              "Valhalla": "_12310",
+              "Valley Stream": "_11118",
+              "Van Buren": "_11271",
+              "Verplanck": "_12311",
+              "Voorheesville": "_10067",
+              "Walden": "_11378",
+              "Wales": "_10606",
+              "Warwick": "_11381",
+              "Washingtonville": null,
+              "Watervliet": "_10068",
+              "Wawayanda": null,
+              "Webster": "_10979",
+              "West Babylon": "_11977",
+              "West Henrietta": "_10980",
+              "West Point": null,
+              "West Seneca": "_10608",
+              "Westbury": "_11122",
+              "Westchester": "_3122",
+              "Westhampton": "_11983",
+              "Wheatfield": "_11156",
+              "Wheatland": "_10981",
+              "White Plains": "_12314",
+              "Williamsville": "_10609",
+              "Williston Park": "_11123",
+              "Wilson": "_11157",
+              "Woodbury": "_10102264",
+              "Woodlawn": "_1695873",
+              "Woodmere": "_11125",
+              "Yonkers": "_12316",
+              "Yorktown": "_12318",
+              "Yorktown Heights": "_12317"
+            }
+          },
+          "Ohio": {
+            "code": "_38",
+            "places": {
+              "Allen": "_150",
+              "Ashtabula": "_194",
+              "Athens": "_200",
+              "Belmont": "_274",
+              "Butler": "_429",
+              "Carlton": "_77216",
+              "Clark": "_629",
+              "Columbiana": "_715",
+              "Cuyahoga": "_802",
+              "Decatur": "_845",
+              "Erie": "_982",
+              "Fairfield": "_1001",
+              "Franklin": "_1072",
+              "Hamilton": "_1266",
+              "Jasper": "_1489",
+              "Jefferson": "_1514",
+              "Jennings": "_1527",
+              "Lake": "_1665",
+              "Licking": "_1757",
+              "Lorain": "_1811",
+              "Lucas": "_1826",
+              "Mahoning": "_1874",
+              "Montgomery": "_2086",
+              "Muskingum": "_2132",
+              "Newton": "_2169",
+              "Orange": "_2239",
+              "Richland": "_2513",
+              "Ross": "_2562",
+              "Scioto": "_2641",
+              "Scott": "_2646",
+              "Stark": "_2780",
+              "Summit": "_2824",
+              "Switzerland": "_2847",
+              "Trumbull": "_2928",
+              "Tuscarawas": "_2937",
+              "Union": "_2953",
+              "Whitley": "_3143",
+              "Williams": "_3161",
+              "Wood": "_3188"
+            }
+          },
+          "Pennsylvania": {
+            "code": "_41",
+            "places": {
+              "Allegheny": "_146",
+              "Luzerne": "_1831",
+              "Philadelphia": "_2341",
+              "Westmoreland": "_3123"
+            }
+          },
+          "California": {
+            "code": "_7",
+            "places": {
+              "Alameda": "_126",
+              "Butte": "_431",
+              "Contra Costa": "_726",
+              "Fresno": "_1090",
+              "Humboldt": "_1416",
+              "Imperial": "_1435",
+              "Kern": "_1592",
+              "Los Angeles": "_1813",
+              "Madera": "_1850",
+              "Marin": "_1886",
+              "Mendocino": "_1989",
+              "Merced": "_1993",
+              "Monterey": "_2071",
+              "Napa": "_2138",
+              "Orange": "_2237",
+              "Placer": "_2378",
+              "Riverside": "_2530",
+              "Sacramento": "_2581",
+              "San Bernardino": "_2597",
+              "San Diego": "_2598",
+              "San Francisco": "_2599",
+              "San Joaquin": "_2601",
+              "San Luis Obispo": "_2606",
+              "San Mateo": "_2607",
+              "Santa Barbara": "_2619",
+              "Santa Clara": "_2620",
+              "Santa Cruz": "_2622",
+              "Shasta": "_2679",
+              "Solano": "_2728",
+              "Sonoma": "_2734",
+              "Stanislaus": "_2773",
+              "Tulare": "_2930",
+              "Ventura": "_2988",
+              "Yolo": "_3228"
+            }
+          },
+          "Texas": {
+            "code": "_46",
+            "places": {
+              "Anderson": "_164",
+              "Angelina": "_168",
+              "Austin": "_210",
+              "Bastrop": "_246",
+              "Bell": "_273",
+              "Bexar": "_302",
+              "Bowie": "_350",
+              "Brazoria": "_365",
+              "Brazos": "_366",
+              "Brown": "_392",
+              "Burleson": "_418",
+              "Caldwell": "_445",
+              "Cameron": "_471",
+              "Cass": "_526",
+              "Cherokee": "_579",
+              "Coleman": "_696",
+              "Collin": "_702",
+              "Comanche": "_721",
+              "Cooke": "_732",
+              "Coryell": "_740",
+              "Dallas": "_815",
+              "Denton": "_867",
+              "Eastland": "_941",
+              "Ector": "_945",
+              "El Paso": "_960",
+              "Ellis": "_970",
+              "Erath": "_980",
+              "Falls": "_1005",
+              "Fannin": "_1008",
+              "Fort Bend": "_1052",
+              "Freestone": "_1085",
+              "Galveston": "_1110",
+              "Gray": "_1199",
+              "Grayson": "_1202",
+              "Gregg": "_1231",
+              "Grimes": "_1235",
+              "Hamilton": "_1268",
+              "Harris": "_1311",
+              "Harrison": "_1318",
+              "Hays": "_1332",
+              "Henderson": "_1342",
+              "Hico": "_77220",
+              "Hidalgo": "_1365",
+              "Hill": "_1370",
+              "Hopkins": "_1392",
+              "Houston": "_1401",
+              "Howard": "_1408",
+              "Hunt": "_1421",
+              "Jack": "_1461",
+              "Jasper": "_1494",
+              "Jefferson": "_1519",
+              "Johnson": "_1546",
+              "Jones": "_1555",
+              "Kaufman": "_1573",
+              "Lamar": "_1674",
+              "Leon": "_1739",
+              "Liberty": "_1756",
+              "Limestone": "_1759",
+              "Lubbock": "_1824",
+              "Marion": "_1903",
+              "McCulloch": "_1949",
+              "McLennan": "_1966",
+              "Midland": "_2015",
+              "Milam": "_2017",
+              "Montgomery": "_2089",
+              "Morris": "_2114",
+              "Nacogdoches": "_2135",
+              "Navarro": "_2145",
+              "Newton": "_2172",
+              "Nueces": "_2202",
+              "Orange": "_2242",
+              "Palo Pinto": "_2286",
+              "Panola": "_2289",
+              "Parker": "_2294",
+              "Polk": "_2401",
+              "Potter": "_2420",
+              "Red River": "_2493",
+              "Robertson": "_2539",
+              "Runnels": "_2566",
+              "Rusk": "_2569",
+              "Sabine": "_2578",
+              "San Augustine": "_2595",
+              "Shelby": "_2691",
+              "Smith": "_2723",
+              "Tarrant": "_2858",
+              "Taylor": "_2865",
+              "Titus": "_2900",
+              "Tom Green": "_2905",
+              "Travis": "_2916",
+              "Trinity": "_2924",
+              "Tyler": "_2941",
+              "Upshur": "_2967",
+              "Van Zandt": "_2984",
+              "Victoria": "_2995",
+              "Walker": "_3014",
+              "Wharton": "_3128",
+              "Wichita": "_3148",
+              "Wilbarger": "_3150",
+              "Williamson": "_3166",
+              "Wise": "_3185",
+              "Wood": "_3189"
+            }
+          },
+          "Indiana": {
+            "code": "_17",
+            "places": {
+              "Adams": "_118",
+              "Allen": "_147",
+              "Armstrong": "_185",
+              "Beaver": "_261",
+              "Bedford": "_266",
+              "Bradford": "_359",
+              "Bucks": "_403",
+              "Butler": "_430",
+              "Carbon": "_486",
+              "Centre": "_541",
+              "Clarion": "_620",
+              "Clark": "_624",
+              "Clearfield": "_660",
+              "Clinton": "_679",
+              "Columbia": "_712",
+              "Crawford": "_766",
+              "Cumberland": "_789",
+              "Elk": "_964",
+              "Elkhart": "_965",
+              "Franklin": "_1073",
+              "Fulton": "_1100",
+              "Greene": "_1221",
+              "Jefferson": "_1517",
+              "Lake": "_1661",
+              "Lawrence": "_1711",
+              "Lycoming": "_1832",
+              "Marion": "_1893",
+              "McKean": "_1942",
+              "Mercer": "_2000",
+              "Mifflin": "_2016",
+              "Monroe": "_2065",
+              "Northumberland": "_2193",
+              "Perry": "_2332",
+              "Pike": "_2366",
+              "Potter": "_2418",
+              "Snyder": "_2726",
+              "Somerset": "_2732",
+              "St Joseph": "_2759",
+              "Susquehanna": "_2835",
+              "Tioga": "_2894",
+              "Union": "_2962",
+              "Venango": "_2987",
+              "Vigo": "_2996",
+              "Wayne": "_3100"
+            }
+          },
+          "Massachusetts": {
+            "code": "_24",
+            "places": {
+              "Barnstable": "_235",
+              "Berkshire": "_296",
+              "Bristol": "_373",
+              "Dukes": "_924",
+              "Essex": "_987",
+              "Franklin": "_1066",
+              "Hampden": "_1270",
+              "Hampshire": "_1271",
+              "Middlesex": "_2011",
+              "Norfolk": "_2186",
+              "Plymouth": "_2386",
+              "Suffolk": "_2812",
+              "Worcester": "_3200"
+            }
+          },
+          "Illinois": {
+            "code": "_16",
+            "places": {
+              "Adams": "_111",
+              "Alexander": "_135",
+              "Bond": "_330",
+              "Boone": "_334",
+              "Bureau": "_413",
+              "Calhoun": "_452",
+              "Carroll": "_496",
+              "Cass": "_518",
+              "Champaign": "_546",
+              "Christian": "_606",
+              "Clay": "_643",
+              "Clinton": "_671",
+              "Coles": "_697",
+              "Cook": "_730",
+              "Crawford": "_759",
+              "De Kalb": "_853",
+              "De Witt": "_840",
+              "Douglas": "_910",
+              "DuPage": "_929",
+              "Edgar": "_948",
+              "Edwards": "_953",
+              "Effingham": "_957",
+              "Fayette": "_1015",
+              "Ford": "_1045",
+              "Franklin": "_1060",
+              "Fulton": "_1095",
+              "Gallatin": "_1106",
+              "Greene": "_1213",
+              "Grundy": "_1236",
+              "Hamilton": "_1260",
+              "Hancock": "_1276",
+              "Hardin": "_1293",
+              "Henderson": "_1338",
+              "Henry": "_1349",
+              "Iroquois": "_1451",
+              "Jackson": "_1467",
+              "Jefferson": "_1504",
+              "Jersey": "_1530",
+              "Jo Daviess": "_1535",
+              "Johnson": "_1538",
+              "Kane": "_1568",
+              "Kankakee": "_1570",
+              "Knox": "_1624",
+              "La Salle": "_1642",
+              "Lake": "_1660",
+              "Lawrence": "_1705",
+              "Lee": "_1724",
+              "Livingston": "_1792",
+              "Logan": "_1801",
+              "Macon": "_1845",
+              "Macoupin": "_1849",
+              "Madison": "_1856",
+              "Marion": "_1892",
+              "Mason": "_1928",
+              "Massac": "_1934",
+              "McDonough": "_1952",
+              "McHenry": "_1956",
+              "McLean": "_1963",
+              "Menard": "_1987",
+              "Mercer": "_1994",
+              "Montgomery": "_2076",
+              "Morgan": "_2103",
+              "Moultrie": "_2121",
+              "Ogle": "_2214",
+              "Peoria": "_2319",
+              "Perry": "_2326",
+              "Piatt": "_2346",
+              "Pike": "_2360",
+              "Pulaski": "_2446",
+              "Randolph": "_2478",
+              "Rock Island": "_2544",
+              "Saline": "_2588",
+              "Sangamon": "_2616",
+              "Scott": "_2645",
+              "Shelby": "_2684",
+              "St Clair": "_2749",
+              "Stephenson": "_2791",
+              "Tazewell": "_2868",
+              "Union": "_2952",
+              "Vermilion": "_2989",
+              "Wabash": "_3001",
+              "Warren": "_3030",
+              "Wayne": "_3089",
+              "White": "_3137",
+              "Whiteside": "_3141",
+              "Will": "_3158",
+              "Williamson": "_3164",
+              "Winnebago": "_3177",
+              "Woodford": "_3193"
+            }
+          },
+          "Wisconsin": {
+            "code": "_52",
+            "places": {}
+          },
+          "Michigan": {
+            "code": "_25",
+            "places": {
+              "Alcona": "_131",
+              "Alger": "_139",
+              "Allegan": "_141",
+              "Alpena": "_153",
+              "Antrim": "_173",
+              "Arenac": "_182",
+              "Baraga": "_230",
+              "Barry": "_240",
+              "Bay": "_252",
+              "Benzie": "_291",
+              "Berrien": "_299",
+              "Branch": "_362",
+              "Calhoun": "_454",
+              "Cass": "_521",
+              "Charlevoix": "_553",
+              "Cheboygan": "_568",
+              "Chippewa": "_596",
+              "Clare": "_618",
+              "Clinton": "_675",
+              "Crawford": "_763",
+              "Delta": "_864",
+              "Dickinson": "_884",
+              "Eaton": "_942",
+              "Emmet": "_977",
+              "Genesee": "_1129",
+              "Gladwin": "_1148",
+              "Gogebic": "_1155",
+              "Grand Traverse": "_1178",
+              "Gratiot": "_1196",
+              "Hillsdale": "_1373",
+              "Houghton": "_1396",
+              "Huron": "_1425",
+              "Ingham": "_1439",
+              "Ionia": "_1441",
+              "Iosco": "_1442",
+              "Iron": "_1447",
+              "Isabella": "_1453",
+              "Jackson": "_1472",
+              "Kalamazoo": "_1562",
+              "Kalkaska": "_1564",
+              "Kent": "_1587",
+              "Keweenaw": "_1597",
+              "Lake": "_1662",
+              "Lapeer": "_1688",
+              "Leelanau": "_1732",
+              "Lenawee": "_1736",
+              "Livingston": "_1794",
+              "Luce": "_1827",
+              "Mackinac": "_1841",
+              "Macomb": "_1842",
+              "Manistee": "_1880",
+              "Marquette": "_1907",
+              "Mason": "_1930",
+              "Mecosta": "_1980",
+              "Menominee": "_1991",
+              "Midland": "_2014",
+              "Missaukee": "_2034",
+              "Monroe": "_2060",
+              "Montcalm": "_2070",
+              "Montmorency": "_2091",
+              "Muskegon": "_2131",
+              "Newaygo": "_2163",
+              "Oakland": "_2205",
+              "Oceana": "_2208",
+              "Ogemaw": "_2213",
+              "Ontonagon": "_2236",
+              "Osceola": "_2256",
+              "Otsego": "_2262",
+              "Ottawa": "_2265",
+              "Presque Isle": "_2433",
+              "Roscommon": "_2559",
+              "Saginaw": "_2583",
+              "Sanilac": "_2617",
+              "Schoolcraft": "_2636",
+              "Shiawassee": "_2703",
+              "St Clair": "_2750",
+              "St Joseph": "_2760",
+              "Tuscola": "_2938",
+              "Van Buren": "_2981",
+              "Washtenaw": "_3082",
+              "Wayne": "_3093",
+              "Wexford": "_3127"
+            }
+          },
+          "Iowa": {
+            "code": "_18",
+            "places": {}
+          },
+          "Missouri": {
+            "code": "_28",
+            "places": {}
+          },
+          "Florida": {
+            "code": "_12",
+            "places": {
+              "Berlin": "_11552",
+              "Blooming Grove": "_11306",
+              "Broome": "_383",
+              "Castleton-on-Hudson": "_11556",
+              "Cattaraugus": "_534",
+              "Cayuga": "_536",
+              "Chautauqua": "_565",
+              "Chemung": "_570",
+              "Cornwall on Hudson": "_11314",
+              "Dutchess": "_932",
+              "East Greenbush": "_11559",
+              "Harriman": "_11331",
+              "Herkimer": "_1357",
+              "Highland Mills": "_11333",
+              "Hoosick": "_11564",
+              "Hoosick Falls": "_11563",
+              "Jefferson": "_1513",
+              "Montgomery": "_2084",
+              "Nassau": "_11568",
+              "North Greenbush": "_11569",
+              "Oneida": "_2231",
+              "Ontario": "_2235",
+              "Oswego": "_2258",
+              "Otisville": "_11359",
+              "Petersburg": "_11571",
+              "Pittstown": "_11572",
+              "Poestenkill": "_11573",
+              "Rensselaer": "_2500",
+              "Richmond": "_2518",
+              "Rockland": "_2551",
+              "Saratoga": "_2626",
+              "Schaghticoke": "_11576",
+              "Schenectady": "_2632",
+              "Schodack": "_11578",
+              "St Lawrence": "_2762",
+              "Stephentown": "_11580",
+              "Steuben": "_2794",
+              "Tompkins": "_2906",
+              "Troy": "_11581",
+              "Ulster": "_2946",
+              "Unionville": "_11376",
+              "Vails Gate": "_11377",
+              "Wayne": "_3097",
+              "Wynantskill": "_11584"
+            }
+          },
+          "North Carolina": {
+            "code": "_36",
+            "places": {
+              "Alamance": "_125",
+              "Alexander": "_136",
+              "Alleghany": "_144",
+              "Anson": "_171",
+              "Beaufort": "_257",
+              "Bertie": "_300",
+              "Bladen": "_313",
+              "Brunswick": "_395",
+              "Buncombe": "_412",
+              "Burke": "_415",
+              "Cabarrus": "_435",
+              "Caldwell": "_444",
+              "Carteret": "_514",
+              "Caswell": "_529",
+              "Catawba": "_531",
+              "Chatham": "_561",
+              "Cherokee": "_576",
+              "Cleveland": "_667",
+              "Columbus": "_716",
+              "Craven": "_756",
+              "Cumberland": "_788",
+              "Davidson": "_823",
+              "Davie": "_825",
+              "Duplin": "_930",
+              "Durham": "_931",
+              "Edgecombe": "_949",
+              "Forsyth": "_1051",
+              "Franklin": "_1071",
+              "Gaston": "_1124",
+              "Gates": "_1125",
+              "Granville": "_1195",
+              "Greene": "_1219",
+              "Guilford": "_1243",
+              "Halifax": "_1253",
+              "Harnett": "_1306",
+              "Haywood": "_1333",
+              "Henderson": "_1340",
+              "Hertford": "_1359",
+              "Iredell": "_1445",
+              "Johnston": "_1548",
+              "Jones": "_1553",
+              "Lee": "_1728",
+              "Lenoir": "_1737",
+              "Lincoln": "_1774",
+              "Macon": "_1847",
+              "Martin": "_1925",
+              "McDowell": "_1953",
+              "Mecklenburg": "_1978",
+              "Montgomery": "_2085",
+              "Moore": "_2095",
+              "Nash": "_2139",
+              "New Hanover": "_2157",
+              "Northampton": "_2190",
+              "Onslow": "_2234",
+              "Orange": "_2241",
+              "Pasquotank": "_2297",
+              "Pender": "_2313",
+              "Perquimans": "_2323",
+              "Person": "_2335",
+              "Pitt": "_2374",
+              "Randolph": "_2481",
+              "Richmond": "_2519",
+              "Robeson": "_2540",
+              "Rockingham": "_2549",
+              "Rowan": "_2565",
+              "Rutherford": "_2575",
+              "Sampson": "_2594",
+              "Scotland": "_2643",
+              "Stanly": "_2775",
+              "Stokes": "_2802",
+              "Surry": "_2833",
+              "Swain": "_2842",
+              "Union": "_2959",
+              "Vance": "_2985",
+              "Wake": "_3009",
+              "Watauga": "_3083",
+              "Wayne": "_3098",
+              "Wilkes": "_3154",
+              "Wilson": "_3168"
+            }
+          },
+          "Maryland": {
+            "code": "_23",
+            "places": {}
+          },
+          "Virginia": {
+            "code": "_49",
+            "places": {
+              "Accomack": "_103",
+              "Albemarle": "_130",
+              "Arlington": "_184",
+              "Fairfax": "_998",
+              "Fauquier": "_1012",
+              "Franklin": "_1077",
+              "Halifax": "_1254",
+              "Henrico": "_1346",
+              "Independent Cities": "_24255",
+              "Mecklenburg": "_1979",
+              "Northampton": "_2192",
+              "Pittsylvania": "_2376",
+              "Pulaski": "_2450",
+              "Richmond": "_2520",
+              "Roanoke": "_2533",
+              "Rockbridge": "_2545",
+              "Wise": "_3186"
+            }
+          },
+          "Minnesota": {
+            "code": "_26",
+            "places": {}
+          },
+          "Kansas": {
+            "code": "_19",
+            "places": {}
+          },
+          "Washington": {
+            "code": "_50",
+            "places": {
+              "Alleghany": "_145",
+              "Amelia": "_156",
+              "Amherst": "_157",
+              "Anderson": "_163",
+              "Appling": "_176",
+              "Appomattox": "_177",
+              "Ashe": "_190",
+              "Augusta": "_208",
+              "Avery": "_212",
+              "Baldwin": "_221",
+              "Barrow": "_239",
+              "Bartow": "_245",
+              "Bath": "_249",
+              "Bedford": "_268",
+              "Ben Hill": "_276",
+              "Benton": "_289",
+              "Berrien": "_298",
+              "Blair": "_318",
+              "Bland": "_320",
+              "Bleckley": "_321",
+              "Bledsoe": "_322",
+              "Blount": "_324",
+              "Botetourt": "_344",
+              "Bradley": "_361",
+              "Brooks": "_381",
+              "Brown": "_385",
+              "Brunswick": "_396",
+              "Buchanan": "_401",
+              "Buckingham": "_402",
+              "Bulloch": "_410",
+              "Burke": "_414",
+              "Butts": "_434",
+              "Cambria": "_465",
+              "Camden": "_469",
+              "Campbell": "_477",
+              "Cannon": "_481",
+              "Caroline": "_493",
+              "Carroll": "_506",
+              "Carter": "_513",
+              "Catoosa": "_532",
+              "Charles City": "_550",
+              "Charlotte": "_555",
+              "Chattooga": "_563",
+              "Cheatham": "_567",
+              "Cherokee": "_573",
+              "Chester": "_583",
+              "Chesterfield": "_587",
+              "Chowan": "_605",
+              "Claiborne": "_615",
+              "Clark": "_623",
+              "Clarke": "_634",
+              "Clay": "_652",
+              "Clayton": "_657",
+              "Clinch": "_670",
+              "Clinton": "_677",
+              "Cobb": "_683",
+              "Cocke": "_686",
+              "Coffee": "_690",
+              "Colquitt": "_706",
+              "Columbia": "_710",
+              "Cortland": "_739",
+              "Coweta": "_749",
+              "Crisp": "_770",
+              "Crockett": "_773",
+              "Culpeper": "_783",
+              "Cumberland": "_784",
+              "Currituck": "_793",
+              "DeKalb": "_855",
+              "Decatur": "_844",
+              "Dickenson": "_880",
+              "Dickson": "_885",
+              "Dinwiddie": "_889",
+              "Dodge": "_895",
+              "Dooly": "_903",
+              "Dougherty": "_907",
+              "Dyer": "_935",
+              "Elbert": "_962",
+              "Emanuel": "_974",
+              "Erie": "_983",
+              "Essex": "_991",
+              "Fayette": "_1020",
+              "Fentress": "_1024",
+              "Floyd": "_1041",
+              "Fluvanna": "_1042",
+              "Forsyth": "_1050",
+              "Franklin": "_1058",
+              "Frederick": "_1082",
+              "Gallia": "_1109",
+              "Genesee": "_1130",
+              "Gibson": "_1136",
+              "Giles": "_1140",
+              "Gloucester": "_1153",
+              "Glynn": "_1154",
+              "Goochland": "_1160",
+              "Gordon": "_1163",
+              "Grady": "_1167",
+              "Grainger": "_1173",
+              "Grayson": "_1203",
+              "Greene": "_1212",
+              "Greensville": "_1225",
+              "Grundy": "_1239",
+              "Gwinnett": "_1247",
+              "Habersham": "_1249",
+              "Hale": "_1251",
+              "Hall": "_1255",
+              "Hamblen": "_1258",
+              "Hancock": "_1275",
+              "Hanover": "_1286",
+              "Haralson": "_1289",
+              "Hardeman": "_1291",
+              "Hardin": "_1297",
+              "Harris": "_1310",
+              "Hawkins": "_1330",
+              "Haywood": "_1334",
+              "Henderson": "_1341",
+              "Henry": "_1348",
+              "Hickman": "_1362",
+              "Hoke": "_1380",
+              "Houston": "_1398",
+              "Humphreys": "_1420",
+              "Hyde": "_1429",
+              "Irwin": "_1452",
+              "Isle of Wight": "_1456",
+              "Jackson": "_1476",
+              "James City": "_1486",
+              "Jasper": "_1488",
+              "Jefferson": "_1502",
+              "Johnson": "_1537",
+              "Jones": "_1550",
+              "Kendall": "_1580",
+              "King William": "_1606",
+              "King and Queen": "_1604",
+              "Lake": "_1668",
+              "Lancaster": "_1682",
+              "Lauderdale": "_1698",
+              "Lawrence": "_1710",
+              "Lebanon": "_1719",
+              "Lee": "_1731",
+              "Lewis": "_1746",
+              "Liberty": "_1754",
+              "Loudon": "_1814",
+              "Loudoun": "_1815",
+              "Louisa": "_1817",
+              "Lowndes": "_1822",
+              "Lunenburg": "_1830",
+              "Macon": "_1844",
+              "Madison": "_1864",
+              "Marion": "_1902",
+              "Marshall": "_1910",
+              "Mathews": "_1937",
+              "Maury": "_1939",
+              "McMinn": "_1968",
+              "McNairy": "_1970",
+              "Meigs": "_1984",
+              "Meriwether": "_2002",
+              "Middlesex": "_2013",
+              "Mitchell": "_2041",
+              "Monroe": "_2055",
+              "Montgomery": "_2075",
+              "Moore": "_2096",
+              "Morgan": "_2102",
+              "Murray": "_2126",
+              "Nansemond": "_23733",
+              "Nelson": "_2148",
+              "Newton": "_2168",
+              "Northampton": "_2191",
+              "Northumberland": "_2194",
+              "Nottoway": "_2198",
+              "Obion": "_2206",
+              "Oconee": "_2210",
+              "Oglethorpe": "_2215",
+              "Orange": "_2244",
+              "Otsego": "_2263",
+              "Overton": "_2273",
+              "Page": "_2283",
+              "Pamlico": "_2287",
+              "Patrick": "_2299",
+              "Perry": "_2333",
+              "Pickens": "_2348",
+              "Pickett": "_2351",
+              "Pierce": "_2352",
+              "Pike": "_2359",
+              "Polk": "_2398",
+              "Portage": "_2410",
+              "Prince Edward": "_2436",
+              "Prince George": "_2437",
+              "Prince William": "_2440",
+              "Princess Anne": "_23919",
+              "Pulaski": "_2445",
+              "Putnam": "_2457",
+              "Rappahannock": "_2486",
+              "Rhea": "_2505",
+              "Richland": "_2510",
+              "Roane": "_2531",
+              "Robertson": "_2538",
+              "Rockingham": "_2550",
+              "Russell": "_2574",
+              "Sandusky": "_2615",
+              "Schuyler": "_2639",
+              "Scott": "_2654",
+              "Screven": "_2656",
+              "Seneca": "_2665",
+              "Sequatchie": "_2667",
+              "Sevier": "_2670",
+              "Shenandoah": "_2692",
+              "Smith": "_2722",
+              "Smyth": "_2724",
+              "Southampton": "_2736",
+              "Spalding": "_2738",
+              "Spotsylvania": "_2744",
+              "Stafford": "_2772",
+              "Stephens": "_2788",
+              "Stewart": "_2799",
+              "Sullivan": "_2818",
+              "Sumner": "_2827",
+              "Sumter": "_2830",
+              "Sussex": "_2838",
+              "Talbot": "_2848",
+              "Tattnall": "_2860",
+              "Tazewell": "_2869",
+              "Telfair": "_2871",
+              "Terrell": "_2875",
+              "Thomas": "_2884",
+              "Tift": "_2890",
+              "Tipton": "_2898",
+              "Toombs": "_2909",
+              "Transylvania": "_2914",
+              "Trousdale": "_2927",
+              "Turner": "_2934",
+              "Unicoi": "_2948",
+              "Union": "_2965",
+              "Upson": "_2969",
+              "Van Buren": "_2982",
+              "Walker": "_3013",
+              "Walton": "_3022",
+              "Ware": "_3028",
+              "Warren": "_3037",
+              "Wayne": "_3088",
+              "Weakley": "_3105",
+              "Westmoreland": "_3124",
+              "White": "_3139",
+              "Whitfield": "_3142",
+              "Wilcox": "_3152",
+              "Wilkes": "_3153",
+              "Wilkinson": "_3156",
+              "Williamson": "_3165",
+              "Wilson": "_3169",
+              "Winston": "_3182",
+              "Worth": "_3201",
+              "Wythe": "_3213",
+              "Yadkin": "_3214",
+              "Yancey": "_3218",
+              "York": "_3233"
+            }
+          },
+          "Georgia": {
+            "code": "_13",
+            "places": {
+              "Bibb": "_304",
+              "Carroll": "_495",
+              "Chatham": "_560",
+              "De Kalb": "_852",
+              "Floyd": "_1036",
+              "Fulton": "_1094",
+              "Laurens": "_1700",
+              "Muscogee": "_2130",
+              "Richmond": "_2517",
+              "Troup": "_2926"
+            }
+          },
+          "New Jersey": {
+            "code": "_33",
+            "places": {
+              "Atlantic": "_202",
+              "Bergen": "_292",
+              "Burlington": "_419",
+              "Camden": "_468",
+              "Cape May": "_484",
+              "Cumberland": "_787",
+              "Essex": "_988",
+              "Gloucester": "_1152",
+              "Hudson": "_1411",
+              "Hunterdon": "_1422",
+              "Mercer": "_1997",
+              "Middlesex": "_2012",
+              "Monmouth": "_2048",
+              "Morris": "_2113",
+              "Ocean": "_2207",
+              "Passaic": "_2298",
+              "Salem": "_2585",
+              "Somerset": "_2731",
+              "Sussex": "_2837",
+              "Union": "_2957",
+              "Warren": "_3036"
+            }
+          },
+          "Connecticut": {
+            "code": "_9",
+            "places": {}
+          },
+          "Tennessee": {
+            "code": "_45",
+            "places": {
+              "Davidson": "_824",
+              "Greene": "_1222",
+              "Hamilton": "_1267",
+              "Knox": "_1631",
+              "Lincoln": "_1778",
+              "Madison": "_1867",
+              "Montgomery": "_2088",
+              "Rutherford": "_2576",
+              "Shelby": "_2690",
+              "Sullivan": "_2820"
+            }
+          },
+          "Kentucky": {
+            "code": "_20",
+            "places": {}
+          },
+          "Montana": {
+            "code": "_29",
+            "places": {}
+          },
+          "Alabama": {
+            "code": "_3",
+            "places": {
+              "Autauga": "_211",
+              "Baldwin": "_220",
+              "Barbour": "_232",
+              "Benton County": "_448",
+              "Bibb": "_303",
+              "Blount": "_323",
+              "Bullock": "_411",
+              "Butler": "_423",
+              "Chambers": "_544",
+              "Cherokee": "_572",
+              "Chilton": "_595",
+              "Choctaw": "_601",
+              "Clarke": "_633",
+              "Clay": "_639",
+              "Cleburne": "_663",
+              "Coffee": "_689",
+              "Colbert": "_694",
+              "Conecuh": "_724",
+              "Coosa": "_736",
+              "Covington": "_746",
+              "Crenshaw": "_769",
+              "Cullman": "_782",
+              "Dale": "_809",
+              "Dallas": "_811",
+              "DeKalb": "_851",
+              "Elmore": "_972",
+              "Escambia": "_984",
+              "Etowah": "_993",
+              "Fayette": "_1013",
+              "Franklin": "_1055",
+              "Geneva": "_1131",
+              "Greene": "_1210",
+              "Henry": "_1347",
+              "Houston": "_1397",
+              "Jackson": "_1462",
+              "Jefferson": "_1498",
+              "Lamar": "_1671",
+              "Lauderdale": "_1696",
+              "Lawrence": "_1703",
+              "Lee": "_1720",
+              "Limestone": "_1758",
+              "Lowndes": "_1821",
+              "Macon": "_1843",
+              "Madison": "_1851",
+              "Marengo": "_1883",
+              "Marion": "_1888",
+              "Marshall": "_1909",
+              "Mobile": "_2043",
+              "Monroe": "_2052",
+              "Montgomery": "_2073",
+              "Morgan": "_2100",
+              "Perry": "_2324",
+              "Pike": "_2357",
+              "Randolph": "_2475",
+              "Russell": "_2571",
+              "Shelby": "_2683",
+              "St Clair": "_2748",
+              "Sumter": "_2828",
+              "Talladega": "_2851",
+              "Tallapoosa": "_2853",
+              "Tuscaloosa": "_2936",
+              "Walker": "_3012",
+              "Wilcox": "_3151"
+            }
+          },
+          "Arkansas": {
+            "code": "_6",
+            "places": {}
+          },
+          "Colorado": {
+            "code": "_8",
+            "places": {}
+          },
+          "Nebraska": {
+            "code": "_30",
+            "places": {}
+          },
+          "South Carolina": {
+            "code": "_43",
+            "places": {}
+          },
+          "Oklahoma": {
+            "code": "_39",
+            "places": {}
+          },
+          "West Virginia": {
+            "code": "_51",
+            "places": {}
+          },
+          "Louisiana": {
+            "code": "_21",
+            "places": {}
+          },
+          "Nevada": {
+            "code": "_31",
+            "places": {
+              "Amador": "_155",
+              "Calaveras": "_440",
+              "Colusa": "_717",
+              "Del Norte": "_856",
+              "El Dorado": "_958",
+              "Glenn": "_1151",
+              "Inyo": "_1440",
+              "Kings": "_1609",
+              "Lake": "_1657",
+              "Lassen": "_1693",
+              "Mariposa": "_1905",
+              "Modoc": "_2044",
+              "Mono": "_2049",
+              "Plumas": "_2384",
+              "San Benito": "_2596",
+              "Sierra": "_2706",
+              "Siskiyou": "_2714",
+              "Sutter": "_2839",
+              "Tehama": "_2870",
+              "Trinity": "_2923",
+              "Tuolumne": "_2933",
+              "Yuba": "_3235"
+            }
+          },
+          "Arizona": {
+            "code": "_5",
+            "places": {}
+          },
+          "Utah": {
+            "code": "_47",
+            "places": {}
+          },
+          "Oregon": {
+            "code": "_40",
+            "places": {}
+          },
+          "New Hampshire": {
+            "code": "_32",
+            "places": {}
+          },
+          "Mississippi": {
+            "code": "_27",
+            "places": {}
+          },
+          "Maine": {
+            "code": "_22",
+            "places": {}
+          },
+          "Idaho": {
+            "code": "_15",
+            "places": {}
+          },
+          "New Mexico": {
+            "code": "_34",
+            "places": {}
+          },
+          "Rhode Island": {
+            "code": "_42",
+            "places": {}
+          },
+          "Vermont": {
+            "code": "_48",
+            "places": {}
+          },
+          "District of Columbia": {
+            "code": "_11",
+            "places": {}
+          },
+          "South Dakota": {
+            "code": "_44",
+            "places": {}
+          },
+          "North Dakota": {
+            "code": "_37",
+            "places": {}
+          },
+          "Hawaii": {
+            "code": "_14",
+            "places": {}
+          },
+          "Delaware": {
+            "code": "_10",
+            "places": {
+              "Adams": "_117",
+              "Ashland": "_191",
+              "Auglaize": "_207",
+              "Bartholomew": "_242",
+              "Benton": "_283",
+              "Berks": "_295",
+              "Blackford": "_312",
+              "Boone": "_335",
+              "Brown": "_390",
+              "Carroll": "_504",
+              "Cass": "_519",
+              "Champaign": "_547",
+              "Clay": "_644",
+              "Clermont": "_665",
+              "Clinton": "_678",
+              "Coshocton": "_741",
+              "Crawford": "_765",
+              "Darke": "_820",
+              "Dauphin": "_822",
+              "Daviess": "_826",
+              "De Kalb": "_838",
+              "Dearborn": "_842",
+              "Defiance": "_850",
+              "Dubois": "_921",
+              "Essex": "_989",
+              "Fayette": "_1019",
+              "Floyd": "_1037",
+              "Fountain": "_1054",
+              "Franklin": "_1061",
+              "Fulton": "_1099",
+              "Geauga": "_1127",
+              "Gibson": "_1135",
+              "Grant": "_1181",
+              "Greene": "_1220",
+              "Guernsey": "_1242",
+              "Hamilton": "_1261",
+              "Hancock": "_1282",
+              "Hardin": "_1296",
+              "Harrison": "_1317",
+              "Hendricks": "_1343",
+              "Henry": "_1354",
+              "Highland": "_1366",
+              "Hocking": "_1377",
+              "Holmes": "_1383",
+              "Howard": "_1403",
+              "Huntington": "_1424",
+              "Huron": "_1426",
+              "Jackson": "_1477",
+              "Jay": "_1495",
+              "Jefferson": "_1505",
+              "Johnson": "_1539",
+              "Knox": "_1630",
+              "Kosciusko": "_1636",
+              "LaPorte": "_1641",
+              "Lackawanna": "_1647",
+              "Lagrange": "_1656",
+              "Lancaster": "_1680",
+              "Lawrence": "_1706",
+              "Lehigh": "_1734",
+              "Logan": "_1806",
+              "Madison": "_1866",
+              "Marion": "_1899",
+              "Marshall": "_1911",
+              "Martin": "_1922",
+              "Medina": "_1981",
+              "Mercer": "_1999",
+              "Miami": "_2009",
+              "Monroe": "_2064",
+              "Montgomery": "_2087",
+              "Morgan": "_2107",
+              "Morrow": "_2116",
+              "Noble": "_2180",
+              "Ottawa": "_2266",
+              "Owen": "_2274",
+              "Parke": "_2293",
+              "Paulding": "_2301",
+              "Perry": "_2331",
+              "Pickaway": "_2347",
+              "Pike": "_2365",
+              "Porter": "_2412",
+              "Posey": "_2414",
+              "Preble": "_2430",
+              "Pulaski": "_2447",
+              "Putnam": "_2458",
+              "Randolph": "_2479",
+              "Ripley": "_2527",
+              "Rush": "_2567",
+              "Schuylkill": "_2640",
+              "Shelby": "_2689",
+              "Spencer": "_2740",
+              "Starke": "_2781",
+              "Steuben": "_2793",
+              "Sullivan": "_2815",
+              "Tippecanoe": "_2896",
+              "Tipton": "_2897",
+              "Union": "_2960",
+              "Van Wert": "_2983",
+              "Vanderburgh": "_2986",
+              "Vermillion": "_2991",
+              "Vinton": "_2998",
+              "Wabash": "_3002",
+              "Warren": "_3039",
+              "Warrick": "_3043",
+              "Wayne": "_3099",
+              "Wells": "_3117",
+              "White": "_3138",
+              "Wyandot": "_3208",
+              "York": "_3231"
+            }
+          },
+          "Wyoming": {
+            "code": "_53",
+            "places": {
+              "Allegany": "_143",
+              "Cameron": "_470",
+              "Chenango": "_571",
+              "Forest": "_1047",
+              "Franklin": "_1070",
+              "Fulton": "_1098",
+              "Greene": "_1218",
+              "Hamilton": "_1265",
+              "Huntingdon": "_1423",
+              "Juniata": "_1561",
+              "Livingston": "_1796",
+              "Montour": "_2092",
+              "Orleans": "_2247",
+              "Schoharie": "_2635",
+              "Sullivan": "_2819",
+              "Tioga": "_2893",
+              "Warren": "_3040",
+              "Yates": "_3220"
+            }
+          },
+          "Alaska": {
+            "code": "_4",
+            "places": {}
+          },
+          "Puerto Rico": {
+            "code": "_5185",
+            "places": {}
+          },
+          "Virgin Islands (US)": {
+            "code": "_5243",
+            "places": {}
+          },
+          "Guam": {
+            "code": "_5101",
+            "places": {}
+          },
+          "American Samoa": {
+            "code": "_5018",
+            "places": {}
+          },
+          "Northern Mariana Islands": {
+            "code": "_5172",
+            "places": {}
+          }
+        }
+      },
+      "Canada": {
+        "code": "_3243",
+        "states": {}
+      },
+      "Mexico": {
+        "code": "_3255",
+        "states": {}
+      },
+      "Jamaica": {
+        "code": "_5119",
+        "states": {}
+      },
+      "Trinidad and Tobago": {
+        "code": "_5226",
+        "states": {}
+      },
+      "Barbados": {
+        "code": "_5033",
+        "states": {}
+      },
+      "Guatemala": {
+        "code": "_5102",
+        "states": {}
+      },
+      "Bermuda": {
+        "code": "_5038",
+        "states": {}
+      },
+      "Bahamas": {
+        "code": "_5030",
+        "states": {}
+      },
+      "West Indies": {
+        "code": "_1652379",
+        "states": {}
+      },
+      "El Salvador": {
+        "code": "_5078",
+        "states": {}
+      },
+      "Costa Rica": {
+        "code": "_5065",
+        "states": {}
+      },
+      "Dominican Republic": {
+        "code": "_5074",
+        "states": {}
+      },
+      "Panama": {
+        "code": "_5177",
+        "states": {}
+      },
+      "St Vincent and the Grenadines": {
+        "code": "_5193",
+        "states": {}
+      },
+      "Grenada": {
+        "code": "_5099",
+        "states": {}
+      },
+      "Honduras": {
+        "code": "_5108",
+        "states": {}
+      },
+      "Cuba": {
+        "code": "_5068",
+        "states": {}
+      },
+      "Haiti": {
+        "code": "_5106",
+        "states": {}
+      },
+      "Nicaragua": {
+        "code": "_5167",
+        "states": {}
+      },
+      "Belize": {
+        "code": "_5036",
+        "states": {}
+      },
+      "Dominica": {
+        "code": "_5073",
+        "states": {}
+      },
+      "St Lucia": {
+        "code": "_5192",
+        "states": {}
+      },
+      "Martinique": {
+        "code": "_5147",
+        "states": {}
+      },
+      "Antigua and Barbuda": {
+        "code": "_5023",
+        "states": {}
+      },
+      "Guadeloupe": {
+        "code": "_5100",
+        "states": {}
+      },
+      "Virgin Islands (British)": {
+        "code": "_5242",
+        "states": {}
+      },
+      "Netherlands Antilles": {
+        "code": "_5164",
+        "states": {}
+      },
+      "Montserrat": {
+        "code": "_5156",
+        "states": {}
+      },
+      "Greenland": {
+        "code": "_5098",
+        "states": {}
+      },
+      "St Kitts and Nevis": {
+        "code": "_5191",
+        "states": {}
+      },
+      "Aruba": {
+        "code": "_5026",
+        "states": {}
+      },
+      "Anguilla": {
+        "code": "_5021",
+        "states": {}
+      },
+      "Cayman Islands": {
+        "code": "_5053",
+        "states": {}
+      },
+      "Turks and Caicos Islands": {
+        "code": "_5230",
+        "states": {}
+      },
+      "St Pierre and Miquelon": {
+        "code": "_5211",
+        "states": {}
+      }
+    }
+  },
+  "Europe": {
+    "code": null,
+    "countries": {
+      "United Kingdom": {
+        "code": "_3257",
+        "states": {
+          "Channel Islands": {
+            "code": "_5251",
+            "places": {}
+          },
+          "England": {
+            "code": "_3251",
+            "places": {}
+          },
+          "Isle of Man": {
+            "code": "_5252",
+            "places": {}
+          },
+          "Northern Ireland": {
+            "code": "_1652383",
+            "places": {}
+          },
+          "Scotland": {
+            "code": "_2643",
+            "places": {}
+          },
+          "Wales": {
+            "code": "_10606",
+            "places": {}
+          }
+        }
+      },
+      "Germany": {
+        "code": "_3253",
+        "states": {
+          "Baden-Württemberg": {
+            "code": "_30328",
+            "places": {}
+          },
+          "Bavaria": {
+            "code": "_30329",
+            "places": {}
+          },
+          "Berlin": {
+            "code": "_11552",
+            "places": {}
+          },
+          "Brandenburg": {
+            "code": "_30331",
+            "places": {}
+          },
+          "Bremen": {
+            "code": "_30332",
+            "places": {}
+          },
+          "Hamburg": {
+            "code": "_10582",
+            "places": {}
+          },
+          "Hesse": {
+            "code": "_30334",
+            "places": {}
+          },
+          "Lower Saxony": {
+            "code": "_30336",
+            "places": {}
+          },
+          "Mecklenburg-Vorpommern": {
+            "code": "_30335",
+            "places": {}
+          },
+          "North Rhine-Westphalia": {
+            "code": "_30337",
+            "places": {}
+          },
+          "Rhineland-Palatinate": {
+            "code": "_30338",
+            "places": {}
+          },
+          "Saarland": {
+            "code": "_30339",
+            "places": {}
+          },
+          "Saxony": {
+            "code": "_30340",
+            "places": {}
+          },
+          "Schleswig-Holstein": {
+            "code": "_30342",
+            "places": {}
+          }
+        }
+      },
+      "France": {
+        "code": "_5087",
+        "states": {
+          "Aisne": {
+            "code": "_202124",
+            "places": {}
+          },
+          "Alpes-Maritimes": {
+            "code": "_202132",
+            "places": {}
+          },
+          "Ardennes": {
+            "code": "_202077",
+            "places": {}
+          },
+          "Ariège": {
+            "code": "_202109",
+            "places": {}
+          },
+          "Aube": {
+            "code": "_202078",
+            "places": {}
+          },
+          "Bas-Rhin": {
+            "code": "_202049",
+            "places": {}
+          },
+          "Bouches-du-Rhône": {
+            "code": "_202133",
+            "places": {}
+          },
+          "Calvados": {
+            "code": "_202060",
+            "places": {}
+          },
+          "Charente": {
+            "code": "_202127",
+            "places": {}
+          },
+          "Charente-Maritime": {
+            "code": "_202128",
+            "places": {}
+          },
+          "Cher": {
+            "code": "_202071",
+            "places": {}
+          },
+          "Dordogne": {
+            "code": "_202051",
+            "places": {}
+          },
+          "Essonne": {
+            "code": "_202089",
+            "places": {}
+          },
+          "Eure": {
+            "code": "_202087",
+            "places": {}
+          },
+          "Eure-et-Loir": {
+            "code": "_202072",
+            "places": {}
+          },
+          "Gard": {
+            "code": "_202098",
+            "places": {}
+          },
+          "Gironde": {
+            "code": "_202052",
+            "places": {}
+          },
+          "Haut-Rhin": {
+            "code": "_202050",
+            "places": {}
+          },
+          "Haute-Garonne": {
+            "code": "_202112",
+            "places": {}
+          },
+          "Haute-Loire": {
+            "code": "_202058",
+            "places": {}
+          },
+          "Hautes-Alpes": {
+            "code": "_202134",
+            "places": {}
+          },
+          "Landes": {
+            "code": "_202053",
+            "places": {}
+          },
+          "Loire-Atlantique": {
+            "code": "_202119",
+            "places": {}
+          },
+          "Loiret": {
+            "code": "_202076",
+            "places": {}
+          },
+          "Lot": {
+            "code": "_202114",
+            "places": {}
+          },
+          "Manche": {
+            "code": "_202061",
+            "places": {}
+          },
+          "Marne": {
+            "code": "_202080",
+            "places": {}
+          },
+          "Meurthe-et-Moselle": {
+            "code": "_202105",
+            "places": {}
+          },
+          "Meuse": {
+            "code": "_202106",
+            "places": {}
+          },
+          "Moselle": {
+            "code": "_202107",
+            "places": {}
+          },
+          "Nièvre": {
+            "code": "_202064",
+            "places": {}
+          },
+          "Nord": {
+            "code": "_202117",
+            "places": {}
+          },
+          "Oise": {
+            "code": "_202125",
+            "places": {}
+          },
+          "Orne": {
+            "code": "_202062",
+            "places": {}
+          },
+          "Paris": {
+            "code": "_202091",
+            "places": {}
+          },
+          "Pas-de-Calais": {
+            "code": "_202118",
+            "places": {}
+          },
+          "Puy-de-Dôme": {
+            "code": "_202059",
+            "places": {}
+          },
+          "Pyrénées-Atlantiques": {
+            "code": "_202055",
+            "places": {}
+          },
+          "Rhône": {
+            "code": "_202143",
+            "places": {}
+          },
+          "Savoie": {
+            "code": "_202144",
+            "places": {}
+          },
+          "Saône-et-Loire": {
+            "code": "_202065",
+            "places": {}
+          },
+          "Seine-Maritime": {
+            "code": "_202088",
+            "places": {}
+          },
+          "Seine-Saint-Denis": {
+            "code": "_202093",
+            "places": {}
+          },
+          "Somme": {
+            "code": "_202126",
+            "places": {}
+          },
+          "Tarn-et-Garonne": {
+            "code": "_202116",
+            "places": {}
+          },
+          "Val-d'Oise": {
+            "code": "_202094",
+            "places": {}
+          },
+          "Val-de-Marne": {
+            "code": "_202095",
+            "places": {}
+          },
+          "Vosges": {
+            "code": "_202108",
+            "places": {}
+          },
+          "Yvelines": {
+            "code": "_202096",
+            "places": {}
+          }
+        }
+      },
+      "Netherlands": {
+        "code": "_5163",
+        "states": {
+          "Drenthe": {
+            "code": "_30747",
+            "places": {}
+          },
+          "Friesland": {
+            "code": "_30749",
+            "places": {}
+          },
+          "Gelderland": {
+            "code": "_30750",
+            "places": {}
+          },
+          "Groningen": {
+            "code": "_30751",
+            "places": {}
+          },
+          "Limburg": {
+            "code": "_30752",
+            "places": {}
+          },
+          "Noord-Brabant": {
+            "code": "_30753",
+            "places": {}
+          },
+          "Noord-Holland": {
+            "code": "_30754",
+            "places": {}
+          },
+          "Overijssel": {
+            "code": "_30755",
+            "places": {}
+          },
+          "Utrecht": {
+            "code": "_30756",
+            "places": {}
+          },
+          "Zeeland": {
+            "code": "_30757",
+            "places": {}
+          },
+          "Zuid-Holland": {
+            "code": "_30758",
+            "places": {}
+          }
+        }
+      },
+      "Ireland": {
+        "code": "_3250",
+        "states": {}
+      },
+      "Austria": {
+        "code": "_5028",
+        "states": {
+          "Styria": {
+            "code": "_30106",
+            "places": {}
+          },
+          "Upper Austria": {
+            "code": "_30104",
+            "places": {}
+          },
+          "Vienna": {
+            "code": "_30109",
+            "places": {}
+          }
+        }
+      },
+      "Denmark": {
+        "code": "_5071",
+        "states": {
+          "Arhus": {
+            "code": "_30248",
+            "places": {}
+          },
+          "Bornholm": {
+            "code": "_30249",
+            "places": {}
+          },
+          "Frederiksborg": {
+            "code": "_607947",
+            "places": {}
+          },
+          "Fyn": {
+            "code": "_30251",
+            "places": {}
+          },
+          "Kobenhavn": {
+            "code": "_30252",
+            "places": {}
+          },
+          "Nordjylland": {
+            "code": "_30253",
+            "places": {}
+          },
+          "Region Nordjylland": {
+            "code": "_10099497",
+            "places": {}
+          },
+          "Region Sjaelland": {
+            "code": "_10099498",
+            "places": {}
+          },
+          "Region Syddanmark": {
+            "code": "_10099496",
+            "places": {}
+          },
+          "Ribe": {
+            "code": "_30254",
+            "places": {}
+          },
+          "Ringkobing": {
+            "code": "_30255",
+            "places": {}
+          },
+          "Roskilde": {
+            "code": "_30256",
+            "places": {}
+          },
+          "Storstrom": {
+            "code": "_30258",
+            "places": {}
+          },
+          "Vejle": {
+            "code": "_30259",
+            "places": {}
+          },
+          "Vestsjalland": {
+            "code": "_30260",
+            "places": {}
+          },
+          "Viborg": {
+            "code": "_30261",
+            "places": {}
+          }
+        }
+      },
+      "Hungary": {
+        "code": "_5110",
+        "states": {
+          "Baranya": {
+            "code": "_30397",
+            "places": {}
+          },
+          "Gyor": {
+            "code": "_30407",
+            "places": {}
+          },
+          "Nograd": {
+            "code": "_30418",
+            "places": {}
+          }
+        }
+      },
+      "Spain": {
+        "code": "_5208",
+        "states": {
+          "Aragon": {
+            "code": "_31166",
+            "places": {}
+          },
+          "Asturias": {
+            "code": "_31167",
+            "places": {}
+          },
+          "Canary Islands": {
+            "code": "_31170",
+            "places": {}
+          },
+          "Cantabria": {
+            "code": "_31171",
+            "places": {}
+          },
+          "Catalonia": {
+            "code": "_1450158",
+            "places": {}
+          },
+          "Comunidad Valenciana": {
+            "code": "_31175",
+            "places": {}
+          },
+          "Galicia": {
+            "code": "_31177",
+            "places": {}
+          },
+          "Murcia": {
+            "code": "_31181",
+            "places": {}
+          }
+        }
+      },
+      "Belgium": {
+        "code": "_5035",
+        "states": {
+          "Antwerpen": {
+            "code": "_346372",
+            "places": {}
+          },
+          "Hainaut": {
+            "code": "_348995",
+            "places": {}
+          },
+          "Liege": {
+            "code": "_350599",
+            "places": {}
+          },
+          "Oost-Vlaanderen": {
+            "code": "_355255",
+            "places": {}
+          },
+          "West-Vlaanderen": {
+            "code": "_357004",
+            "places": {}
+          }
+        }
+      },
+      "Italy": {
+        "code": "_5118",
+        "states": {
+          "Campania": {
+            "code": "_30561",
+            "places": {}
+          },
+          "Emilia-Romagna": {
+            "code": "_30562",
+            "places": {}
+          },
+          "Friuli-Venezia Giulia": {
+            "code": "_30563",
+            "places": {}
+          },
+          "Lazio": {
+            "code": "_30564",
+            "places": {}
+          },
+          "Liguria": {
+            "code": "_30565",
+            "places": {}
+          },
+          "Piemonte": {
+            "code": "_30569",
+            "places": {}
+          },
+          "Puglia": {
+            "code": "_30570",
+            "places": {}
+          },
+          "Sardegna": {
+            "code": "_30571",
+            "places": {}
+          },
+          "Trentino-Alto Adige": {
+            "code": "_30574",
+            "places": {}
+          },
+          "Veneto": {
+            "code": "_30577",
+            "places": {}
+          }
+        }
+      },
+      "Poland": {
+        "code": "_5183",
+        "states": {
+          "Lodzkie": {
+            "code": "_31043",
+            "places": {}
+          },
+          "Lubelskie": {
+            "code": "_31044",
+            "places": {}
+          },
+          "Mazowieckie": {
+            "code": "_31047",
+            "places": {}
+          },
+          "Podkarpackie": {
+            "code": "_31049",
+            "places": {}
+          }
+        }
+      },
+      "Sweden": {
+        "code": "_5216",
+        "states": {
+          "Blekinge": {
+            "code": "_31235",
+            "places": {}
+          },
+          "Dalarna": {
+            "code": "_31236",
+            "places": {}
+          },
+          "Gotland": {
+            "code": "_31238",
+            "places": {}
+          },
+          "Gävleborg": {
+            "code": "_31237",
+            "places": {}
+          },
+          "Halland": {
+            "code": "_31239",
+            "places": {}
+          },
+          "Jämtland": {
+            "code": "_31240",
+            "places": {}
+          },
+          "Jönköping": {
+            "code": "_31241",
+            "places": {}
+          },
+          "Kalmar": {
+            "code": "_31242",
+            "places": {}
+          },
+          "Norrbotten": {
+            "code": "_31244",
+            "places": {}
+          },
+          "Skåne": {
+            "code": "_31247",
+            "places": {}
+          },
+          "Stockholm": {
+            "code": "_31249",
+            "places": {}
+          },
+          "Uppsala": {
+            "code": "_31250",
+            "places": {}
+          },
+          "Värmland": {
+            "code": "_31251",
+            "places": {}
+          },
+          "Västernorrland": {
+            "code": "_31253",
+            "places": {}
+          },
+          "Västmanland": {
+            "code": "_31254",
+            "places": {}
+          },
+          "Västra Götaland": {
+            "code": "_31255",
+            "places": {}
+          },
+          "Örebro": {
+            "code": "_31245",
+            "places": {}
+          },
+          "Östergötland": {
+            "code": "_31246",
+            "places": {}
+          }
+        }
+      },
+      "Norway": {
+        "code": "_5173",
+        "states": {
+          "Akershus": {
+            "code": "_30808",
+            "places": {}
+          },
+          "Aust-Agder": {
+            "code": "_30809",
+            "places": {}
+          },
+          "Bergen": {
+            "code": "_292",
+            "places": {}
+          },
+          "Buskerud": {
+            "code": "_30810",
+            "places": {}
+          },
+          "Hedmark": {
+            "code": "_30812",
+            "places": {}
+          },
+          "More og Romsdal": {
+            "code": "_30814",
+            "places": {}
+          },
+          "Nord-Trondelag": {
+            "code": "_30816",
+            "places": {}
+          },
+          "Nordland": {
+            "code": "_30815",
+            "places": {}
+          },
+          "Oslo": {
+            "code": "_30818",
+            "places": {}
+          },
+          "Ostfold": {
+            "code": "_30819",
+            "places": {}
+          },
+          "Rogaland": {
+            "code": "_30820",
+            "places": {}
+          },
+          "Telemark": {
+            "code": "_30823",
+            "places": {}
+          },
+          "Vest-Agder": {
+            "code": "_30825",
+            "places": {}
+          },
+          "Vestfold": {
+            "code": "_30826",
+            "places": {}
+          }
+        }
+      },
+      "Romania": {
+        "code": "_5188",
+        "states": {
+          "Bacau": {
+            "code": "_1253667",
+            "places": {}
+          },
+          "Hunedoara": {
+            "code": "_1260751",
+            "places": {}
+          },
+          "Mures": {
+            "code": "_1262844",
+            "places": {}
+          }
+        }
+      },
+      "Latvia": {
+        "code": "_5130",
+        "states": {}
+      },
+      "Slovakia": {
+        "code": "_5202",
+        "states": {}
+      },
+      "Switzerland": {
+        "code": "_3254",
+        "states": {
+          "Bern": {
+            "code": "_31261",
+            "places": {}
+          },
+          "Lucerne": {
+            "code": "_31267",
+            "places": {}
+          },
+          "Uri": {
+            "code": "_31277",
+            "places": {}
+          }
+        }
+      },
+      "Estonia": {
+        "code": "_5081",
+        "states": {
+          "Laane-Virumaa": {
+            "code": "_639598",
+            "places": {}
+          },
+          "Saaremaa": {
+            "code": "_641419",
+            "places": {}
+          },
+          "Tartumaa": {
+            "code": "_641884",
+            "places": {}
+          }
+        }
+      },
+      "Portugal": {
+        "code": "_5184",
+        "states": {
+          "Beja": {
+            "code": "_1238525",
+            "places": {}
+          },
+          "Braga": {
+            "code": "_1238949",
+            "places": {}
+          },
+          "Lisbon": {
+            "code": "_1245145",
+            "places": {}
+          },
+          "Madeira": {
+            "code": "_1246069",
+            "places": {}
+          }
+        }
+      },
+      "Finland": {
+        "code": "_5086",
+        "states": {}
+      },
+      "Luxembourg": {
+        "code": "_5137",
+        "states": {
+          "Brabant Wallon": {
+            "code": "_347541",
+            "places": {}
+          },
+          "Vlaams-Brabant": {
+            "code": "_357001",
+            "places": {}
+          }
+        }
+      },
+      "Ukraine": {
+        "code": "_5233",
+        "states": {
+          "Cherkasy": {
+            "code": "_31440",
+            "places": {}
+          },
+          "Chernihiv": {
+            "code": "_31441",
+            "places": {}
+          },
+          "Chernivtsi": {
+            "code": "_31442",
+            "places": {}
+          },
+          "Crimea": {
+            "code": "_31444",
+            "places": {}
+          },
+          "Dnipropetrovs'ka": {
+            "code": "_31445",
+            "places": {}
+          },
+          "Donets'ka": {
+            "code": "_31446",
+            "places": {}
+          },
+          "Kharkiv": {
+            "code": "_31448",
+            "places": {}
+          },
+          "Kherson": {
+            "code": "_1586225",
+            "places": {}
+          },
+          "Khmelnystskyi": {
+            "code": "_1586797",
+            "places": {}
+          },
+          "Kiev": {
+            "code": "_31453",
+            "places": {}
+          },
+          "L'vivs'ka": {
+            "code": "_31455",
+            "places": {}
+          },
+          "Mykolaiv": {
+            "code": "_31456",
+            "places": {}
+          },
+          "Odessa": {
+            "code": "_31457",
+            "places": {}
+          },
+          "Poltava": {
+            "code": "_31458",
+            "places": {}
+          },
+          "Prykarpattia": {
+            "code": "_31447",
+            "places": {}
+          },
+          "Rivne": {
+            "code": "_31459",
+            "places": {}
+          },
+          "Sumy": {
+            "code": "_31461",
+            "places": {}
+          },
+          "Ternopil": {
+            "code": "_31462",
+            "places": {}
+          },
+          "Vinnytsya": {
+            "code": "_31463",
+            "places": {}
+          },
+          "Volyn": {
+            "code": "_31464",
+            "places": {}
+          },
+          "Zakarpats'ka": {
+            "code": "_31465",
+            "places": {}
+          },
+          "Zaporizhzhya": {
+            "code": "_31466",
+            "places": {}
+          },
+          "Zhytomyr": {
+            "code": "_31467",
+            "places": {}
+          }
+        }
+      },
+      "Czech Republic": {
+        "code": "_5070",
+        "states": {
+          "Prague": {
+            "code": "_600849",
+            "places": {}
+          }
+        }
+      },
+      "Malta": {
+        "code": "_5145",
+        "states": {}
+      },
+      "Gibraltar": {
+        "code": "_5096",
+        "states": {}
+      },
+      "Lithuania": {
+        "code": "_5136",
+        "states": {
+          "Alytaus": {
+            "code": "_30650",
+            "places": {}
+          },
+          "Jurbarkas": {
+            "code": "_882517",
+            "places": {}
+          },
+          "Kaisiadorys": {
+            "code": "_882746",
+            "places": {}
+          },
+          "Kaunas": {
+            "code": "_882885",
+            "places": {}
+          },
+          "Kauno": {
+            "code": "_30651",
+            "places": {}
+          },
+          "Kelme": {
+            "code": "_883374",
+            "places": {}
+          },
+          "Klaipedos": {
+            "code": "_30652",
+            "places": {}
+          },
+          "Lazdijai": {
+            "code": "_884102",
+            "places": {}
+          },
+          "Marijampoles": {
+            "code": "_30653",
+            "places": {}
+          },
+          "Panevezio": {
+            "code": "_30654",
+            "places": {}
+          },
+          "Plunge": {
+            "code": "_885136",
+            "places": {}
+          },
+          "Prienai": {
+            "code": "_885316",
+            "places": {}
+          },
+          "Radviliskis": {
+            "code": "_885449",
+            "places": {}
+          },
+          "Sakiai": {
+            "code": "_886102",
+            "places": {}
+          },
+          "Siauliu": {
+            "code": "_30655",
+            "places": {}
+          },
+          "Taurage": {
+            "code": "_887242",
+            "places": {}
+          },
+          "Varena": {
+            "code": "_887934",
+            "places": {}
+          },
+          "Vilkaviskis": {
+            "code": "_888063",
+            "places": {}
+          },
+          "Vilniaus": {
+            "code": "_30659",
+            "places": {}
+          },
+          "Vilnius": {
+            "code": "_888313",
+            "places": {}
+          }
+        }
+      },
+      "Iceland": {
+        "code": "_5111",
+        "states": {}
+      },
+      "Turkey": {
+        "code": "_5228",
+        "states": {}
+      },
+      "Greece": {
+        "code": "_5097",
+        "states": {
+          "Attiki": {
+            "code": "_30350",
+            "places": {}
+          },
+          "Central Macedonia": {
+            "code": "_661356",
+            "places": {}
+          },
+          "Southern Aegean": {
+            "code": "_668229",
+            "places": {}
+          }
+        }
+      },
+      "Slovenia": {
+        "code": "_5203",
+        "states": {}
+      },
+      "Bulgaria": {
+        "code": "_5046",
+        "states": {
+          "Montana": {
+            "code": "_29",
+            "places": {}
+          }
+        }
+      },
+      "Belarus": {
+        "code": "_5034",
+        "states": {}
+      },
+      "Croatia": {
+        "code": "_5067",
+        "states": {
+          "Split-Dalmatia": {
+            "code": "_581945",
+            "places": {}
+          }
+        }
+      },
+      "Serbia": {
+        "code": "_10043667",
+        "states": {}
+      },
+      "Liechtenstein": {
+        "code": "_5135",
+        "states": {}
+      },
+      "Bosnia and Herzegovina": {
+        "code": "_5041",
+        "states": {}
+      },
+      "Moldova": {
+        "code": "_5153",
+        "states": {}
+      },
+      "Cyprus": {
+        "code": "_5069",
+        "states": {
+          "Limassol": {
+            "code": "_592511",
+            "places": {}
+          }
+        }
+      },
+      "Albania": {
+        "code": "_5016",
+        "states": {
+          "Elbasan": {
+            "code": "_271495",
+            "places": {}
+          },
+          "Tirane": {
+            "code": "_274159",
+            "places": {}
+          }
+        }
+      },
+      "North Macedonia": {
+        "code": "_5139",
+        "states": {
+          "Resen": {
+            "code": "_889208",
+            "places": {}
+          }
+        }
+      },
+      "Armenia": {
+        "code": "_5025",
+        "states": {}
+      },
+      "Monaco": {
+        "code": "_5154",
+        "states": {}
+      },
+      "Yugoslavia": {
+        "code": "_5247",
+        "states": {}
+      },
+      "San Marino": {
+        "code": "_5195",
+        "states": {}
+      },
+      "Montenegro": {
+        "code": "_10043666",
+        "states": {}
+      },
+      "Kosovo": {
+        "code": "_10043668",
+        "states": {}
+      },
+      "Azerbaijan": {
+        "code": "_5029",
+        "states": {}
+      },
+      "Andorra": {
+        "code": "_5019",
+        "states": {}
+      },
+      "Georgia (Republic of)": {
+        "code": "_1652380",
+        "states": {}
+      }
+    }
+  },
+  "Oceania": {
+    "code": null,
+    "countries": {
+      "Australia": {
+        "code": "_5027",
+        "states": {
+          "Australian Capital Territory": {
+            "code": "_30093",
+            "places": {}
+          },
+          "New South Wales": {
+            "code": "_30094",
+            "places": {}
+          },
+          "Northern Territory": {
+            "code": "_30095",
+            "places": {}
+          },
+          "Queensland": {
+            "code": "_30096",
+            "places": {}
+          },
+          "South Australia": {
+            "code": "_30097",
+            "places": {}
+          },
+          "Tasmania": {
+            "code": "_30098",
+            "places": {}
+          },
+          "Victoria": {
+            "code": "_2995",
+            "places": {}
+          },
+          "Western Australia": {
+            "code": "_30100",
+            "places": {}
+          }
+        }
+      },
+      "New Zealand": {
+        "code": "_5166",
+        "states": {
+          "Auckland": {
+            "code": "_32110",
+            "places": {}
+          },
+          "Bay of Plenty": {
+            "code": "_32111",
+            "places": {}
+          },
+          "Canterbury": {
+            "code": "_32112",
+            "places": {}
+          },
+          "Gisborne": {
+            "code": "_32116",
+            "places": {}
+          },
+          "Hawke's Bay": {
+            "code": "_1025749",
+            "places": {}
+          },
+          "Manawatu-Wanganui": {
+            "code": "_1025860",
+            "places": {}
+          },
+          "Marlborough": {
+            "code": "_32119",
+            "places": {}
+          },
+          "Nelson": {
+            "code": "_2148",
+            "places": {}
+          },
+          "Northland": {
+            "code": "_32122",
+            "places": {}
+          },
+          "Otago": {
+            "code": "_32123",
+            "places": {}
+          },
+          "Southland": {
+            "code": "_32124",
+            "places": {}
+          },
+          "Taranaki": {
+            "code": "_32125",
+            "places": {}
+          },
+          "Tasman": {
+            "code": "_32126",
+            "places": {}
+          },
+          "Waikato": {
+            "code": "_32127",
+            "places": {}
+          },
+          "Wellington": {
+            "code": "_32129",
+            "places": {}
+          },
+          "West Coast": {
+            "code": "_32130",
+            "places": {}
+          }
+        }
+      },
+      "Papua New Guinea": {
+        "code": "_5178",
+        "states": {
+          "Central Province": {
+            "code": "_1132208",
+            "places": {}
+          },
+          "East Sepik": {
+            "code": "_1133880",
+            "places": {}
+          },
+          "Milne Bay": {
+            "code": "_1137603",
+            "places": {}
+          },
+          "National Capital": {
+            "code": "_1139165",
+            "places": {}
+          },
+          "Northern": {
+            "code": "_1139737",
+            "places": {}
+          },
+          "Sandaun": {
+            "code": "_1140239",
+            "places": {}
+          }
+        }
+      },
+      "Tonga": {
+        "code": "_5225",
+        "states": {}
+      },
+      "Indonesia": {
+        "code": "_5113",
+        "states": {}
+      },
+      "Samoa": {
+        "code": "_5194",
+        "states": {}
+      },
+      "Fiji": {
+        "code": "_5085",
+        "states": {}
+      },
+      "Solomon Islands": {
+        "code": "_5204",
+        "states": {}
+      },
+      "New Caledonia": {
+        "code": "_5165",
+        "states": {}
+      },
+      "Vanuatu": {
+        "code": "_5239",
+        "states": {}
+      },
+      "Pitcairn": {
+        "code": "_5182",
+        "states": {}
+      }
+    }
+  },
+  "South America": {
+    "code": null,
+    "countries": {
+      "Brazil": {
+        "code": "_5044",
+        "states": {}
+      },
+      "Peru": {
+        "code": "_5180",
+        "states": {}
+      },
+      "Argentina": {
+        "code": "_5024",
+        "states": {}
+      },
+      "Chile": {
+        "code": "_5056",
+        "states": {}
+      },
+      "Uruguay": {
+        "code": "_5237",
+        "states": {}
+      },
+      "Bolivia": {
+        "code": "_5040",
+        "states": {}
+      },
+      "Colombia": {
+        "code": "_5060",
+        "states": {}
+      },
+      "Paraguay": {
+        "code": "_5179",
+        "states": {}
+      },
+      "Ecuador": {
+        "code": "_5076",
+        "states": {}
+      },
+      "Venezuela": {
+        "code": "_5240",
+        "states": {}
+      },
+      "Guyana": {
+        "code": "_5105",
+        "states": {}
+      },
+      "Suriname": {
+        "code": "_5213",
+        "states": {}
+      },
+      "French Guiana": {
+        "code": "_5088",
+        "states": {}
+      },
+      "Falkland Islands": {
+        "code": "_5083",
+        "states": {}
+      },
+      "South Georgia and the South Sandwich Islands": {
+        "code": "_5207",
+        "states": {}
+      }
+    }
+  },
+  "Asia": {
+    "code": null,
+    "countries": {
+      "India": {
+        "code": "_5112",
+        "states": {}
+      },
+      "Philippines": {
+        "code": "_5181",
+        "states": {}
+      },
+      "Russia": {
+        "code": "_5189",
+        "states": {
+          "Altai Mountains": {
+            "code": "_1269278",
+            "places": {}
+          },
+          "Belgorod": {
+            "code": "_31064",
+            "places": {}
+          },
+          "Bryansk": {
+            "code": "_31065",
+            "places": {}
+          },
+          "Chita": {
+            "code": "_31069",
+            "places": {}
+          },
+          "Chuvashia": {
+            "code": "_1287446",
+            "places": {}
+          },
+          "Ivanovo": {
+            "code": "_31076",
+            "places": {}
+          },
+          "Kirov": {
+            "code": "_31088",
+            "places": {}
+          },
+          "Krasnodar": {
+            "code": "_31093",
+            "places": {}
+          },
+          "Krasnoyarsk": {
+            "code": "_31094",
+            "places": {}
+          },
+          "Kursk": {
+            "code": "_31096",
+            "places": {}
+          },
+          "Leningrad": {
+            "code": "_31097",
+            "places": {}
+          },
+          "Magadan": {
+            "code": "_31099",
+            "places": {}
+          },
+          "Moscow": {
+            "code": "_31102",
+            "places": {}
+          },
+          "Moscow Oblast": {
+            "code": "_1326819",
+            "places": {}
+          },
+          "Novgorod": {
+            "code": "_31107",
+            "places": {}
+          },
+          "Omsk": {
+            "code": "_31109",
+            "places": {}
+          },
+          "Orlovskaya Oblast": {
+            "code": "_1342300",
+            "places": {}
+          },
+          "Perm'": {
+            "code": "_31113",
+            "places": {}
+          },
+          "Primorsky": {
+            "code": "_31114",
+            "places": {}
+          },
+          "Rostov": {
+            "code": "_31116",
+            "places": {}
+          },
+          "Ryazan": {
+            "code": "_1355220",
+            "places": {}
+          },
+          "Saint Petersburg": {
+            "code": "_31121",
+            "places": {}
+          },
+          "Samara": {
+            "code": "_31120",
+            "places": {}
+          },
+          "Stavropol": {
+            "code": "_1365717",
+            "places": {}
+          },
+          "Tatarstan": {
+            "code": "_31127",
+            "places": {}
+          },
+          "Tula": {
+            "code": "_31130",
+            "places": {}
+          },
+          "Tver'": {
+            "code": "_31131",
+            "places": {}
+          },
+          "Udmurtia": {
+            "code": "_1382954",
+            "places": {}
+          },
+          "Vladimir": {
+            "code": "_31137",
+            "places": {}
+          },
+          "Volgograd": {
+            "code": "_31138",
+            "places": {}
+          },
+          "Vologda": {
+            "code": "_31139",
+            "places": {}
+          },
+          "Voronezh": {
+            "code": "_31140",
+            "places": {}
+          }
+        }
+      },
+      "China": {
+        "code": "_5057",
+        "states": {}
+      },
+      "Singapore": {
+        "code": "_5201",
+        "states": {}
+      },
+      "Sri Lanka": {
+        "code": "_5209",
+        "states": {}
+      },
+      "Japan": {
+        "code": "_5000",
+        "states": {}
+      },
+      "Lebanon": {
+        "code": "_5131",
+        "states": {}
+      },
+      "Palestine": {
+        "code": "_10114019",
+        "states": {}
+      },
+      "Vietnam": {
+        "code": "_30011",
+        "states": {}
+      },
+      "Myanmar": {
+        "code": "_5159",
+        "states": {}
+      },
+      "Pakistan": {
+        "code": "_5175",
+        "states": {}
+      },
+      "Malaysia": {
+        "code": "_5142",
+        "states": {}
+      },
+      "Bangladesh": {
+        "code": "_5032",
+        "states": {}
+      },
+      "North Korea": {
+        "code": "_5126",
+        "states": {}
+      },
+      "Iraq": {
+        "code": "_5115",
+        "states": {}
+      },
+      "Iran": {
+        "code": "_5114",
+        "states": {}
+      },
+      "Afghanistan": {
+        "code": "_5015",
+        "states": {}
+      },
+      "Israel": {
+        "code": "_5117",
+        "states": {
+          "Hadarom": {
+            "code": "_850968",
+            "places": {}
+          },
+          "Haifa": {
+            "code": "_851198",
+            "places": {}
+          },
+          "Hamerkaz": {
+            "code": "_851302",
+            "places": {}
+          },
+          "Hazafon": {
+            "code": "_851575",
+            "places": {}
+          },
+          "Jerusalem": {
+            "code": "_852008",
+            "places": {}
+          },
+          "Tel Aviv": {
+            "code": "_30557",
+            "places": {}
+          }
+        }
+      },
+      "Thailand": {
+        "code": "_5222",
+        "states": {}
+      },
+      "South Korea": {
+        "code": "_5125",
+        "states": {}
+      },
+      "Saudi Arabia": {
+        "code": "_5197",
+        "states": {}
+      },
+      "Syrian Arab Republic": {
+        "code": "_5218",
+        "states": {}
+      },
+      "Jordan": {
+        "code": "_5121",
+        "states": {}
+      },
+      "Yemen": {
+        "code": "_5246",
+        "states": {}
+      },
+      "United Arab Emirates": {
+        "code": "_5234",
+        "states": {}
+      },
+      "Taiwan": {
+        "code": "_5219",
+        "states": {}
+      },
+      "Uzbekistan": {
+        "code": "_5238",
+        "states": {
+          "Andijon": {
+            "code": "_1602844",
+            "places": {}
+          },
+          "Toshkent": {
+            "code": "_1603900",
+            "places": {}
+          }
+        }
+      },
+      "Cambodia": {
+        "code": "_5049",
+        "states": {}
+      },
+      "Lao People's Democratic Republic": {
+        "code": "_5129",
+        "states": {}
+      },
+      "Bahrain": {
+        "code": "_5031",
+        "states": {}
+      },
+      "Kuwait": {
+        "code": "_5127",
+        "states": {}
+      },
+      "Nepal": {
+        "code": "_5162",
+        "states": {}
+      },
+      "Kyrgyzstan": {
+        "code": "_5128",
+        "states": {}
+      },
+      "Kazakhstan": {
+        "code": "_5122",
+        "states": {}
+      },
+      "Qatar": {
+        "code": "_5186",
+        "states": {}
+      },
+      "Bhutan": {
+        "code": "_5039",
+        "states": {}
+      },
+      "Brunei Darussalam": {
+        "code": "_5045",
+        "states": {}
+      },
+      "Oman": {
+        "code": "_5174",
+        "states": {}
+      },
+      "Turkmenistan": {
+        "code": "_5229",
+        "states": {}
+      },
+      "Mongolia": {
+        "code": "_5155",
+        "states": {}
+      },
+      "Turkey": {
+        "code": "_5228",
+        "states": {
+          "Afyonkarahisar": {
+            "code": "_31305",
+            "places": {}
+          },
+          "Canakkale": {
+            "code": "_31324",
+            "places": {}
+          },
+          "Istanbul": {
+            "code": "_31342",
+            "places": {}
+          },
+          "Kars": {
+            "code": "_31347",
+            "places": {}
+          }
+        }
+      }
+    }
+  },
+  "Africa": {
+    "code": null,
+    "countries": {
+      "South Africa": {
+        "code": "_5206",
+        "states": {}
+      },
+      "Egypt": {
+        "code": "_5077",
+        "states": {}
+      },
+      "Nigeria": {
+        "code": "_5169",
+        "states": {}
+      },
+      "Kenya": {
+        "code": "_5123",
+        "states": {}
+      },
+      "Sierra Leone": {
+        "code": "_5200",
+        "states": {}
+      },
+      "Sudan": {
+        "code": "_5212",
+        "states": {}
+      },
+      "St Helena": {
+        "code": "_5210",
+        "states": {}
+      },
+      "Zimbabwe": {
+        "code": "_5249",
+        "states": {}
+      },
+      "Liberia": {
+        "code": "_5133",
+        "states": {}
+      },
+      "Mozambique": {
+        "code": "_5158",
+        "states": {}
+      },
+      "Ghana": {
+        "code": "_5095",
+        "states": {}
+      },
+      "Mauritius": {
+        "code": "_5149",
+        "states": {}
+      },
+      "Algeria": {
+        "code": "_5017",
+        "states": {}
+      },
+      "Morocco": {
+        "code": "_5157",
+        "states": {}
+      },
+      "Tunisia": {
+        "code": "_5227",
+        "states": {}
+      },
+      "Reunion": {
+        "code": "_5187",
+        "states": {}
+      },
+      "Tanzania": {
+        "code": "_5221",
+        "states": {}
+      },
+      "Gabon": {
+        "code": "_5091",
+        "states": {}
+      },
+      "South Sudan": {
+        "code": "_10070855",
+        "states": {}
+      },
+      "Chad": {
+        "code": "_5055",
+        "states": {}
+      },
+      "Angola": {
+        "code": "_5020",
+        "states": {}
+      },
+      "Libya": {
+        "code": "_5134",
+        "states": {}
+      },
+      "Namibia": {
+        "code": "_5160",
+        "states": {}
+      },
+      "Guinea": {
+        "code": "_5103",
+        "states": {}
+      },
+      "Democratic Republic of the Congo": {
+        "code": "_10043665",
+        "states": {}
+      },
+      "Senegal": {
+        "code": "_5198",
+        "states": {}
+      },
+      "Republic of the Congo": {
+        "code": "_5062",
+        "states": {}
+      },
+      "Zambia": {
+        "code": "_5248",
+        "states": {}
+      },
+      "Ethiopia": {
+        "code": "_5082",
+        "states": {}
+      },
+      "Botswana": {
+        "code": "_5042",
+        "states": {}
+      },
+      "Togo": {
+        "code": "_5223",
+        "states": {}
+      },
+      "Malawi": {
+        "code": "_5141",
+        "states": {}
+      },
+      "Cameroon": {
+        "code": "_5050",
+        "states": {}
+      },
+      "Rwanda": {
+        "code": "_5190",
+        "states": {}
+      },
+      "Uganda": {
+        "code": "_5232",
+        "states": {}
+      },
+      "Somalia": {
+        "code": "_5205",
+        "states": {}
+      },
+      "Benin": {
+        "code": "_5037",
+        "states": {}
+      },
+      "Comoros": {
+        "code": "_5061",
+        "states": {}
+      },
+      "Burkina Faso": {
+        "code": "_5047",
+        "states": {}
+      },
+      "Niger": {
+        "code": "_5168",
+        "states": {}
+      },
+      "Gambia": {
+        "code": "_5092",
+        "states": {}
+      },
+      "Madagascar": {
+        "code": "_5140",
+        "states": {}
+      },
+      "Central African Republic": {
+        "code": "_5054",
+        "states": {}
+      },
+      "Cote D'Ivoire": {
+        "code": "_5066",
+        "states": {}
+      },
+      "Mauritania": {
+        "code": "_5148",
+        "states": {}
+      },
+      "Lesotho": {
+        "code": "_5132",
+        "states": {}
+      },
+      "Guinea-Bissau": {
+        "code": "_5104",
+        "states": {}
+      },
+      "Cape Verde": {
+        "code": "_5052",
+        "states": {}
+      },
+      "Mali": {
+        "code": "_5144",
+        "states": {}
+      },
+      "Seychelles": {
+        "code": "_5199",
+        "states": {}
+      },
+      "Djibouti": {
+        "code": "_5072",
+        "states": {}
+      },
+      "Mayotte": {
+        "code": "_5150",
+        "states": {}
+      },
+      "Eritrea": {
+        "code": "_5080",
+        "states": {}
+      },
+      "Antarctica": {
+        "code": null,
+        "states": {}
+      },
+      "French Southern Territories": {
+        "code": "_5090",
+        "states": {}
+      },
+      "Bouvet Island": {
+        "code": "_5043",
+        "states": {}
+      }
+    }
+  },
+  "Antarctica": {
+    "code": "_5022",
+    "countries": {
+      "Bouvet Island": {
+        "code": "_5043",
+        "states": {}
+      },
+      "French Southern Territories": {
+        "code": "_5090",
+        "states": {}
+      }
+    }
+  }
+}

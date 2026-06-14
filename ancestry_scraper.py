@@ -115,8 +115,11 @@ def _load_filter_codes() -> dict:
         for ctry, cd in (d.get("countries") or {}).items():
             if cd.get("code"):
                 codes[ctry] = cd["code"]
-            for st, sc in (cd.get("states") or {}).items():
-                codes[st] = sc
+            for st, sd in (cd.get("states") or {}).items():
+                if sd.get("code"):
+                    codes[st] = sd["code"]
+                for pl, pc in (sd.get("places") or {}).items():
+                    codes[pl] = pc
     for century, d in load("ancestry_record_dates.json").items():
         if d.get("code"):
             codes[century] = d["code"]

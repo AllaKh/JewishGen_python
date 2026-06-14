@@ -108,7 +108,7 @@ def _num_key(s):                       # numeric-aware sort (1700s < 1800s < …
 
 # continents in the site's order (most records first); countries A→Z inside
 CONTINENT_ORDER = ["North America", "Europe", "Asia", "South America",
-                   "Oceania", "Africa"]
+                   "Oceania", "Africa", "Antarctica"]
 
 def _rt_spec():
     # categories in document (site) order; census decades chronological, other
@@ -123,7 +123,8 @@ def _rt_spec():
     return [node(c, _RT[c]) for c in _RT]
 
 def _loc_spec():
-    # continent (site order) → country (A→Z) → state (A→Z) → its places (leaf)
+    # continent (site order) → country (A→Z) → state (A→Z) → places (A→Z).
+    # NO dropdowns: places are checkbox children opened by an arrow.
     out = []
     for cont in (CONTINENT_ORDER + [c for c in LOCATIONS if c not in CONTINENT_ORDER]):
         if cont not in LOCATIONS:
@@ -132,15 +133,25 @@ def _loc_spec():
         countries = []
         for ctry in sorted(cd.get("countries", {})):
             ccd = cd["countries"][ctry]
-            states = [(st, sd.get("code"), None, sd.get("places") or None)
-                      for st, sd in sorted(ccd.get("states", {}).items())]
+            states = []
+            for st in sorted(ccd.get("states", {})):
+                sd = ccd["states"][st]
+                places = [(p, pc, None, None)
+                          for p, pc in sorted((sd.get("places") or {}).items())]
+                states.append((st, sd.get("code"), places or None, None))
             countries.append((ctry, ccd.get("code"), states or None, None))
         out.append((cont, cd.get("code"), countries, None))
     return out
 
 def _rd_spec():
-    return [(c, _RD[c].get("code"), None, _RD[c].get("decades") or None)
-            for c in sorted(_RD, key=_num_key)]
+    # century → decades. NO dropdown: decades are checkbox children (arrow opens).
+    out = []
+    for c in sorted(_RD, key=_num_key):
+        decs = sorted((_RD[c].get("decades") or {}).items(),
+                      key=lambda kv: _num_key(kv[0]))
+        children = [(d, code, None, None) for d, code in decs]
+        out.append((c, _RD[c].get("code"), children or None, None))
+    return out
 FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
                 ("Sibling", "sibling"), ("Spouse", "spouse"), ("Child", "child")]
 _FAM_LABEL = {k: l for l, k in FAMILY_TYPES}   # key → display label
@@ -492,8 +503,7 @@ class AncestryApp(QMainWindow):
             fv.addLayout(self._tree_node(spec, self._loc_checks, self._loc_combos))
         fv.addWidget(_divider())
         fv.addWidget(_sechead("RECORD DATE"))
-        for spec in _rd_spec():
-            fv.addLayout(self._tree_node(spec, self._rd_checks, self._rd_combos))
+        fv.addLayout(self._rd_columns(_rd_spec(), self._rd_checks, self._rd_combos))
 
         self._flt_scroll = QScrollArea()
         self._flt_scroll.setWidget(self._flt)
@@ -595,28 +605,51 @@ class AncestryApp(QMainWindow):
             combo = CheckableComboBox()
             combo.add_items([(n, leaf[n]) for n in sorted(leaf)])
             combo.changed.connect(self._save); combos.append(combo)
+            combo.setMinimumWidth(320)
+            combo.setMaximumWidth(480)        # keep the arrow inside the window
             w = QHBoxLayout(); w.addSpacing((depth + 1) * 16)
-            w.addWidget(combo, 1); bl.addLayout(w)
+            w.addWidget(combo); w.addStretch(); bl.addLayout(w)
 
     def _census_columns(self, bl, decade_specs, checks, combos, depth):
-        """Census decades laid out as three columns by century (1700s/1800s/1900s),
-        each decade still expandable to its collections."""
+        """Census decades laid out as three columns by century (1700s/1800s/1900s).
+        The years are the second level → the whole block is indented right, and
+        each decade sits one step under its century header. Each decade is still
+        expandable (arrow) to its collections."""
         cols = {}
         for ch in decade_specs:                 # ch label like "1890s"
             cent = ch[0][:2] + "00s"
             cols.setdefault(cent, []).append(ch)
         row = QHBoxLayout(); row.setSpacing(20)
+        row.setContentsMargins(24, 0, 0, 0)     # shift the year block right
         for cent in sorted(cols, key=_num_key):
             colw = QWidget(); col = QVBoxLayout(colw)
             col.setContentsMargins(0, 0, 0, 0); col.setSpacing(1)
             hdr = QLabel(cent); hdr.setStyleSheet("font-weight:bold;color:#4a6b1f;")
             col.addWidget(hdr)
             for ch in cols[cent]:
-                col.addLayout(self._tree_node(ch, checks, combos, 0))
+                col.addLayout(self._tree_node(ch, checks, combos, 1))  # under century
             col.addStretch()
             row.addWidget(colw, 0, Qt.AlignTop)
         row.addStretch()
         bl.addLayout(row)
+
+    def _rd_columns(self, century_specs, checks, combos) -> QHBoxLayout:
+        """Record Date in THREE columns (no dropdowns): 1500s+1600s | 1700s+1800s |
+        1900s+2000s. Each century opens by arrow into its decades (checkboxes)."""
+        cols = {0: [], 1: [], 2: []}
+        for spec in century_specs:
+            c = int(re.match(r"\d+", spec[0]).group())
+            cols[min((c - 1500) // 200, 2)].append(spec)
+        row = QHBoxLayout(); row.setSpacing(24)
+        for ci in (0, 1, 2):
+            colw = QWidget(); col = QVBoxLayout(colw)
+            col.setContentsMargins(0, 0, 0, 0); col.setSpacing(1)
+            for spec in cols[ci]:
+                col.addLayout(self._tree_node(spec, checks, combos))
+            col.addStretch()
+            row.addWidget(colw, 0, Qt.AlignTop)
+        row.addStretch()
+        return row
 
     @staticmethod
     def _collect(checks, combos) -> list:
