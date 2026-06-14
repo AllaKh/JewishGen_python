@@ -20,7 +20,10 @@ def main():
     app = QApplication(sys.argv)
     window = LauncherWindow()
     window.show()
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    except KeyboardInterrupt:        # Ctrl+C in the terminal → quit quietly
+        sys.exit(0)
 
 
 if __name__ == "__main__":

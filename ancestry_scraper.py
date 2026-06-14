@@ -774,6 +774,12 @@ async def _download_image(ctx, page, dest_dir: Path, title: str, log) -> str | N
     image on the page."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / (safe_fn(title) + ".jpg")
+    # give the viewer time to render the Save control (slow / just-navigated page)
+    try:
+        await page.wait_for_selector(
+            'button.save-btn, button[data-tracklink="Save-Open"]', timeout=8000)
+    except Exception:
+        pass
     try:
         async with page.expect_download(timeout=30000) as dl_info:
             # 1) open the «Save» dropdown (top-right of the record page)
@@ -834,11 +840,13 @@ _FIELDS_JS = r"""() => {
     const norm = s => (s||'').replace(/ /g,' ')
         .replace(/[ \t]+/g,' ').replace(/\n+/g,'\n').trim();
     const out = [], seen = new Set();
-    const BAD = /^(sign in|search|menu|save|print|share|detail|source|view|home|trees|memories|dna|add or update|report a problem|listen|suggested|neighbo|ancestry|cart|help|browse|filter|hint)/i;
+    const BAD = /^(sign in|search|menu|save|print|share|detail|source|view|home|trees|memories|dna|add or update|report a problem|listen|suggested|neighbo|ancestry|cart|help|browse|filter|hint|collection|коллекц|zoom|увелич|уменьш|national archives|provided in|see all|rotate|tools)/i;
+    const BADVAL = /^(view|zoom in|zoom out|rotate|provided in association)/i;
     const push = (k, v) => {
         k = norm(k).replace(/[: ]+$/,''); v = norm(v);
         if (!k || !v || k === v || k.length > 45 || v.length > 800) return;
         if (k.includes('\n') || !/[A-Za-z]/.test(k) || BAD.test(k)) return;
+        if (BADVAL.test(v)) return;        // viewer chrome value (View / Zoom…)
         const key = k.toLowerCase();
         if (seen.has(key)) return;
         seen.add(key); out.push([k, v]);
@@ -882,6 +890,17 @@ _FIELDS_JS = r"""() => {
 }"""
 
 
+def _detail_url(u: str):
+    """An image-viewer URL → the record DETAIL page (which carries the Detail card
+    with Name/Age/Race/… that the viewer itself doesn't expose to the scraper).
+    /imageviewer/collections/<db>/images/...&pId=<rec> → /discoveryui-content/view/<rec>:<db>"""
+    pid = re.search(r"[?&]pId=(\d+)", u)
+    coll = re.search(r"/collections/(\d+)/", u)
+    if "/imageviewer/" in u and pid and coll:
+        return f"{ANC_BASE}/discoveryui-content/view/{pid.group(1)}:{coll.group(1)}"
+    return None
+
+
 async def _scrape_page(ctx, page, url, name_hint, images_root,
                        logged_in_ref, email, password, log) -> dict:
     rec = {"url": url, "title": name_hint, "name": name_hint, "subtitle": "",
@@ -917,19 +936,46 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
         except Exception:
             pass
 
-    # fields + household + subtitle
-    try:
-        data = await page.evaluate(_FIELDS_JS)
-    except Exception:
+    # fields + household + subtitle. The image VIEWER has no Detail card (only
+    # viewer chrome → Collection|View, Zoom in|Zoom out) → skip it, the detail
+    # page below fills clean fields.
+    if "/imageviewer/" in page.url:
         data = {"fields": [], "household": [], "subtitle": ""}
+    else:
+        try:
+            data = await page.evaluate(_FIELDS_JS)
+        except Exception:
+            data = {"fields": [], "household": [], "subtitle": ""}
     td = {}
     for k, v in data.get("fields", []):
         td.setdefault(k, v)
     rec["household"] = data.get("household", []) or []
     rec["subtitle"]  = data.get("subtitle", "") or ""
 
-    # Print-page fallback: if the Detail panel gave too little, the print view
-    # (#printPage, ?pf=true) is a clean record dump — parse it instead.
+    # Image-viewer carries no Detail card → read it from the record detail page.
+    if len(td) < 3:
+        durl = _detail_url(url)
+        if durl:
+            pg = await ctx.new_page()
+            try:
+                await pg.goto(durl, wait_until="domcontentloaded", timeout=40000)
+                await asyncio.sleep(3)
+                d2 = await pg.evaluate(_FIELDS_JS)
+                for k, v in d2.get("fields", []):
+                    td.setdefault(k, v)
+                if not rec["household"]:
+                    rec["household"] = d2.get("household", []) or []
+                if not rec["subtitle"]:
+                    rec["subtitle"] = d2.get("subtitle", "") or ""
+                log(f"    (поля с детальной страницы: {len(td)})")
+            except Exception as e:
+                log(f"    !! детальная страница: {type(e).__name__}")
+            finally:
+                try: await pg.close()
+                except Exception: pass
+
+    # Print-page fallback: if still too little, the print view (#printPage,
+    # ?pf=true) is a clean record dump — parse it instead.
     if len(td) < 3:
         try:
             href = await page.evaluate(
@@ -957,6 +1003,23 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
 
     label = rec["title"] or name_hint
     img_dir = images_root / safe_fn(label)
+
+    # The scan downloads reliably only from the IMAGE VIEWER (Save→computer). If
+    # the record opened a detail page (discoveryui-content), hop to its viewer link
+    # so the Save flow works (otherwise RuntimeError + only a tiny thumbnail).
+    if "/imageviewer/" not in page.url:
+        try:
+            iv = await page.evaluate(
+                "() => { const a = document.querySelector('a[href*=\"/imageviewer/\"]');"
+                " return a ? a.href : ''; }")
+        except Exception:
+            iv = ""
+        if iv:
+            try:
+                await page.goto(iv, wait_until="domcontentloaded", timeout=40000)
+                await asyncio.sleep(2)
+            except Exception:
+                pass
 
     src = await _best_img(page)
     if src:
@@ -1003,8 +1066,10 @@ def _docx_add_record(doc, i, rec):
         p.add_run(f"{rec.get('score','?')}%")
 
     rows = []
-    if rec.get("collection") and rec["collection"] != rec.get("subtitle"):
-        rows.append(("Коллекция", rec["collection"]))
+    coll = (rec.get("collection") or "").strip()
+    if (coll and coll != rec.get("subtitle")
+            and coll.lower() not in ("view", "zoom in", "zoom out")):
+        rows.append(("Коллекция", coll))
     for f, v in rec.get("table_data", {}).items():
         rows.append((str(f), str(v)))
     if rows:
@@ -1305,8 +1370,10 @@ async def run_scraper(
                                              pass_imgs, logged_in_ref,
                                              email or "", password or "", log)
                     det["score"] = r["score"]
-                    if r.get("coll") and not det.get("collection"):
-                        det["collection"] = r["coll"]
+                    coll = (r.get("coll") or "").strip()
+                    if (coll and coll.lower() not in ("view", "zoom in", "zoom out")
+                            and not det.get("collection")):
+                        det["collection"] = coll      # "View" link text is junk
                     pass_recs.append(det)
                     log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
 

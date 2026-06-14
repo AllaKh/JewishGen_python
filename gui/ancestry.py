@@ -486,24 +486,35 @@ class AncestryApp(QMainWindow):
 
         self._flt = QGroupBox()
         fv = QVBoxLayout(self._flt); fv.setSpacing(4)
-        fv.addWidget(QLabel(
+        hdr = QHBoxLayout()
+        hdr.addWidget(QLabel(
             "Click ▶ to open each layer; tick any value (each becomes its own pass "
-            "/ document). Location is combined (AND) with each. Empty = plain search."))
-        # each section keeps its ticked-node checkboxes and leaf dropdowns
-        self._rt_checks,  self._rt_combos  = [], []
-        self._loc_checks, self._loc_combos = [], []
-        self._rd_checks,  self._rd_combos  = [], []
+            "/ document). Location is combined (AND) with each."))
+        hdr.addStretch()
+        self._clear_flt_btn = QPushButton("Clear all filters")
+        self._clear_flt_btn.setObjectName("addBtn")
+        self._clear_flt_btn.clicked.connect(self._clear_filters)
+        hdr.addWidget(self._clear_flt_btn)
+        fv.addLayout(hdr)
+        # each section keeps its ticked-node checkboxes, leaf dropdowns, and a
+        # path→widgets registry (so saved selections can be rebuilt lazily)
+        self._rt_checks,  self._rt_combos,  self._rt_reg  = [], [], {}
+        self._loc_checks, self._loc_combos, self._loc_reg = [], [], {}
+        self._rd_checks,  self._rd_combos,  self._rd_reg  = [], [], {}
 
         fv.addWidget(_sechead("RECORD TYPE"))
         for spec in _rt_spec():
-            fv.addLayout(self._tree_node(spec, self._rt_checks, self._rt_combos))
+            fv.addLayout(self._tree_node(spec, self._rt_checks, self._rt_combos,
+                                         self._rt_reg))
         fv.addWidget(_divider())
         fv.addWidget(_sechead("RECORD LOCATION"))
         for spec in _loc_spec():
-            fv.addLayout(self._tree_node(spec, self._loc_checks, self._loc_combos))
+            fv.addLayout(self._tree_node(spec, self._loc_checks, self._loc_combos,
+                                         self._loc_reg))
         fv.addWidget(_divider())
         fv.addWidget(_sechead("RECORD DATE"))
-        fv.addLayout(self._rd_columns(_rd_spec(), self._rd_checks, self._rd_combos))
+        fv.addLayout(self._rd_columns(_rd_spec(), self._rd_checks, self._rd_combos,
+                                      self._rd_reg))
 
         self._flt_scroll = QScrollArea()
         self._flt_scroll.setWidget(self._flt)
@@ -562,12 +573,13 @@ class AncestryApp(QMainWindow):
                               "   Filters  (Record type / Location / Date — multi-pass)")
         self._fit()
 
-    def _tree_node(self, spec, checks, combos, depth=0) -> QVBoxLayout:
+    def _tree_node(self, spec, checks, combos, reg, path=(), depth=0) -> QVBoxLayout:
         """One expandable tree node. Header = [arrow | aligned spacer] + [checkbox].
-        The body is built LAZILY on the first expand (so the window opens fast and
-        deep branches load only when opened). A 16px arrow column keeps every
-        checkbox aligned, whether or not the node has children."""
+        Body is built LAZILY on first expand (fast startup). `reg` maps a node's
+        path (tuple of labels) → {cb, open, combo} so saved selections can be
+        re-opened and re-checked across the lazy tree."""
         label, code, children, leaf = spec
+        path2 = path + (label,)
         box = QVBoxLayout(); box.setSpacing(1); box.setContentsMargins(0, 0, 0, 0)
         head = QHBoxLayout(); head.setSpacing(3)
         head.setContentsMargins(depth * 16, 0, 0, 0)
@@ -578,62 +590,68 @@ class AncestryApp(QMainWindow):
         cb = QCheckBox(label.replace("&", "&&")); cb.stateChanged.connect(self._save)
         checks.append((cb, label, code)); head.addWidget(cb); head.addStretch()
         box.addLayout(head)
+        entry = reg.setdefault(path2, {}); entry["cb"] = cb
         if has_body:
             body = QWidget(); bl = QVBoxLayout(body)
             bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(1)
             body.setVisible(False); box.addWidget(body)
             st = {"built": False}
 
-            def toggle(_=0, b=body, t=tog, lay=bl, sp=spec, dp=depth):
+            def build_once(sp=spec, lay=bl, dp=depth, p=path2):
                 if not st["built"]:
-                    self._build_body(lay, sp, checks, combos, dp)
+                    self._build_body(lay, sp, checks, combos, reg, p, dp)
                     st["built"] = True
-                vis = not b.isVisible(); b.setVisible(vis)
+
+            def toggle(_=0, b=body, t=tog):
+                build_once(); vis = not b.isVisible(); b.setVisible(vis)
                 t.setText("▼" if vis else "▶")
+
+            def open_node(b=body, t=tog):       # for restore: build + reveal
+                build_once(); b.setVisible(True); t.setText("▼")
             tog.clicked.connect(toggle)
+            entry["open"] = open_node
         return box
 
-    def _build_body(self, bl, spec, checks, combos, depth):
+    def _build_body(self, bl, spec, checks, combos, reg, path, depth):
         """Build a node's children/leaf on demand (lazy)."""
         label, code, children, leaf = spec
         if code == "35" and children:           # Census → THREE century columns
-            self._census_columns(bl, children, checks, combos, depth)
+            self._census_columns(bl, children, checks, combos, reg, path, depth)
             return
         for ch in (children or []):
-            bl.addLayout(self._tree_node(ch, checks, combos, depth + 1))
+            bl.addLayout(self._tree_node(ch, checks, combos, reg, path, depth + 1))
         if leaf:
             combo = CheckableComboBox()
             combo.add_items([(n, leaf[n]) for n in sorted(leaf)])
             combo.changed.connect(self._save); combos.append(combo)
             combo.setMinimumWidth(320)
             combo.setMaximumWidth(480)        # keep the arrow inside the window
+            reg.setdefault(path, {})["combo"] = combo
             w = QHBoxLayout(); w.addSpacing((depth + 1) * 16)
             w.addWidget(combo); w.addStretch(); bl.addLayout(w)
 
-    def _census_columns(self, bl, decade_specs, checks, combos, depth):
-        """Census decades laid out as three columns by century (1700s/1800s/1900s).
-        The years are the second level → the whole block is indented right, and
-        each decade sits one step under its century header. Each decade is still
-        expandable (arrow) to its collections."""
+    def _census_columns(self, bl, decade_specs, checks, combos, reg, path, depth):
+        """Census decades as three columns by century (1700s/1800s/1900s), the
+        whole block shifted right (years = 2nd level). Each century is a CHECKBOX
+        node (cen_century1700/1800/1900 — select the whole century), expandable to
+        its decades."""
         cols = {}
         for ch in decade_specs:                 # ch label like "1890s"
             cent = ch[0][:2] + "00s"
             cols.setdefault(cent, []).append(ch)
         row = QHBoxLayout(); row.setSpacing(20)
-        row.setContentsMargins(24, 0, 0, 0)     # shift the year block right
+        row.setContentsMargins(24, 0, 0, 0)
         for cent in sorted(cols, key=_num_key):
             colw = QWidget(); col = QVBoxLayout(colw)
             col.setContentsMargins(0, 0, 0, 0); col.setSpacing(1)
-            hdr = QLabel(cent); hdr.setStyleSheet("font-weight:bold;color:#4a6b1f;")
-            col.addWidget(hdr)
-            for ch in cols[cent]:
-                col.addLayout(self._tree_node(ch, checks, combos, 1))  # under century
+            century = (cent, "cen_century" + cent[:4], cols[cent], None)
+            col.addLayout(self._tree_node(century, checks, combos, reg, path, 0))
             col.addStretch()
             row.addWidget(colw, 0, Qt.AlignTop)
         row.addStretch()
         bl.addLayout(row)
 
-    def _rd_columns(self, century_specs, checks, combos) -> QHBoxLayout:
+    def _rd_columns(self, century_specs, checks, combos, reg) -> QHBoxLayout:
         """Record Date in THREE columns (no dropdowns): 1500s+1600s | 1700s+1800s |
         1900s+2000s. Each century opens by arrow into its decades (checkboxes)."""
         cols = {0: [], 1: [], 2: []}
@@ -645,11 +663,62 @@ class AncestryApp(QMainWindow):
             colw = QWidget(); col = QVBoxLayout(colw)
             col.setContentsMargins(0, 0, 0, 0); col.setSpacing(1)
             for spec in cols[ci]:
-                col.addLayout(self._tree_node(spec, checks, combos))
+                col.addLayout(self._tree_node(spec, checks, combos, reg))
             col.addStretch()
             row.addWidget(colw, 0, Qt.AlignTop)
         row.addStretch()
         return row
+
+    # ── filter persistence + clear ────────────────────────────────────────── #
+    def _filter_state(self) -> dict:
+        """Selected filters as paths (so they survive the lazy tree)."""
+        out = {}
+        for k, reg in (("rt", self._rt_reg), ("loc", self._loc_reg),
+                       ("rd", self._rd_reg)):
+            out[k + "_nodes"] = ["||".join(p) for p, e in reg.items()
+                                 if e.get("cb") and e["cb"].isChecked()]
+            cm = {}
+            for p, e in reg.items():
+                c = e.get("combo")
+                if c:
+                    ch = [l for l, _x in c.checked()]
+                    if ch:
+                        cm["||".join(p)] = ch
+            out[k + "_combos"] = cm
+        return out
+
+    def _restore_filters(self, d):
+        for k, reg in (("rt", self._rt_reg), ("loc", self._loc_reg),
+                       ("rd", self._rd_reg)):
+            for pj in (d.get(k + "_nodes") or []):
+                path = tuple(pj.split("||"))
+                self._open_to(reg, path[:-1])
+                e = reg.get(path)
+                if e and e.get("cb"):
+                    e["cb"].setChecked(True)
+            for pj, labels in (d.get(k + "_combos") or {}).items():
+                path = tuple(pj.split("||"))
+                self._open_to(reg, path)
+                e = reg.get(path)
+                if e and e.get("combo"):
+                    e["combo"].set_checked(labels)
+
+    @staticmethod
+    def _open_to(reg, path):
+        """Build + reveal every node along `path` so deep widgets exist."""
+        for i in range(1, len(path) + 1):
+            e = reg.get(path[:i])
+            if e and e.get("open"):
+                e["open"]()
+
+    def _clear_filters(self):
+        for reg in (self._rt_reg, self._loc_reg, self._rd_reg):
+            for e in reg.values():
+                if e.get("cb"):
+                    e["cb"].setChecked(False)
+                if e.get("combo"):
+                    e["combo"].set_checked([])
+        self._save()
 
     @staticmethod
     def _collect(checks, combos) -> list:
@@ -783,12 +852,7 @@ class AncestryApp(QMainWindow):
             "fmt_docx": self.f_docx.isChecked(), "fmt_xlsx": self.f_xlsx.isChecked(),
             "adv_open": self._adv_btn.isChecked(),
             "flt_open": self._flt_btn.isChecked(),
-            "f_rt_nodes":  [l for cb, l, _c in self._rt_checks if cb.isChecked()],
-            "f_rt_colls":  [l for cm in self._rt_combos for l, _c in cm.checked()],
-            "f_loc_nodes": [l for cb, l, _c in self._loc_checks if cb.isChecked()],
-            "f_loc_colls": [l for cm in self._loc_combos for l, _c in cm.checked()],
-            "f_rd_nodes":  [l for cb, l, _c in self._rd_checks if cb.isChecked()],
-            "f_rd_colls":  [l for cm in self._rd_combos for l, _c in cm.checked()],
+            "filters": self._filter_state(),     # full path-based filter selection
             "fam": {k: [[r["first"].text(), r["last"].text(),
                          r["first_exact"].isChecked(), r["last_exact"].isChecked()]
                         for r in rows] for k, rows in self._fam.items()},
@@ -842,18 +906,9 @@ class AncestryApp(QMainWindow):
         for e in (d.get("events") or []):
             e = (list(e) + ["", "", 1, ""])[:4]
             self._add_event_row(e[0], str(e[1]), int(e[2] or 1), str(e[3]))
-        # restore tree selections: tick node checkboxes by label, tick leaf combos
-        for nodes_key, checks, colls_key, combos in (
-                ("f_rt_nodes",  self._rt_checks,  "f_rt_colls",  self._rt_combos),
-                ("f_loc_nodes", self._loc_checks, "f_loc_colls", self._loc_combos),
-                ("f_rd_nodes",  self._rd_checks,  "f_rd_colls",  self._rd_combos)):
-            want = set(d.get(nodes_key) or [])
-            for cb, lbl, _c in checks:
-                if lbl in want:
-                    cb.setChecked(True)
-            saved = d.get(colls_key) or []
-            for cm in combos:
-                cm.set_checked(saved)
+        # restore the full filter selection (rebuilds the needed lazy branches)
+        if d.get("filters"):
+            self._restore_filters(d["filters"])
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
         if d.get("flt_open"):
@@ -988,9 +1043,23 @@ class AncestryApp(QMainWindow):
                 f"Search failed.\n\n{r.get('message','')}\n\nCheck terminal.")
             self.stlbl.setText("Error — see terminal.")
 
+    def closeEvent(self, ev):
+        # closing mid-run: cancel the scraper and let it wind down (no
+        # "QThread destroyed while running" / Playwright noise in the log)
+        w = getattr(self, "worker", None)
+        if w is not None and w.isRunning():
+            cev = getattr(self, "_cancel_ev", None)
+            if cev is not None:
+                cev.set()
+            w.wait(8000)
+        super().closeEvent(ev)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = AncestryApp()
     w.show()
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    except KeyboardInterrupt:
+        sys.exit(0)
