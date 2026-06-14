@@ -78,9 +78,54 @@ MAX_PAGES  = int(_CFG.get("max_pages", 1))     # result pages (count=50 → page
                                                # plenty; >1 re-collected dups and
                                                # dropped click-applied filters)
 MAX_SCRAPE = int(_CFG.get("max_scrape", 40))   # cap records actually opened
-# Record-type filter → Ancestry category code for /search/categories/<code>/ .
-# Only what's confirmed from a live URL; unknown → that pass is SKIPPED (no garbage).
-CATEGORY_CODES = _CFG.get("category_codes", {}) or {}
+# Filter label → Ancestry code for /search/categories/<code>/ (or collection:<id>
+# → /search/collections/<id>/, or record_f=<id> for locations). Flattened from the
+# NESTED section JSONs (record_types: category→subcategory/decade→collections;
+# locations: continent→country→states; record_dates: century→decades). The GUI
+# also sends each code inline with its selection; this map is the fallback.
+# Unknown label → that pass is SKIPPED (no garbage).
+def _load_filter_codes() -> dict:
+    codes = {}
+
+    def walk(node):                       # record-types tree (label-keyed)
+        if isinstance(node, dict):
+            if node.get("code"):
+                pass                       # node code is keyed by its parent below
+            for lbl, child in (node.get("children") or {}).items():
+                if isinstance(child, dict) and child.get("code"):
+                    codes[lbl] = child["code"]
+                walk(child)
+            for name, c in (node.get("collections") or {}).items():
+                codes[name] = c
+
+    def load(name):
+        try:
+            return json.loads((_HERE / "config" / name).read_text("utf-8"))
+        except Exception:
+            return {}
+
+    rt = load("ancestry_record_types.json")
+    for cat, d in rt.items():
+        if d.get("code"):
+            codes[cat] = d["code"]
+        walk(d)
+    for cont, d in load("ancestry_locations.json").items():
+        if d.get("code"):
+            codes[cont] = d["code"]
+        for ctry, cd in (d.get("countries") or {}).items():
+            if cd.get("code"):
+                codes[ctry] = cd["code"]
+            for st, sc in (cd.get("states") or {}).items():
+                codes[st] = sc
+    for century, d in load("ancestry_record_dates.json").items():
+        if d.get("code"):
+            codes[century] = d["code"]
+        for dec, c in (d.get("decades") or {}).items():
+            codes[dec] = c
+    codes.update(_CFG.get("category_codes", {}) or {})   # legacy overrides
+    return codes
+
+CATEGORY_CODES = _load_filter_codes()
 LOCATION_CODES = _CFG.get("location_codes", {}) or {}
 ANC_PROFILE_DIR = _HERE / ".ancestry_profile"  # persistent login/cookies
 _dl           = _CFG.get("downloads_dir", "")
@@ -564,54 +609,73 @@ async def _clear_all_filters(page, log):
 
 
 def _filter_passes(filters: dict) -> list:
-    """Cartesian product across the three areas → each pass is a dict
-    {type, location, date} (any may be None). Within an area choices are OR
-    (separate passes), across areas AND. Each pass is its own document. No
-    filters → one empty pass (plain results)."""
+    """Each pass is its own document: {type, location} (either may be None).
+
+    Record-type AND date selections are BOTH category passes (the results URL has
+    one /categories/<code>/ path, so BMD can't be combined with cen_1890) → they
+    are UNION'd, each its own pass, never crossed with each other. The all-checkbox
+    and a specific child are separate selections → separate passes. Location is a
+    different facet (a &record_f=<code> URL param) → it is crossed (AND) with every
+    category pass. No filters → one plain pass."""
     filters = filters or {}
-    t = [x for x in filters.get("types", []) if x] or [None]
-    l = [x for x in filters.get("locations", []) if x] or [None]
-    d = [x for x in filters.get("dates", []) if x] or [None]
+    cmap = filters.get("codes") or CATEGORY_CODES
+
+    def _pairs(items):
+        out = []
+        for it in items:
+            if isinstance(it, dict):
+                if it.get("label"):
+                    out.append((it["label"], it.get("code")))
+            elif it:
+                out.append((it, cmap.get(it)))
+        return out
+
+    # category dimension = record-type + date selections, each (label, code)
+    cats = _pairs(list(filters.get("types", [])) + list(filters.get("dates", []))) \
+        or [(None, None)]
+    locs = _pairs(filters.get("locations", [])) or [(None, None)]
     out, seen = [], set()
-    for ti in t:
-        for li in l:
-            for di in d:
-                key = (ti, li, di)
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append({"type": ti, "location": li, "date": di})
-    return out or [{"type": None, "location": None, "date": None}]
+    for (lab, code) in cats:
+        for (loc, lcode) in locs:
+            key = (lab, loc)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"type": lab, "code": code,
+                        "location": loc, "loc_code": lcode})
+    return out or [{"type": None, "code": None, "location": None, "loc_code": None}]
 
 
 def _pass_label(p: dict) -> str:
-    return " · ".join(x for x in (p.get("type"), p.get("location"),
-                                  p.get("date")) if x)
+    return " · ".join(x for x in (p.get("type"), p.get("location")) if x)
 
 
-def _pass_url(base_url: str, p: dict):
-    """Build the filtered results URL for one pass. Record-type (+ its decade) is a
-    PATH facet: /search/categories/<code>[_<decade>]/ (verified: cen_1890). The
-    location is applied by clicking afterwards (its URL code isn't fully known).
-    Returns (url, need_location) — or (None, …) if a record-type filter has no
-    known code (caller skips the pass instead of saving unfiltered junk)."""
-    url, ptype, pdate = base_url, p.get("type"), p.get("date")
-    decade = ""
-    if pdate:
-        m = re.search(r"(\d{4})", pdate)
-        if m:
-            decade = m.group(1)
+def _pass_url(base_url: str, p: dict, codes: dict = None):
+    """Build the filtered results URL for one pass. A record-type/date filter is a
+    PATH facet: /search/categories/<code>/ (e.g. 34, bmd_birth, 35, cen_1890,
+    cen_century1800) — or, for «collection:<id>» codes, /search/collections/<id>/.
+    A location is a &record_f=<code> query param appended on top. `codes` (from the
+    GUI payload) is preferred over the config map. Returns (url, need_location):
+    need_location is True only when a location label has NO code (click fallback).
+    Returns (None, …) if a record-type filter has no known code (caller skips)."""
+    codes = codes or CATEGORY_CODES
+    url, ptype = base_url, p.get("type")
+    code = p.get("code") or (codes.get(ptype) if ptype else None)
     if ptype:
-        code = CATEGORY_CODES.get(ptype)
         if not code:
             return None, bool(p.get("location"))     # unknown category → skip
-        seg = f"{code}_{decade}" if decade else code
-        url = base_url.replace("/search/?", f"/search/categories/{seg}/?", 1)
-    elif decade:
-        # a decade with no record-type has no known URL form → skip rather than
-        # dump unfiltered results under the decade's name.
-        return None, bool(p.get("location"))
-    return url, bool(p.get("location"))
+        if code.startswith("collection:"):
+            seg = code.split(":", 1)[1]
+            url = base_url.replace("/search/?",
+                                   f"/search/collections/{seg}/?", 1)
+        else:
+            url = base_url.replace("/search/?",
+                                   f"/search/categories/{code}/?", 1)
+    loc_code = p.get("loc_code")
+    if loc_code:                                     # location → record_f param
+        url += ("&" if "?" in url else "?") + "record_f=" + loc_code
+        return url, False
+    return url, bool(p.get("location"))              # uncoded location → click
 
 
 async def _diag(page, log):
@@ -1197,7 +1261,7 @@ async def run_scraper(
                 if _done(): break
                 pass_name = _pass_label(p)
                 # record-type (+ decade) → URL path; location → click afterwards
-                url, need_loc = _pass_url(search_url, p)
+                url, need_loc = _pass_url(search_url, p, filters.get("codes"))
                 if url is None:
                     log(f"  → нет кода фильтра для «{pass_name}» — пропускаю "
                         f"(добавь код категории в config/ancestry.json)")

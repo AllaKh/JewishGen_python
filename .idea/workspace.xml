@@ -6,6 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python 13 June">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ancestry_scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/ancestry_scraper.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/ancestry.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/ancestry.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/ancestry.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/ancestry.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -129,7 +132,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781304744617</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="JewishGen_python 13 June">
+      <option name="closed" value="true" />
+      <created>1781310232158</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1781310232158</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">

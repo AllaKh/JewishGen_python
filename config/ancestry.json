@@ -5,11 +5,9 @@
   "max_pages": 1,
   "max_scrape": 40,
 
-  "_comment_category_codes": "Record-type filter → Ancestry category code used in /search/categories/<code>/. ONLY 'Census & voter lists'='cen' is confirmed from a live URL. To add more: on the site click a category, look at the URL (…/search/categories/<CODE>/…) and put <CODE> here. A category with no code here is SKIPPED (never saved under the wrong filter).",
-  "category_codes": {
-    "Census & voter lists": "cen"
-  },
+  "_comment_filters": "Filter taxonomy now lives in the per-section files config/ancestry_record_types.json, ancestry_locations.json and ancestry_dates.json (single source of truth; the GUI loads them and also sends the codes in the payload). Edit those to add/correct filters. category_codes below is a legacy override only — leave it empty unless you need to force one label→code.",
+  "category_codes": {},
 
-  "_comment_location_codes": "Record-location filter → record_f value (e.g. USA seen as record_f=_2). Add as you find them on the site; unmapped locations are skipped.",
+  "_comment_location_codes": "Record-location filter → record_f value (e.g. USA seen as record_f=_2). Locations are otherwise applied by clicking the label on the results page. Add codes here as you find them.",
   "location_codes": {}
 }

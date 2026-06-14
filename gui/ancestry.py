@@ -15,18 +15,18 @@ Login required (persistent profile keeps the session). Logo: Ancestry.png.
 Autosave: .ancestry_autosave.json
 """
 
-import json, sys, threading
+import json, re, sys, threading
 from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
+    QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QToolButton,
     QFileDialog, QProgressBar, QMessageBox,
     QApplication, QGroupBox, QFrame, QGridLayout, QScrollArea,
 )
 from gui._app_icon import app_icon, make_header, make_cancel_button
-from PySide6.QtCore import QThread, Signal, Qt, QByteArray
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QEvent
+from PySide6.QtGui import QIcon, QStandardItem, QStandardItemModel
 
 _EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
   fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -76,47 +76,71 @@ FIRST_EXACT_OPTIONS   = ["Broad", "Exact + similar + sounds + initials",
 SURNAME_EXACT_OPTIONS = ["Broad", "Exact + sounds + similar",
                          "Exact + similar", "Exact"]
 
-# Result filters (left panel) — exact site text so the scraper can click them.
-RECORD_TYPES = [
-    ("Census & voter lists", []),
-    ("Birth, marriage & death", ["Birth, baptism & christening",
-        "Marriage & divorce", "Death, burial, cemetery & obituaries"]),
-    ("Military", ["Draft, enlistment and service", "Casualties",
-        "Soldier, veteran & prisoner rolls & lists", "Pensions"]),
-    ("Immigration & emigration", ["Passenger lists",
-        "Border crossings & passports", "Citizenship & naturalization",
-        "Immigration & emigration books"]),
-    ("Pictures", []),
-    ("Stories, memories & histories", ["Family histories, journals & biographies",
-        "Social & place histories"]),
-    ("Directories & member lists", ["City & area directories",
-        "Society & employment directories", "School lists & yearbooks"]),
-    ("Court, land, wills & financial", ["Court, governmental & criminal records"]),
-    ("Family trees", []),
-]
-RECORD_LOCATIONS = [
-    ("North America", ["USA", "Canada", "Mexico", "Jamaica", "Cuba", "Bahamas",
-        "Bermuda", "Panama", "Barbados", "Trinidad and Tobago", "Haiti",
-        "Dominican Republic", "Guatemala", "Costa Rica", "Honduras",
-        "El Salvador", "Nicaragua", "Belize", "Greenland"]),
-    ("Europe", ["United Kingdom", "Ireland", "France", "Netherlands", "Germany",
-        "Denmark", "Sweden", "Portugal", "Gibraltar", "Belgium", "Norway",
-        "Italy", "Spain", "Austria", "Hungary", "Poland", "Switzerland",
-        "Greece", "Ukraine", "Romania", "Finland", "Iceland", "Malta",
-        "Latvia", "Estonia", "Czech Republic", "Croatia", "Serbia"]),
-    ("Oceania", ["Australia", "New Zealand", "Papua New Guinea", "Fiji",
-        "Indonesia", "Tonga"]),
-    ("Asia", ["India", "Sri Lanka", "Singapore", "China", "Lebanon", "Russia",
-        "Philippines", "Pakistan", "Malaysia", "Israel", "Japan", "Iraq",
-        "Iran", "Palestine", "Thailand", "Vietnam", "Jordan", "Taiwan",
-        "Bangladesh", "Myanmar"]),
-    ("Africa", []),
-    ("South America", ["Brazil", "Argentina", "Chile", "Uruguay", "Colombia",
-        "Peru", "Bolivia", "Venezuela", "Paraguay", "Guyana", "Suriname"]),
-]
-# Record date — every decade, grouped by century (1700s … 2020s)
-RECORD_DATES = [(f"{c}s", [f"{y}s" for y in range(c, c + 100, 10)])
-                for c in (1700, 1800, 1900, 2000)]
+# Result filters (left panel) — loaded from the per-section JSONs in config/
+# (single source of truth; edit those to add/correct filters). Record-type & date
+# selections become /search/categories/<code>/ passes; the GUI carries each code
+# with its selection (collision-proof for the "1800s" century-vs-decade label).
+_CFG_DIR = _ROOT / "config"
+
+def _load_json(name, default):
+    try:
+        return json.loads((_CFG_DIR / name).read_text("utf-8"))
+    except Exception:
+        return default
+
+# The filters are an EXPANDABLE TREE, like the site (arrow opens each layer, a
+# dropdown only at the deepest leaf). Each section is converted to a uniform
+# spec tuple (label, code, children, leaf):
+#   • children = list of child spec tuples (recurse) — None at a leaf
+#   • leaf     = {name: code} → a checkable dropdown at the end (collections /
+#                states / decades). None when the node has children instead.
+# Sources (config/, single source of truth — edit to add/correct filters):
+#   record types: category → subcategory → collections   (Census → decade → colls)
+#   locations:    continent → country → states            (each a record_f code)
+#   Record Date:  century → decades                       (separate bottom facet)
+_RT  = _load_json("ancestry_record_types.json", {})
+_RD  = _load_json("ancestry_record_dates.json", {})
+LOCATIONS = _load_json("ancestry_locations.json", {})
+
+def _num_key(s):                       # numeric-aware sort (1700s < 1800s < …)
+    m = re.match(r"(\d+)", str(s))
+    return (0, int(m.group(1))) if m else (1, str(s).lower())
+
+# continents in the site's order (most records first); countries A→Z inside
+CONTINENT_ORDER = ["North America", "Europe", "Asia", "South America",
+                   "Oceania", "Africa"]
+
+def _rt_spec():
+    # categories in document (site) order; census decades chronological, other
+    # children kept in their JSON order
+    def node(label, d):
+        kids = d.get("children")
+        if kids:
+            keys = (sorted(kids, key=_num_key) if d.get("code") == "35"
+                    else list(kids))
+            return (label, d.get("code"), [node(k, kids[k]) for k in keys], None)
+        return (label, d.get("code"), None, d.get("collections") or None)
+    return [node(c, _RT[c]) for c in _RT]
+
+def _loc_spec():
+    # continent (site order) → country (A→Z) → state (A→Z) → its places (leaf)
+    out = []
+    for cont in (CONTINENT_ORDER + [c for c in LOCATIONS if c not in CONTINENT_ORDER]):
+        if cont not in LOCATIONS:
+            continue
+        cd = LOCATIONS[cont]
+        countries = []
+        for ctry in sorted(cd.get("countries", {})):
+            ccd = cd["countries"][ctry]
+            states = [(st, sd.get("code"), None, sd.get("places") or None)
+                      for st, sd in sorted(ccd.get("states", {}).items())]
+            countries.append((ctry, ccd.get("code"), states or None, None))
+        out.append((cont, cd.get("code"), countries, None))
+    return out
+
+def _rd_spec():
+    return [(c, _RD[c].get("code"), None, _RD[c].get("decades") or None)
+            for c in sorted(_RD, key=_num_key)]
 FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
                 ("Sibling", "sibling"), ("Spouse", "spouse"), ("Child", "child")]
 _FAM_LABEL = {k: l for l, k in FAMILY_TYPES}   # key → display label
@@ -156,7 +180,76 @@ QProgressBar{border:1px solid #b7cfa0;border-radius:4px;
 QProgressBar::chunk{background:#6B8E23;border-radius:3px;}
 QLabel#sechead{font-weight:bold;color:#4a6b1f;font-size:10px;margin-top:4px;}
 QFrame#div{background:#cfe0b5;}
+QToolButton#treeTog{border:none;background:transparent;color:#4a6b1f;
+  font-weight:bold;font-size:11px;padding:0;}
+QToolButton#treeTog:hover{color:#6B8E23;}
 """
+
+
+class CheckableComboBox(QComboBox):
+    """A dropdown whose items each have a checkbox (multi-select). No "any" entry —
+    nothing checked = nothing selected. Each item carries its own code. The popup
+    stays open while ticking; the line shows the checked labels."""
+    changed = Signal()
+
+    def __init__(self, placeholder="— none —"):
+        super().__init__()
+        self._ph = placeholder
+        self.setModel(QStandardItemModel(self))
+        self.setEditable(True)
+        self.lineEdit().setReadOnly(True)
+        self.lineEdit().setPlaceholderText(placeholder)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self._codes = {}
+        self.view().viewport().installEventFilter(self)
+        self.model().dataChanged.connect(lambda *a: (self._refresh(),
+                                                      self.changed.emit()))
+
+    def add_item(self, label, code=None):
+        it = QStandardItem(label)
+        it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+        it.setData(Qt.Unchecked, Qt.CheckStateRole)
+        self.model().appendRow(it)
+        self._codes[label] = code
+
+    def add_items(self, pairs):
+        for label, code in pairs:
+            self.add_item(label, code)
+
+    def clear_items(self):
+        self.model().clear()
+        self._codes = {}
+        self._refresh()
+
+    def checked(self) -> list:
+        out = []
+        for i in range(self.model().rowCount()):
+            it = self.model().item(i)
+            if it.checkState() == Qt.Checked:
+                out.append((it.text(), self._codes.get(it.text())))
+        return out
+
+    def set_checked(self, labels):
+        s = set(labels or [])
+        for i in range(self.model().rowCount()):
+            it = self.model().item(i)
+            it.setCheckState(Qt.Checked if it.text() in s else Qt.Unchecked)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.MouseButtonRelease and obj is self.view().viewport():
+            idx = self.view().indexAt(ev.pos())
+            if idx.isValid():
+                it = self.model().itemFromIndex(idx)
+                it.setCheckState(Qt.Unchecked if it.checkState() == Qt.Checked
+                                 else Qt.Checked)
+            return True                     # consume → popup stays open
+        return super().eventFilter(obj, ev)
+
+    def _refresh(self):
+        labels = [t for t, _c in self.checked()]
+        le = self.lineEdit()
+        le.setText(", ".join(labels))
+        le.setToolTip("\n".join(labels))
 
 
 class PwdEdit(QLineEdit):
@@ -381,26 +474,26 @@ class AncestryApp(QMainWindow):
         self._outer.addWidget(self._flt_btn)
 
         self._flt = QGroupBox()
-        fv = QVBoxLayout(self._flt); fv.setSpacing(6)
+        fv = QVBoxLayout(self._flt); fv.setSpacing(4)
         fv.addWidget(QLabel(
-            "Record-type filters run one at a time (OR); Location + Date are "
-            "combined (AND) with each. Leave empty for a plain search."))
-        # each subsection = checkbox «All …» + a dropdown of its children
-        self._type_all, self._type_sub = {}, {}
-        self._loc_all,  self._loc_sub  = {}, {}
-        self._date_all, self._date_sub = {}, {}
-        self._filter_parents = {}            # child label → parent label (to expand)
+            "Click ▶ to open each layer; tick any value (each becomes its own pass "
+            "/ document). Location is combined (AND) with each. Empty = plain search."))
+        # each section keeps its ticked-node checkboxes and leaf dropdowns
+        self._rt_checks,  self._rt_combos  = [], []
+        self._loc_checks, self._loc_combos = [], []
+        self._rd_checks,  self._rd_combos  = [], []
 
         fv.addWidget(_sechead("RECORD TYPE"))
-        fv.addLayout(self._filter_rows(RECORD_TYPES, self._type_all,
-                                       self._type_sub, sub_w=240))
+        for spec in _rt_spec():
+            fv.addLayout(self._tree_node(spec, self._rt_checks, self._rt_combos))
         fv.addWidget(_divider())
         fv.addWidget(_sechead("RECORD LOCATION"))
-        fv.addLayout(self._filter_rows(RECORD_LOCATIONS, self._loc_all,
-                                       self._loc_sub, sub_w=200))
+        for spec in _loc_spec():
+            fv.addLayout(self._tree_node(spec, self._loc_checks, self._loc_combos))
         fv.addWidget(_divider())
-        fv.addWidget(_sechead("RECORD DATE  (три столбика — по векам и десятилетиям)"))
-        fv.addLayout(self._date_columns(self._date_all, self._date_sub))
+        fv.addWidget(_sechead("RECORD DATE"))
+        for spec in _rd_spec():
+            fv.addLayout(self._tree_node(spec, self._rd_checks, self._rd_combos))
 
         self._flt_scroll = QScrollArea()
         self._flt_scroll.setWidget(self._flt)
@@ -447,12 +540,7 @@ class AncestryApp(QMainWindow):
             if   isinstance(w, QLineEdit): w.textChanged.connect(self._save)
             elif isinstance(w, QComboBox): w.currentTextChanged.connect(self._save)
             elif isinstance(w, QCheckBox): w.stateChanged.connect(self._save)
-        for cb in (list(self._type_all.values()) + list(self._loc_all.values())
-                   + list(self._date_all.values())):
-            cb.stateChanged.connect(self._save)
-        for combo in (list(self._type_sub.values()) + list(self._loc_sub.values())
-                      + list(self._date_sub.values())):
-            combo.currentTextChanged.connect(self._save)
+        # filter checkboxes/combos are wired to _save inside their builders
         self._fit()
 
     def _toggle_flt(self, on: bool):
@@ -464,58 +552,90 @@ class AncestryApp(QMainWindow):
                               "   Filters  (Record type / Location / Date — multi-pass)")
         self._fit()
 
-    def _filter_rows(self, groups, all_store, sub_store, sub_w=220) -> QVBoxLayout:
-        """One row per group: [✓ All <group>]  [children dropdown]. The all-checkbox
-        and a chosen child run as SEPARATE filter passes. «&» is escaped to «&&» in
-        the checkbox (Qt mnemonic); combo items show «&» fine. Records child→parent
-        in self._filter_parents so the scraper can expand a collapsed group."""
-        v = QVBoxLayout(); v.setSpacing(3)
-        for grp, children in groups:
-            row = QHBoxLayout(); row.setSpacing(8)
-            cb = QCheckBox("All " + grp.replace("&", "&&")); all_store[grp] = cb
-            cb.setMinimumWidth(230)
-            row.addWidget(cb)
-            if children:
-                combo = QComboBox(); combo.addItem("— any —")
-                for ch in children:
-                    combo.addItem(ch)
-                    self._filter_parents[ch] = grp
-                combo.setMaximumWidth(sub_w)
-                sub_store[grp] = combo
-                row.addWidget(combo)
-            row.addStretch()
-            v.addLayout(row)
-        return v
+    def _tree_node(self, spec, checks, combos, depth=0) -> QVBoxLayout:
+        """One expandable tree node. Header = [arrow | aligned spacer] + [checkbox].
+        The body is built LAZILY on the first expand (so the window opens fast and
+        deep branches load only when opened). A 16px arrow column keeps every
+        checkbox aligned, whether or not the node has children."""
+        label, code, children, leaf = spec
+        box = QVBoxLayout(); box.setSpacing(1); box.setContentsMargins(0, 0, 0, 0)
+        head = QHBoxLayout(); head.setSpacing(3)
+        head.setContentsMargins(depth * 16, 0, 0, 0)
+        has_body = bool(children or leaf)
+        tog = QToolButton(); tog.setObjectName("treeTog"); tog.setFixedWidth(16)
+        tog.setText("▶" if has_body else "")
+        tog.setEnabled(has_body); head.addWidget(tog)      # fixed col → aligned cb
+        cb = QCheckBox(label.replace("&", "&&")); cb.stateChanged.connect(self._save)
+        checks.append((cb, label, code)); head.addWidget(cb); head.addStretch()
+        box.addLayout(head)
+        if has_body:
+            body = QWidget(); bl = QVBoxLayout(body)
+            bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(1)
+            body.setVisible(False); box.addWidget(body)
+            st = {"built": False}
 
-    def _date_columns(self, all_store, sub_store) -> QHBoxLayout:
-        """Three (plus 2000s) century columns side by side: [✓ century] above a
-        dropdown of that century's decades — the «три столбика годов»."""
-        h = QHBoxLayout(); h.setSpacing(14)
-        for century, decades in RECORD_DATES:
-            col = QVBoxLayout(); col.setSpacing(3)
-            cb = QCheckBox(century); all_store[century] = cb
-            col.addWidget(cb)
-            combo = QComboBox(); combo.addItem("— any —")
-            for d in decades:
-                combo.addItem(d)
-                self._filter_parents[d] = century
-            combo.setMaximumWidth(110)
-            sub_store[century] = combo
-            col.addWidget(combo)
-            h.addLayout(col)
-        h.addStretch()
-        return h
+            def toggle(_=0, b=body, t=tog, lay=bl, sp=spec, dp=depth):
+                if not st["built"]:
+                    self._build_body(lay, sp, checks, combos, dp)
+                    st["built"] = True
+                vis = not b.isVisible(); b.setVisible(vis)
+                t.setText("▼" if vis else "▶")
+            tog.clicked.connect(toggle)
+        return box
+
+    def _build_body(self, bl, spec, checks, combos, depth):
+        """Build a node's children/leaf on demand (lazy)."""
+        label, code, children, leaf = spec
+        if code == "35" and children:           # Census → THREE century columns
+            self._census_columns(bl, children, checks, combos, depth)
+            return
+        for ch in (children or []):
+            bl.addLayout(self._tree_node(ch, checks, combos, depth + 1))
+        if leaf:
+            combo = CheckableComboBox()
+            combo.add_items([(n, leaf[n]) for n in sorted(leaf)])
+            combo.changed.connect(self._save); combos.append(combo)
+            w = QHBoxLayout(); w.addSpacing((depth + 1) * 16)
+            w.addWidget(combo, 1); bl.addLayout(w)
+
+    def _census_columns(self, bl, decade_specs, checks, combos, depth):
+        """Census decades laid out as three columns by century (1700s/1800s/1900s),
+        each decade still expandable to its collections."""
+        cols = {}
+        for ch in decade_specs:                 # ch label like "1890s"
+            cent = ch[0][:2] + "00s"
+            cols.setdefault(cent, []).append(ch)
+        row = QHBoxLayout(); row.setSpacing(20)
+        for cent in sorted(cols, key=_num_key):
+            colw = QWidget(); col = QVBoxLayout(colw)
+            col.setContentsMargins(0, 0, 0, 0); col.setSpacing(1)
+            hdr = QLabel(cent); hdr.setStyleSheet("font-weight:bold;color:#4a6b1f;")
+            col.addWidget(hdr)
+            for ch in cols[cent]:
+                col.addLayout(self._tree_node(ch, checks, combos, 0))
+            col.addStretch()
+            row.addWidget(colw, 0, Qt.AlignTop)
+        row.addStretch()
+        bl.addLayout(row)
 
     @staticmethod
-    def _area_filters(all_store, sub_store) -> list:
-        """Selected filters in one area: each ticked «All …» group + each chosen
-        dropdown child. Within an area these are OR alternatives (separate passes)."""
-        out = [g for g, cb in all_store.items() if cb.isChecked()]
-        for g, combo in sub_store.items():
-            t = combo.currentText().strip()
-            if t and not t.startswith("—"):
-                out.append(t)
+    def _collect(checks, combos) -> list:
+        """Selections in one section as [{label, code}] — every ticked node
+        checkbox + every ticked leaf-dropdown value."""
+        out = [{"label": l, "code": c} for cb, l, c in checks if cb.isChecked()]
+        for combo in combos:
+            for l, c in combo.checked():
+                out.append({"label": l, "code": c})
         return out
+
+    def _type_filters(self):
+        return self._collect(self._rt_checks, self._rt_combos)
+
+    def _location_filters(self):
+        return self._collect(self._loc_checks, self._loc_combos)
+
+    def _date_filters(self):
+        return self._collect(self._rd_checks, self._rd_combos)
 
     # ── Dynamic family-member rows ────────────────────────────────────────── #
     def _add_fam_row(self, key, first="", last="", first_exact=False, last_exact=False):
@@ -630,12 +750,12 @@ class AncestryApp(QMainWindow):
             "fmt_docx": self.f_docx.isChecked(), "fmt_xlsx": self.f_xlsx.isChecked(),
             "adv_open": self._adv_btn.isChecked(),
             "flt_open": self._flt_btn.isChecked(),
-            "f_type_all": [g for g, cb in self._type_all.items() if cb.isChecked()],
-            "f_type_sub": {g: c.currentText() for g, c in self._type_sub.items()},
-            "f_loc_all":  [g for g, cb in self._loc_all.items() if cb.isChecked()],
-            "f_loc_sub":  {g: c.currentText() for g, c in self._loc_sub.items()},
-            "f_date_all": [g for g, cb in self._date_all.items() if cb.isChecked()],
-            "f_date_sub": {g: c.currentText() for g, c in self._date_sub.items()},
+            "f_rt_nodes":  [l for cb, l, _c in self._rt_checks if cb.isChecked()],
+            "f_rt_colls":  [l for cm in self._rt_combos for l, _c in cm.checked()],
+            "f_loc_nodes": [l for cb, l, _c in self._loc_checks if cb.isChecked()],
+            "f_loc_colls": [l for cm in self._loc_combos for l, _c in cm.checked()],
+            "f_rd_nodes":  [l for cb, l, _c in self._rd_checks if cb.isChecked()],
+            "f_rd_colls":  [l for cm in self._rd_combos for l, _c in cm.checked()],
             "fam": {k: [[r["first"].text(), r["last"].text(),
                          r["first_exact"].isChecked(), r["last_exact"].isChecked()]
                         for r in rows] for k, rows in self._fam.items()},
@@ -689,19 +809,18 @@ class AncestryApp(QMainWindow):
         for e in (d.get("events") or []):
             e = (list(e) + ["", "", 1, ""])[:4]
             self._add_event_row(e[0], str(e[1]), int(e[2] or 1), str(e[3]))
-        for g in (d.get("f_type_all") or []):
-            if g in self._type_all: self._type_all[g].setChecked(True)
-        for g in (d.get("f_loc_all") or []):
-            if g in self._loc_all: self._loc_all[g].setChecked(True)
-        for g in (d.get("f_date_all") or []):
-            if g in self._date_all: self._date_all[g].setChecked(True)
-        for store, key in ((self._type_sub, "f_type_sub"),
-                           (self._loc_sub, "f_loc_sub"),
-                           (self._date_sub, "f_date_sub")):
-            for g, val in (d.get(key) or {}).items():
-                if g in store:
-                    i = store[g].findText(str(val))
-                    if i >= 0: store[g].setCurrentIndex(i)
+        # restore tree selections: tick node checkboxes by label, tick leaf combos
+        for nodes_key, checks, colls_key, combos in (
+                ("f_rt_nodes",  self._rt_checks,  "f_rt_colls",  self._rt_combos),
+                ("f_loc_nodes", self._loc_checks, "f_loc_colls", self._loc_combos),
+                ("f_rd_nodes",  self._rd_checks,  "f_rd_colls",  self._rd_combos)):
+            want = set(d.get(nodes_key) or [])
+            for cb, lbl, _c in checks:
+                if lbl in want:
+                    cb.setChecked(True)
+            saved = d.get(colls_key) or []
+            for cm in combos:
+                cm.set_checked(saved)
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
         if d.get("flt_open"):
@@ -759,10 +878,9 @@ class AncestryApp(QMainWindow):
                 "surname_level": self.f_last_exact.currentText(),
             },
             "filters": {
-                "types":     self._area_filters(self._type_all, self._type_sub),
-                "locations": self._area_filters(self._loc_all, self._loc_sub),
-                "dates":     self._area_filters(self._date_all, self._date_sub),
-                "parents":   self._filter_parents,
+                "types":     self._type_filters(),       # [{label, code}]
+                "dates":     self._date_filters(),       # [{label, code}]
+                "locations": self._location_filters(),   # [{label, code}] record_f
             },
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
