@@ -863,9 +863,22 @@ _FIELDS_JS = r"""() => {
         if (kids.length !== 2) continue;
         if (kids.some(c => c.querySelector && c.querySelector('table,td,th,tr,li')))
             continue;
-        const k = norm(kids[0].innerText), v = norm(kids[1].innerText);
-        if (k.includes('\n') || v.includes('\n')) continue;   // not a clean field
-        if (k.length < 45 && v.length < 200) push(k, v);
+        const k = norm(kids[0].innerText);
+        if (k.includes('\n') || k.length >= 45) continue;
+        // a value that is a LIST of people (e.g. «Others in Record») renders as
+        // separate LINKS → innerText glues them («Anna SmithJohn Smith»). Split on
+        // the <a> children (dedup, drop the «More»/«See all» control) → one per line.
+        const links = [...kids[1].querySelectorAll('a')]
+            .map(a => norm(a.innerText)).filter(Boolean);
+        const JUNK = /^(more|see all|see less|show more|view|\+?\s*\d+\s*more)$/i;
+        let v;
+        if (links.length >= 2) {
+            v = [...new Set(links.filter(x => !JUNK.test(x)))].join('\n');
+        } else {
+            v = norm(kids[1].innerText);
+            if (v.includes('\n')) continue;          // glued mega-cell → skip
+        }
+        if (v && v.length < 800) push(k, v);
     }
     // Household members table — ONLY a real «Household Members» table, short cells
     // (a wide neighbours table would glue, so reject long cells).
@@ -1376,6 +1389,35 @@ async def run_scraper(
                         det["collection"] = coll      # "View" link text is junk
                     pass_recs.append(det)
                     log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
+
+                # dedup: Ancestry lists the SAME record on several image refs, so
+                # URL dedup misses it. Within one title (collection + person) merge
+                # records whose fields DON'T conflict (one is a sparse copy of the
+                # other) → keep the richest. Different people (conflicting Age /
+                # Residence / …) keep their own entry.
+                def _rich(x):
+                    return (len(x.get("table_data") or {}),
+                            len(x.get("household") or []),
+                            1 if x.get("images") else 0)
+                def _compat(a, b):
+                    ta, tb = a.get("table_data") or {}, b.get("table_data") or {}
+                    for k in set(ta) & set(tb):
+                        if str(ta[k]).strip().lower() != str(tb[k]).strip().lower():
+                            return False        # conflicting field → different person
+                    return True
+                deduped = []
+                for rec in pass_recs:
+                    title = (rec.get("title") or rec.get("name") or "").strip().lower()
+                    hit = next((k for k in deduped
+                                if (k.get("title") or k.get("name") or "").strip().lower()
+                                == title and _compat(rec, k)), None)
+                    if hit is None:
+                        deduped.append(rec)
+                    elif _rich(rec) > _rich(hit):
+                        deduped[deduped.index(hit)] = rec
+                if len(deduped) < len(pass_recs):
+                    log(f"  → дубликатов убрано: {len(pass_recs) - len(deduped)}")
+                pass_recs = deduped
 
                 if not pass_recs:
                     if pass_name:

@@ -119,6 +119,103 @@ def _year_range(year, span: int = 2):
     return (y - span, y + span) if y else (None, None)
 
 
+def _fs_url(first_names, last_names, place_lived, birth_year, year_range,
+            exact, adv) -> str:
+    """Build the FamilySearch results URL with every q.*/f.* param straight from
+    the form — the reliable, site-matching alternative to the advanced popup.
+    Mirrors the live URL: q.givenName / q.surname (+.exact), q.birthLikeDate
+    .from/.to/.exact, q.<event>Date/.Place, q.{spouse,father,mother,other}{GivenName
+    ,Surname} (repeated for up to 3 each), q.recordCountry / q.recordSubcountry,
+    q.batchNumber, q.filmNumber, q.isPrincipal, f.recordType=0..7."""
+    from urllib.parse import quote
+    exact = exact or {}
+    adv = adv or {}
+    parts = ["tab=records", "page=1", "results=60"]
+
+    def add(k, v):
+        parts.append(f"{k}={quote(str(v), safe='')}")
+
+    if first_names:
+        add("q.givenName", first_names)
+        if exact.get("name"): parts.append("q.givenName.exact=on")
+    if last_names:
+        add("q.surname", last_names)
+        if exact.get("surname"): parts.append("q.surname.exact=on")
+    # alternate names of the principal → indexed «.1/.2/.3» on the own name params
+    # (best-effort: this exact param wasn't in the user's sample URL).
+    for i, a in enumerate(adv.get("alt_names") or [], start=1):
+        if a.get("first"):
+            add(f"q.givenName.{i}", a["first"])
+            if a.get("first_exact"): parts.append(f"q.givenName.exact.{i}=on")
+        if a.get("last"):
+            add(f"q.surname.{i}", a["last"])
+            if a.get("last_exact"): parts.append(f"q.surname.exact.{i}=on")
+    sex = adv.get("sex")
+    if sex and sex != "Unspecified": add("q.sex", sex)
+    if adv.get("keywords"): add("q.text", adv["keywords"])
+
+    # ── life events: Birth / Marriage / Residence / Death / Any ──────────────
+    # each carries Place (+own exact) and a Year with a ± range (+own date exact).
+    # «this year» / Exact (range 0) → only «.from» (no «.to»), matching the live
+    # URL; ±N → from=year-N & to=year+N. The «Exact +/-» tick = «.exact=on», an
+    # INDEPENDENT flag (birth «this year» has no .exact; ±2 death may have it).
+    EVD = {"birth": "birthLikeDate", "marriage": "marriageLikeDate",
+           "death": "deathLikeDate", "residence": "residenceDate", "any": "anyDate"}
+    EVP = {"birth": "birthLikePlace", "marriage": "marriageLikePlace",
+           "death": "deathLikePlace", "residence": "residencePlace", "any": "anyPlace"}
+    events = dict(adv.get("events") or {})
+    if birth_year and "birth" not in events:        # legacy basic Birth Year
+        events["birth"] = {"year": birth_year, "range": year_range,
+                           "place": place_lived, "place_exact": exact.get("place")}
+    elif place_lived and "any" not in events:       # legacy basic Place → any place
+        add("q.anyPlace", place_lived)
+        if exact.get("place"): parts.append("q.anyPlace.exact=on")
+    for key, ev in events.items():
+        if key not in EVD:
+            continue
+        yr = str(ev.get("year") or "").strip()
+        if yr.isdigit():
+            y, n = int(yr), int(ev.get("range") or 0)
+            if n <= 0:
+                add(f"q.{EVD[key]}.from", y)
+            else:
+                add(f"q.{EVD[key]}.from", y - n); add(f"q.{EVD[key]}.to", y + n)
+            if ev.get("date_exact"): parts.append(f"q.{EVD[key]}.exact=on")
+        if ev.get("place"):
+            add(f"q.{EVP[key]}", ev["place"])
+            if ev.get("place_exact"): parts.append(f"q.{EVP[key]}.exact=on")
+
+    # ── family members: up to 3 of each; 1st = base param, 2nd = «.1», 3rd = «.2».
+    # exact flag is «q.<field>.exact», «q.<field>.exact.1», «q.<field>.exact.2».
+    FAMQ = {"spouse": ("spouseGivenName", "spouseSurname"),
+            "father": ("fatherGivenName", "fatherSurname"),
+            "mother": ("motherGivenName", "motherSurname"),
+            "other":  ("otherGivenName",  "otherSurname")}
+    for key, people in (adv.get("family") or {}).items():
+        gk, sk = FAMQ.get(key, (None, None))
+        if not gk:
+            continue
+        for i, p in enumerate(people[:3]):
+            sfx = "" if i == 0 else f".{i}"          # base / .1 / .2
+            if p.get("first"):
+                add(f"q.{gk}{sfx}", p["first"])
+                if p.get("first_exact"): parts.append(f"q.{gk}.exact{sfx}=on")
+            if p.get("last"):
+                add(f"q.{sk}{sfx}", p["last"])
+                if p.get("last_exact"): parts.append(f"q.{sk}.exact{sfx}=on")
+
+    if adv.get("country"):
+        add("q.recordCountry", adv["country"])
+        if adv.get("state"):
+            add("q.recordSubcountry", f"{adv['country']},{adv['state']}")
+    if adv.get("batch"):     add("q.batchNumber", adv["batch"])
+    if adv.get("film"):      add("q.filmNumber", adv["film"])
+    if adv.get("principal"): parts.append("q.isPrincipal=true")
+    for i in (adv.get("record_types") or []):
+        parts.append(f"f.recordType={i}")
+    return "https://www.familysearch.org/en/search/discovery/results?" + "&".join(parts)
+
+
 def _apply_exact(url: str, exact: dict) -> str:
     """Add `.exact=on` to whichever q.* params FS already put in the results URL,
     for the fields the user ticked «Exact». Field-name-agnostic — we read what FS
@@ -1284,6 +1381,7 @@ async def run_scraper(
     last_names:    str       = "",
     place_lived:   str       = "",
     birth_year:    str       = "",
+    year_range:    int       = 0,    # ± years on the birth year (0 = exact)
     tab:           str       = "Historical Records",
     advanced:      dict|None = None,
     exact:         dict|None = None,
@@ -1350,53 +1448,31 @@ async def run_scraper(
             except Exception: pass
 
         try:
-            # ── 1. ПОИСК ──────────────────────────────────────────────── #
+            # ── 1. SEARCH via the full results URL (all q.*/f.* params) ──── #
+            # Build the FamilySearch results URL straight from the form (name,
+            # birth-year range, life events, family members ×3, record country /
+            # subcountry, record types, batch / film / principal). Reliable and
+            # matches the site URL — no fragile advanced-popup form filling.
             _prog(5, "Поиск...")
-            await _search(page, first_names, last_names,
-                          place_lived, birth_year, log, exact=exact)
+            url = _fs_url(first_names, last_names, place_lived, birth_year,
+                          year_range, exact, adv)
+            log(f"  Открываю результаты: {url}")
+            await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+            await asyncio.sleep(5)
             if _done(): return summary
 
-            # ── 2. ТАБ HISTORICAL RECORDS (строки видны без логина) ───── #
-            _prog(12, "Historical Records tab...")
-            await _click_hr(page, log)
-            if _done(): return summary
-            # the HR tab can drop the birth-year filter — re-pin it
-            await _ensure_year_in_url(page, birth_year, log, exact=exact)
-
-            # ── 3. ЛОГИН ОДИН РАЗ — ДО открытия записей ──────────────── #
-            # Sign in now (or skip if the persistent profile already holds the
-            # session) so the first record is NEVER the login page and Advanced
-            # Search opens on a logged-in results page.
+            # ── 2. ЛОГИН ОДИН РАЗ — ДО открытия записей ──────────────── #
+            # HR rows show without login; sign in now so opening a record later
+            # never lands on the login page. The URL already carries tab=records
+            # + every filter, so we must NOT click the HR tab (it rebuilds the
+            # URL and would drop the filters — known FS behaviour).
             _prog(16, "Sign in...")
             await _sign_in_if_needed(page, email or "", password or "",
                                      logged_in_ref, log)
             if _done(): return summary
-
-            # ── 4. РАСШИРЕННЫЙ ПОИСК ДО СКРАПИНГА ────────────────────── #
-            # Advanced Search narrows the result set BEFORE we scrape (e.g. the
-            # one spouse match), so we collect exactly the right records — not a
-            # dozen namesakes. It runs on a logged-in page now, so the form
-            # button is reliably present.
-            if has_adv:
-                _prog(20, "Advanced Search: reload...")
-                await page.reload(wait_until="domcontentloaded", timeout=20000)
-                await asyncio.sleep(3)
-                await _click_hr(page, log)
-                await asyncio.sleep(1)
-                _prog(24, "Advanced Search...")
-                await _advanced(page, adv, log)
-                await asyncio.sleep(2)
-                await _ensure_year_in_url(page, birth_year, log, exact=exact)
-                # the advanced form rebuilt the URL — re-pin exact name/surname/place
-                u_now = page.url
-                u_ex  = _apply_exact(u_now, exact)
-                if u_ex != u_now and "discovery/results" in u_now:
-                    try:
-                        await page.goto(u_ex, wait_until="domcontentloaded",
-                                        timeout=20000)
-                        await asyncio.sleep(3)
-                    except Exception:
-                        pass
+            if "discovery/results" not in page.url:   # login navigated away → back
+                await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+                await asyncio.sleep(4)
 
             # ── 5. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(28, "Сбор результатов...")
