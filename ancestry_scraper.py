@@ -864,19 +864,20 @@ _FIELDS_JS = r"""() => {
         if (kids.some(c => c.querySelector && c.querySelector('table,td,th,tr,li')))
             continue;
         const k = norm(kids[0].innerText);
-        if (k.includes('\n') || k.length >= 45) continue;
-        // a value that is a LIST of people (e.g. «Others in Record») renders as
-        // separate LINKS → innerText glues them («Anna SmithJohn Smith»). Split on
-        // the <a> children (dedup, drop the «More»/«See all» control) → one per line.
+        let v = norm(kids[1].innerText);
+        if (k.includes('\n') || v.includes('\n')) continue;   // not a clean field
+        if (k.length >= 45 || v.length >= 800) continue;
+        // «Others in Record» etc.: a glued LIST of person links («Anna SmithJohn
+        // Smith»). Split into lines ONLY when the links reconstruct the WHOLE value
+        // (a pure list) — never when the value is plain text + helper links
+        // (Search / View), which must keep its text value untouched.
         const links = [...kids[1].querySelectorAll('a')]
             .map(a => norm(a.innerText)).filter(Boolean);
-        const JUNK = /^(more|see all|see less|show more|view|\+?\s*\d+\s*more)$/i;
-        let v;
-        if (links.length >= 2) {
-            v = [...new Set(links.filter(x => !JUNK.test(x)))].join('\n');
-        } else {
-            v = norm(kids[1].innerText);
-            if (v.includes('\n')) continue;          // glued mega-cell → skip
+        if (links.length >= 2 &&
+            links.join('').replace(/\s/g,'') === v.replace(/\s/g,'')) {
+            const JUNK = /^(more|see all|see less|show more|view|\+?\s*\d+\s*more)$/i;
+            const names = [...new Set(links.filter(x => !JUNK.test(x)))];
+            if (names.length >= 2) v = names.join('\n');
         }
         if (v && v.length < 800) push(k, v);
     }
@@ -1401,7 +1402,10 @@ async def run_scraper(
                             1 if x.get("images") else 0)
                 def _compat(a, b):
                     ta, tb = a.get("table_data") or {}, b.get("table_data") or {}
-                    for k in set(ta) & set(tb):
+                    common = set(ta) & set(tb)
+                    if not common:
+                        return False        # no shared fields → can't confirm same record
+                    for k in common:
                         if str(ta[k]).strip().lower() != str(tb[k]).strip().lower():
                             return False        # conflicting field → different person
                     return True
