@@ -72,12 +72,20 @@ _READ_JS = r"""() => {
     const seen = new Set(), out = [];
     for (const a of document.querySelectorAll('a[href*="/category-"]')) {
         const href = a.href || '';
+        if (!/^https?:/i.test(href)) continue;          // skip javascript:/relative
         const m = href.match(/\/category-(\d+)/);
         if (!m) continue;
         const code = m[1];
         if (seen.has(code)) continue;
         const nm = a.querySelector('.name');
         let label = norm(nm ? nm.textContent : a.textContent);
+        // strip the trailing result count: «Birth Records1,526,476,780 records» →
+        // «Birth Records», «Maps5,232» → «Maps», «Photos10,000+» → «Photos».
+        // Only strips «N records» or a comma-grouped/«+» number (so a real trailing
+        // digit like «World War 2» is kept).
+        label = label.replace(/\s*\d[\d.,\s]*records?\b.*$/i, '')
+                     .replace(/\s*\d{1,3}(?:,\d{3})+\+?\s*$/, '')
+                     .replace(/\s+/g, ' ').trim();
         if (!label || label.length > 90) continue;
         seen.add(code);
         out.push([label, code, href]);
@@ -153,6 +161,41 @@ async def read_options(page):
     except Exception as e:
         log(f"    !! read_options: {type(e).__name__}: {e}")
         return []
+
+
+_SEE_ALL_RE = re.compile(
+    r"^(show all|see all|show more|view all|more categories|all categories|more)\b",
+    re.I)
+
+
+async def expand_see_all(page):
+    """Click «Show more / See all» inside the category facet so the FULL list is in
+    the DOM before we read it — the results facet shows only the first few + a «more»
+    control, which is why ROOT was coming back with 5 of the 15 categories."""
+    for _ in range(5):
+        clicked = False
+        try:
+            els = await page.query_selector_all(
+                "a, button, span[role='button'], [class*='see' i], "
+                "[class*='show-more' i], [class*='showmore' i], [class*='more' i]")
+            for el in els:
+                try:
+                    txt = (await el.inner_text() or "").strip()
+                except Exception:
+                    continue
+                if txt and _SEE_ALL_RE.match(txt):
+                    try:
+                        if await el.is_visible():
+                            await el.click()
+                            clicked = True
+                            await asyncio.sleep(0.7)
+                            break
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        if not clicked:
+            break
 
 
 async def crawl(args):
@@ -254,6 +297,7 @@ async def crawl(args):
                         await asyncio.sleep(args.delay / 1000)
                         if await _is_blocked(page):
                             raise _Blocked()
+                    await expand_see_all(page)         # reveal the full category list
                     opts = await read_options(page)
                     kids = []
                     for label, code, href in opts:
@@ -291,19 +335,25 @@ async def crawl(args):
 
 def _merge(nodes: list, dry: bool):
     """Flat {code,label,depth,parent} → nested ENGLISH {label:{children:{…}}}.
-    Built fresh from the crawl (which includes everything resumed), so no stale junk."""
-    tree: dict = {}
+    PRESERVES the existing JSON (loads it, only ADDS) so a partial / interrupted
+    crawl never deletes categories — the «JSON shrank from 15 to 5» bug. To start
+    clean, delete config/myheritage_categories.json yourself."""
+    jp = _CONFIG / SITE["json"]
+    tree = json.loads(jp.read_text("utf-8")) if jp.exists() else {}
     dict_of: dict = {}                          # code → its node dict in the tree
+    added = 0
     for n in sorted(nodes, key=lambda x: x["depth"]):    # parents before children
         label = _to_english(n["label"])
         parent = n.get("parent")
-        container = (dict_of[parent]["children"]
+        container = (dict_of[parent].setdefault("children", {})
                      if parent in dict_of else tree)
         if label not in container:
             container[label] = {"children": {}}
+            added += 1
+        container[label].setdefault("children", {})
         dict_of[n["code"]] = container[label]
-    jp = _CONFIG / SITE["json"]
-    log(f"categories: {sum(1 for _ in nodes)} nodes → tree with {len(tree)} roots")
+    log(f"categories: +{added} new ({len(nodes)} nodes crawled, "
+        f"{len(tree)} roots total)")
     if not dry:
         jp.write_text(json.dumps(tree, ensure_ascii=False, indent=2), "utf-8")
         log(f"  wrote {jp}")

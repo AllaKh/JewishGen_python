@@ -1,17 +1,47 @@
 {
-  "All Collections": {"children": {}},
-  "Schools & Universities": {"children": {}},
-  "Census & Voter Lists": {"children": {}},
-  "Directories, Guides & References": {"children": {}},
-  "Histories, Memories & Biographies": {"children": {}},
-  "Maps": {"children": {}},
-  "Books & Publications": {"children": {}},
-  "Birth, Marriage & Death": {"children": {}},
-  "Immigration & Travel": {"children": {}},
-  "Public Records": {"children": {}},
-  "Military": {"children": {}},
-  "Photos": {"children": {}},
-  "Government, Land, Court & Wills": {"children": {}},
-  "Family Trees": {"children": {}},
-  "Newspapers": {"children": {}}
+  "All Collections": {
+    "children": {}
+  },
+  "Schools & Universities": {
+    "children": {}
+  },
+  "Census & Voter Lists": {
+    "children": {}
+  },
+  "Directories, Guides & References": {
+    "children": {}
+  },
+  "Histories, Memories & Biographies": {
+    "children": {}
+  },
+  "Maps": {
+    "children": {}
+  },
+  "Books & Publications": {
+    "children": {}
+  },
+  "Birth, Marriage & Death": {
+    "children": {}
+  },
+  "Immigration & Travel": {
+    "children": {}
+  },
+  "Public Records": {
+    "children": {}
+  },
+  "Military": {
+    "children": {}
+  },
+  "Photos": {
+    "children": {}
+  },
+  "Government, Land, Court & Wills": {
+    "children": {}
+  },
+  "Family Trees": {
+    "children": {}
+  },
+  "Newspapers": {
+    "children": {}
+  }
 }
