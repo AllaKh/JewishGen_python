@@ -843,7 +843,18 @@ async def _apply_facets(page, values, log):
             btn = page.locator(sel).first
             if await btn.count():
                 await btn.click(timeout=4000)
-                await asyncio.sleep(3)
+                # gwar reloads the result list by AJAX — WAIT for it (the «ссылок 0»
+                # bug was collecting before the filtered results came back).
+                for _ in range(30):
+                    await asyncio.sleep(0.5)
+                    try:
+                        if await page.evaluate(
+                                "() => document.querySelectorAll("
+                                "'a[href*=\"/heroes/chelovek\"]').length"):
+                            break
+                    except Exception:
+                        pass
+                await asyncio.sleep(1)
                 return
         except Exception:
             pass

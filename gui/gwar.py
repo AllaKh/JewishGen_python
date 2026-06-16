@@ -266,12 +266,14 @@ class GwarApp(QMainWindow):
                                         on_change=self._save)
         self._fc_losses  = _FacetChecks(FACETS.get("losses", []), max_h=210,
                                         on_change=self._save)
-        fgl.addWidget(QLabel("Information sources:"), 0, 0)
+        fgl.addWidget(self._facet_hdr("Information sources:", self._fc_sources), 0, 0)
         fgl.addWidget(self._fc_sources, 1, 0)
-        fgl.addWidget(QLabel("Notable persons:"), 2, 0)
+        fgl.addWidget(self._facet_hdr("Notable persons:", self._fc_known), 2, 0)
         fgl.addWidget(self._fc_known, 3, 0)
-        fgl.addWidget(QLabel("Awards:"), 0, 1); fgl.addWidget(self._fc_awards, 1, 1, 3, 1)
-        fgl.addWidget(QLabel("Losses:"), 0, 2); fgl.addWidget(self._fc_losses, 1, 2, 3, 1)
+        fgl.addWidget(self._facet_hdr("Awards:", self._fc_awards), 0, 1)
+        fgl.addWidget(self._fc_awards, 1, 1, 3, 1)
+        fgl.addWidget(self._facet_hdr("Losses:", self._fc_losses), 0, 2)
+        fgl.addWidget(self._fc_losses, 1, 2, 3, 1)
         self._facet_box.setVisible(False)
         outer.addWidget(self._facet_box)
 
@@ -341,6 +343,18 @@ class GwarApp(QMainWindow):
         self.f_exact.stateChanged.connect(self._save)
         for cb in self._sec_cbs.values():
             cb.stateChanged.connect(self._save)
+
+    def _facet_hdr(self, name, fc):
+        """A facet section label with «all» / «none» buttons (По умолчанию / Сбросить)."""
+        w = QWidget(); h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(4)
+        h.addWidget(QLabel(name))
+        ba = QPushButton("all"); ba.setObjectName("advBtn"); ba.setFixedWidth(36)
+        ba.clicked.connect(lambda _=0, f=fc: (f.set_all(True), self._save()))
+        bn = QPushButton("none"); bn.setObjectName("advBtn"); bn.setFixedWidth(44)
+        bn.clicked.connect(lambda _=0, f=fc: (f.set_all(False), self._save()))
+        h.addWidget(ba); h.addWidget(bn); h.addStretch()
+        return w
 
     def _toggle_facets(self, on):
         self._facet_box.setVisible(on)
