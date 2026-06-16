@@ -195,8 +195,10 @@ async def crawl(args):
 
     max_depth = args.depth or SITE["max_depth"]
 
-    # nodes: flat list of {path: [str…], label: str, depth: int}
-    # path[i] = parent's English label at level i+1; depth = the node's own level.
+    # nodes: flat list of {path: [str…], label: str, depth: int}.
+    # CRITICAL: label/path hold the RAW site text exactly as read from the page, so
+    # clicking always matches (the page is whatever language the account renders).
+    # Translation to English happens ONLY in _merge when writing the JSON.
     nodes: list = []
     visited: set = set()        # (tuple(path), label) keys — drops re-recordings
 
@@ -210,8 +212,8 @@ async def crawl(args):
             prev = []
         for n in prev:
             d = n.get("depth", 99)
-            label = _to_english(n.get("label") or "")
-            path  = [_to_english(p) for p in n.get("path") or []]
+            label = n.get("label") or ""          # RAW label — do NOT translate
+            path  = list(n.get("path") or [])     # RAW path
             if d <= max_depth and label:
                 key = (tuple(path), label)
                 if key not in visited:
@@ -253,9 +255,17 @@ async def crawl(args):
                     log(f"  login: {type(e).__name__}: {e}")
 
             # Pick the family site so /research?s=<id>… works (the generic URL 404s).
+            # FORCE lang=EN so the category facet renders in English → the JSON stays
+            # English (the account may still override to its UI language, but we read
+            # the RAW labels and translate at merge, so clicking works regardless).
             try:
+                import re as _re
                 site_url = await M._handle_select_site(page, None, log)
                 if site_url:
+                    if _re.search(r"[?&]lang=", site_url):
+                        site_url = _re.sub(r"([?&]lang=)[A-Za-z]+", r"\1EN", site_url)
+                    else:
+                        site_url += ("&" if "?" in site_url else "?") + "lang=EN"
                     search_url = site_url
                     log(f"  research URL: {search_url}")
             except Exception as e:
@@ -284,15 +294,14 @@ async def crawl(args):
                         log(f"  !! read_js: {type(e).__name__}: {e}")
                         labels = []
                     kids = []
-                    for raw_label in labels:
-                        en = _to_english(raw_label)
-                        ckey = (tuple(path), en)
+                    for raw_label in labels:        # store the RAW site text
+                        ckey = (tuple(path), raw_label)
                         if ckey in visited:
                             continue
                         visited.add(ckey)
-                        nodes.append({"path": list(path), "label": en,
+                        nodes.append({"path": list(path), "label": raw_label,
                                       "depth": depth + 1})
-                        kids.append(en)
+                        kids.append(raw_label)
                     done_paths.add(key)
                     kids_of[key] = kids
                     log(f"{indent}[{path[-1] if path else 'ROOT'}] → {len(kids)} "
@@ -304,8 +313,9 @@ async def crawl(args):
                         pass
                 if depth + 1 < max_depth:
                     for child in kids:
-                        if child == SITE["all_label"]:
-                            continue       # «All Collections» = no narrowing
+                        # «All Collections» (any language) = no narrowing → skip
+                        if _to_english(child).strip().lower() == "all collections":
+                            continue
                         await visit(path + [child], depth + 1)
 
             log(f"==== crawling MyHeritage categories (max depth {max_depth}) ====")
@@ -319,12 +329,12 @@ async def crawl(args):
 
 
 def _merge(nodes: list, dry: bool):
-    """nodes [{path, label, depth}] → nested {label:{children:{…}}}.
-
-    Ancestry-style: no counts, no codes — just labels and nested children. Keeps
-    every existing entry; only adds new ones."""
+    """nodes [{path, label, depth}] (RAW site labels) → nested English tree
+    {label:{children:{…}}}. Ancestry-style: no counts, no codes — just labels and
+    nested children. The tree is REBUILT fresh from the crawl nodes (which include
+    everything resumed from the dump), so stale junk never accumulates."""
     jp = _CONFIG / SITE["json"]
-    tree = json.loads(jp.read_text("utf-8")) if jp.exists() else {}
+    tree: dict = {}
 
     def _walk_to(parent_path):
         """Walk the tree to the dict that should hold this node's siblings, adding
