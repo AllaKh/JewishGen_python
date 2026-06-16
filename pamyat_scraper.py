@@ -1100,6 +1100,64 @@ def write_docx(path, persons, qlines, append=False):
     doc.save(str(path))
 
 
+async def _apply_info_sources(page, values, log):
+    """On the RESULTS page: click «Сбросить» (uncheck ALL sources — they're ON by
+    default), then tick ONLY the GUI-selected sources (RU values), then «Применить».
+    The sidebar loads by AJAX, so we wait + retry the tick."""
+    wanted = [v for v in (values or []) if v]
+    if not wanted:
+        return
+    # 1) RESET — uncheck every source first (the user's explicit flow)
+    for sel in ('span.a-reset', '.a-reset.u', 'span:has-text("Сбросить")'):
+        try:
+            b = page.locator(sel).first
+            if await b.count() and await b.is_visible():
+                await b.click(timeout=3000)
+                await asyncio.sleep(1.0)
+                break
+        except Exception:
+            pass
+    # 2) tick the chosen sources (wait for the AJAX sidebar, retry)
+    CLICK_JS = r"""(values) => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        let n = 0;
+        for (const val of values) {
+            const want = norm(val);
+            let el = null;
+            for (const s of document.querySelectorAll(
+                    '.field-check-box-name-value, .field-check-box-name')) {
+                if (norm(s.textContent) === want) { el = s; break; }
+            }
+            if (!el) continue;
+            let t = el;
+            for (let i = 0; i < 5 && t; i++) { try { t.click(); } catch (e) {} t = t.parentElement; }
+            n++;
+        }
+        return n;
+    }"""
+    clicked = 0
+    for _ in range(20):
+        try:
+            clicked = await page.evaluate(CLICK_JS, wanted)
+        except Exception:
+            clicked = 0
+        if clicked >= len(wanted):
+            break
+        await asyncio.sleep(0.6)
+    log(f"  Источники: отмечено {clicked}/{len(wanted)}")
+    # 3) APPLY
+    for sel in ('input.heroes-filter-button[value="Применить"]',
+                'input.heroes-filter-button', 'input[value="Применить"]'):
+        try:
+            b = page.locator(sel).first
+            if await b.count():
+                await b.click(timeout=4000)
+                await asyncio.sleep(2.5)
+                return
+        except Exception:
+            pass
+
+
 # ── Main entry point ──────────────────────────────────────────────────────── #
 async def run_scraper(*,
     lang="ru",
@@ -1129,8 +1187,7 @@ async def run_scraper(*,
 
     info_sources = [s for s in (info_sources or []) if s]
     if info_sources:
-        # Applied on the search form once the exact source-checkbox DOM is confirmed
-        # (the user will send the Память-народа details); collected + logged for now.
+        # Applied on the RESULTS page by _apply_info_sources (Сбросить → tick → Применить).
         log(f"  Источники информации (выбрано): {len(info_sources)}")
 
     def _done():
@@ -1180,6 +1237,12 @@ async def run_scraper(*,
                 return summary
             if _done():
                 return summary
+
+            if info_sources:                       # Сбросить → tick chosen → Применить
+                _prog(12, "Источники информации…")
+                await _apply_info_sources(page, info_sources, log)
+                if _done():
+                    return summary
 
             _prog(15, "Сбор результатов…")
             people = await _collect_results(page, params, log, max_pages, max_persons)

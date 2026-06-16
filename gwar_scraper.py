@@ -772,31 +772,33 @@ def write_docx(path, records, qlines, append=False):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────── #
+async def _reset_facets(page, log):
+    """Click «Сбросить» so the sidebar returns to a clean state before we tick our
+    own filter (the user's flow: reset → pick → Применить → … → reset → next)."""
+    for sel in ('span.js-a-set-default_reset', 'span.a-set-default_reset',
+                '.js-a-set-default_reset', 'span.a-reset',
+                'span:has-text("Сбросить")'):
+        try:
+            b = page.locator(sel).first
+            if await b.count() and await b.is_visible():
+                await b.click(timeout=3000)
+                await asyncio.sleep(1.2)
+                return True
+        except Exception:
+            pass
+    return False
+
+
 async def _apply_facets(page, values, log):
-    """Tick the given facet values (RU text / data-facet-value) on the results sidebar
-    and click «Применить» so gwar narrows server-side. Awards/Losses lists are revealed
-    by the section's лупа, so we type the value there first, then click its checkbox. If
-    a value isn't present in the current results it's silently skipped (user's spec).
-    Best-effort — the live site is unreachable from dev, validate on a real run."""
+    """Reset the sidebar, then tick the given facet values (RU text / data-facet-value)
+    and click «Применить» so gwar narrows server-side. The facet sidebar loads by AJAX
+    after the search, so we WAIT for it and RETRY the tick (the «0/1 applied» bug was a
+    one-shot click before the sidebar had rendered). Values not present are skipped."""
     wanted = [v for v in (values or []) if v]
     if not wanted:
         return
 
-    # 1) reveal hidden facet rows: type each value into every facet search box (лупа)
-    try:
-        await page.evaluate(
-            r"""(values) => {
-                const boxes = [...document.querySelectorAll(
-                    'input.field-text, .facet-search-button + input, input[data-placeholder]')];
-                for (const inp of boxes) {
-                    try {
-                        inp.value = '';
-                        inp.dispatchEvent(new Event('input', {bubbles: true}));
-                    } catch (e) {}
-                }
-            }""", wanted)
-    except Exception:
-        pass
+    await _reset_facets(page, log)                 # clean state first
 
     CLICK_JS = r"""(values) => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
@@ -805,13 +807,13 @@ async def _apply_facets(page, values, log):
             const want = norm(val);
             let el = null;
             for (const s of document.querySelectorAll(
-                    '[data-facet-value], .field-check-box-name-value')) {
+                    '[data-facet-value], .field-check-box-name-value, .field-check-box-name')) {
                 const t = norm(s.getAttribute('data-facet-value') || s.textContent);
                 if (t === want) { el = s; break; }
             }
-            if (!el) continue;                    // not in current results → skip
-            let t = el;                           // climb to a clickable row
-            for (let i = 0; i < 4 && t; i++) {
+            if (!el) continue;                     // not in current results → skip
+            let t = el;                            // climb to a clickable row/checkbox
+            for (let i = 0; i < 5 && t; i++) {
                 try { t.click(); } catch (e) {}
                 t = t.parentElement;
             }
@@ -820,19 +822,28 @@ async def _apply_facets(page, values, log):
         return n;
     }"""
     clicked = 0
-    try:
-        clicked = await page.evaluate(CLICK_JS, wanted)
-    except Exception as e:
-        log(f"  фасеты: {type(e).__name__}")
+    for _ in range(20):                            # wait for the AJAX sidebar, retry
+        try:
+            clicked = await page.evaluate(CLICK_JS, wanted)
+        except Exception:
+            clicked = 0
+        if clicked >= len(wanted):
+            break
+        try:
+            await page.evaluate("() => window.scrollBy(0, 250)")
+        except Exception:
+            pass
+        await asyncio.sleep(0.7)
     log(f"  Фильтры (фасеты) применены: {clicked}/{len(wanted)}")
 
     for sel in ('input.heroes-filter-button[value="Применить"]',
-                'input.heroes-filter-button', 'button:has-text("Применить")'):
+                'input.heroes-filter-button', 'button:has-text("Применить")',
+                'input[value="Применить"]'):
         try:
             btn = page.locator(sel).first
             if await btn.count():
                 await btn.click(timeout=4000)
-                await asyncio.sleep(2.5)
+                await asyncio.sleep(3)
                 return
         except Exception:
             pass

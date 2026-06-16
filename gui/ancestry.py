@@ -524,6 +524,10 @@ class AncestryApp(QMainWindow):
             "Click ▶ to open each layer; tick any value (each becomes its own pass "
             "/ document). Location is combined (AND) with each."))
         hdr.addStretch()
+        self._collapse_flt_btn = QPushButton("Collapse all filters")
+        self._collapse_flt_btn.setObjectName("addBtn")
+        self._collapse_flt_btn.clicked.connect(self._collapse_all_filters)
+        hdr.addWidget(self._collapse_flt_btn)
         self._clear_flt_btn = QPushButton("Clear all filters")
         self._clear_flt_btn.setObjectName("addBtn")
         self._clear_flt_btn.clicked.connect(self._clear_filters)
@@ -531,6 +535,7 @@ class AncestryApp(QMainWindow):
         fv.addLayout(hdr)
         # each section keeps its ticked-node checkboxes, leaf dropdowns, and a
         # path→widgets registry (so saved selections can be rebuilt lazily)
+        self._tree_bodies = []     # (body, toggle) for every expandable node → collapse-all
         self._rt_checks,  self._rt_combos,  self._rt_reg  = [], [], {}
         self._loc_checks, self._loc_combos, self._loc_reg = [], [], {}
         self._rd_checks,  self._rd_combos,  self._rd_reg  = [], [], {}
@@ -643,6 +648,7 @@ class AncestryApp(QMainWindow):
                 build_once(); b.setVisible(True); t.setText("▼")
             tog.clicked.connect(toggle)
             entry["open"] = open_node
+            self._tree_bodies.append((body, tog))   # for «Collapse all filters»
         return box
 
     def _build_body(self, bl, spec, checks, combos, reg, path, depth):
@@ -743,6 +749,16 @@ class AncestryApp(QMainWindow):
             e = reg.get(path[:i])
             if e and e.get("open"):
                 e["open"]()
+
+    def _collapse_all_filters(self):
+        """Collapse every expanded node in the filter tree (just hides the bodies,
+        keeps the ticks). Lets you fold the whole tree back up in one click."""
+        for body, tog in getattr(self, "_tree_bodies", []):
+            try:
+                body.setVisible(False)
+                tog.setText("▶")
+            except Exception:
+                pass
 
     def _clear_filters(self):
         """Reset EVERY search constraint to broad (keeps the name being searched):

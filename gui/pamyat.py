@@ -275,7 +275,16 @@ class PamyatApp(QMainWindow):
         self._src_btn.toggled.connect(self._toggle_src)
         outer.addWidget(self._src_btn)
         self._src_box = QWidget()
-        sgl2 = QGridLayout(self._src_box); sgl2.setSpacing(8)
+        sbox = QVBoxLayout(self._src_box); sbox.setContentsMargins(0, 0, 0, 0)
+        # «Reset» — uncheck every source (the site is all-on by default; the scraper
+        # also clicks Сбросить before ticking, this mirrors it in the GUI).
+        rr = QHBoxLayout()
+        self._src_reset = QPushButton("Reset (uncheck all)")
+        self._src_reset.setObjectName("advBtn")
+        self._src_reset.clicked.connect(self._reset_sources)
+        rr.addWidget(self._src_reset); rr.addStretch()
+        sbox.addLayout(rr)
+        srow = QWidget(); sgl2 = QGridLayout(srow); sgl2.setSpacing(8)
         self._src_fc = []
         for gi, grp in enumerate(PM_SOURCES):
             sgl2.addWidget(QLabel(grp.get("en", "") + ":"), 0, gi)
@@ -283,6 +292,7 @@ class PamyatApp(QMainWindow):
                               on_change=self._save)
             self._src_fc.append(fc)
             sgl2.addWidget(fc, 1, gi)
+        sbox.addWidget(srow)
         self._src_box.setVisible(False)
         outer.addWidget(self._src_box)
         outer.addStretch()
@@ -341,6 +351,13 @@ class PamyatApp(QMainWindow):
 
     def _src_checked(self):
         return [ru for fc in self._src_fc for ru in fc.checked()]
+
+    def _reset_sources(self):
+        """Uncheck every Information-source checkbox."""
+        for fc in self._src_fc:
+            for cb, _ru in fc._cbs:
+                cb.setChecked(False)
+        self._save()
 
     def _browse(self):
         p = QFileDialog.getExistingDirectory(self, "Output folder",
