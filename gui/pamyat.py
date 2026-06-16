@@ -276,13 +276,16 @@ class PamyatApp(QMainWindow):
         outer.addWidget(self._src_btn)
         self._src_box = QWidget()
         sbox = QVBoxLayout(self._src_box); sbox.setContentsMargins(0, 0, 0, 0)
-        # «Reset» — uncheck every source (the site is all-on by default; the scraper
-        # also clicks Сбросить before ticking, this mirrors it in the GUI).
+        # Select all / Reset for the source checkboxes (sources are all-on by default
+        # on the site; the scraper clicks Сбросить before ticking the chosen ones).
         rr = QHBoxLayout()
+        self._src_all = QPushButton("Select all")
+        self._src_all.setObjectName("advBtn")
+        self._src_all.clicked.connect(self._select_all_sources)
         self._src_reset = QPushButton("Reset (uncheck all)")
         self._src_reset.setObjectName("advBtn")
         self._src_reset.clicked.connect(self._reset_sources)
-        rr.addWidget(self._src_reset); rr.addStretch()
+        rr.addWidget(self._src_all); rr.addWidget(self._src_reset); rr.addStretch()
         sbox.addLayout(rr)
         srow = QWidget(); sgl2 = QGridLayout(srow); sgl2.setSpacing(8)
         self._src_fc = []
@@ -357,6 +360,13 @@ class PamyatApp(QMainWindow):
         for fc in self._src_fc:
             for cb, _ru in fc._cbs:
                 cb.setChecked(False)
+        self._save()
+
+    def _select_all_sources(self):
+        """Check every Information-source checkbox."""
+        for fc in self._src_fc:
+            for cb, _ru in fc._cbs:
+                cb.setChecked(True)
         self._save()
 
     def _browse(self):

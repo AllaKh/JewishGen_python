@@ -268,8 +268,26 @@ async def crawl(args):
             except Exception as e:
                 log(f"  select-site: {type(e).__name__}: {e}")
 
-            # ONE search to bootstrap the results page (the only form-submit)
-            results = await _bootstrap_search(page, search_url, params, has_cookies)
+            # FIRST try the research home page itself — it lists ALL categories of
+            # the catalog (the 15), not just the name-searchable ones a surname
+            # search surfaces (~5). Only if that has too few do we fall back to the
+            # Smith search facet.
+            results = None
+            try:
+                await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
+                await asyncio.sleep(args.delay / 1000)
+                await M._accept_cookies(page, log)
+                if not await _is_blocked(page):
+                    await expand_see_all(page)
+                    home_opts = await read_options(page)
+                    if len(home_opts) >= 8:
+                        log(f"  каталог категорий на research-home: {len(home_opts)}")
+                        results = page
+            except Exception as e:
+                log(f"  research-home: {type(e).__name__}")
+
+            if results is None:                      # fall back to the surname search
+                results = await _bootstrap_search(page, search_url, params, has_cookies)
             if results is None:
                 log("  !! нет страницы результатов — стоп")
                 return

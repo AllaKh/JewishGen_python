@@ -149,6 +149,13 @@ class _FacetChecks(QWidget):
         for cb, ru in self._cbs:
             cb.setChecked(ru in s)
 
+    def set_all(self, on):
+        """Check (on=True) or uncheck (on=False) every VISIBLE row — so «Select all»
+        respects an active search filter."""
+        for cb, _ru in self._cbs:
+            if cb.isVisible():
+                cb.setChecked(on)
+
 
 class GwarApp(QMainWindow):
     def __init__(self):
