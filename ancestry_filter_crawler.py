@@ -84,7 +84,11 @@ SITE = {
             "exclude":      r"^\d{4}-\d{4}",          # skip date ranges (those are dates)
             "child_url":    lambda base, code: base + ("&" if "?" in base else "?")
                                                + "record_f=" + code,
-            "max_depth":    12,       # FULL recursion (override with --depth N)
+            # Crawl 4 levels: continent → country → state → county.
+            # Level 5 (city) is INTENTIONALLY skipped (city lists balloon the JSON
+            # without adding useful filtering — there are 17k+ US cities alone).
+            # Override at the command line with --depth N to go deeper temporarily.
+            "max_depth":    4,
             "levels":       ["continent", "country", "state", "county",
                              "city", "locality", "area"],
         },
@@ -165,37 +169,78 @@ async def expand_see_all(page):
 # ── DFS over one axis (locations | dates) ─────────────────────────────────────── #
 async def crawl_axis(page, axis: str, args) -> list:
     """Depth-first walk of one filter axis. Returns a flat node list:
-       [{code, label, depth, parent}]  (depth 1 = top level)."""
+       [{code, label, depth, parent}]  (depth 1 = top level).
+
+    RESUMES from the saved raw dump: any parent whose children are already in the
+    dump is NOT refetched — we just recurse into them. Deleting the *_crawl_raw.json
+    file forces a fresh crawl."""
     cfg = SITE["axes"][axis]
     base = SITE["results_base"]
-    max_depth = args.depth or cfg["max_depth"]   # 0 → full recursion (cfg default)
+    max_depth = args.depth or cfg["max_depth"]   # 0 → use cfg default
     visited: set[str] = set()
     nodes: list[dict] = []
     dump_path = _CONFIG / cfg["json"].replace(".json", "_crawl_raw.json")
 
-    async def visit(parent_code, parent_label, depth):
-        url = cfg["child_url"](base, parent_code) if parent_code else base
+    # ── Resume from the saved dump ────────────────────────────────────────── #
+    # Keep only nodes within the current depth cap; drop deeper ones (e.g. depth-5
+    # cities from an earlier deeper run) — the user wants level 5 omitted.
+    resumed_dropped = 0
+    if dump_path.exists():
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            prev = json.loads(dump_path.read_text("utf-8"))
         except Exception as e:
-            log(f"    !! goto failed ({type(e).__name__}) {url[:90]}")
-            return
-        await page.wait_for_timeout(args.delay)
-        await expand_see_all(page)
-        opts = await read_options(page, cfg["code_in_href"], cfg.get("exclude"))
-        kids = [(lbl, code) for (lbl, code, _h) in opts if code not in visited]
+            log(f"  !! could not parse resume dump ({type(e).__name__}) — starting fresh")
+            prev = []
+        for n in prev:
+            if n.get("depth", 99) <= max_depth and n.get("code"):
+                nodes.append(n)
+                visited.add(n["code"])
+            else:
+                resumed_dropped += 1
+        if nodes:
+            log(f"  resume: loaded {len(nodes)} nodes "
+                f"(dropped {resumed_dropped} beyond depth {max_depth})")
+
+    # A parent counts as "done" if its children are already in `nodes`. This skips
+    # the goto/read but still recurses, so any sub-tree not yet explored continues.
+    done_parents: set = {n.get("parent") for n in nodes if n.get("parent")}
+    if nodes:                                    # if anything resumed, ROOT is too
+        done_parents.add(None)
+    kids_by_parent: dict = {}
+    for n in nodes:
+        kids_by_parent.setdefault(n.get("parent"), []).append((n["label"], n["code"]))
+
+    async def visit(parent_code, parent_label, depth):
         indent = "  " * depth
         lvl = cfg["levels"][min(depth - 1, len(cfg["levels"]) - 1)]
-        log(f"{indent}[{axis}] {parent_label or 'ROOT'} → {len(kids)} {lvl}(s)")
-        for lbl, code in kids:
-            visited.add(code)
-            nodes.append({"code": code, "label": _clean_label(lbl),
-                          "depth": depth, "parent": parent_code})
-        # persist progress so a crash/Ctrl-C still leaves the raw dump
-        try:
-            dump_path.write_text(json.dumps(nodes, ensure_ascii=False, indent=2), "utf-8")
-        except Exception:
-            pass
+        # Already fetched this parent on an earlier run → reuse its kids
+        if parent_code in done_parents:
+            kids = kids_by_parent.get(parent_code, [])
+            log(f"{indent}[{axis}] {parent_label or 'ROOT'} → {len(kids)} {lvl}(s) (resumed)")
+        else:
+            url = cfg["child_url"](base, parent_code) if parent_code else base
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            except Exception as e:
+                log(f"    !! goto failed ({type(e).__name__}) {url[:90]}")
+                return
+            await page.wait_for_timeout(args.delay)
+            await expand_see_all(page)
+            opts = await read_options(page, cfg["code_in_href"], cfg.get("exclude"))
+            kids = [(lbl, code) for (lbl, code, _h) in opts if code not in visited]
+            log(f"{indent}[{axis}] {parent_label or 'ROOT'} → {len(kids)} {lvl}(s)")
+            for lbl, code in kids:
+                visited.add(code)
+                nodes.append({"code": code, "label": _clean_label(lbl),
+                              "depth": depth, "parent": parent_code})
+            done_parents.add(parent_code)
+            kids_by_parent[parent_code] = kids
+            # persist progress so a crash/Ctrl-C still leaves the raw dump
+            try:
+                dump_path.write_text(
+                    json.dumps(nodes, ensure_ascii=False, indent=2), "utf-8")
+            except Exception:
+                pass
         if depth < max_depth:
             for lbl, code in kids:
                 await visit(code, _clean_label(lbl), depth + 1)

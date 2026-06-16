@@ -1440,7 +1440,6 @@ async def run_scraper(
     progress                 = None,
     cancel_event             = None,
     ask_file_conflict        = None,  # callable(list[str]) → "overwrite"/"append"/"skip"
-    list_only:    bool       = False,  # unified search: collect the results list only
 ) -> dict:
 
     def _prog(pct, txt):
@@ -1514,54 +1513,18 @@ async def run_scraper(
             # never lands on the login page. The URL already carries tab=records
             # + every filter, so we must NOT click the HR tab (it rebuilds the
             # URL and would drop the filters — known FS behaviour).
-            # Unified search (list_only): the HR rows are visible WITHOUT login →
-            # NEVER touch the sign-in, just read the first page.
-            if not list_only:
-                _prog(16, "Sign in...")
-                await _sign_in_if_needed(page, email or "", password or "",
-                                         logged_in_ref, log)
-                if _done(): return summary
-                if "discovery/results" not in page.url:   # login navigated away → back
-                    await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-                    await asyncio.sleep(4)
+            _prog(16, "Sign in...")
+            await _sign_in_if_needed(page, email or "", password or "",
+                                     logged_in_ref, log)
+            if _done(): return summary
+            if "discovery/results" not in page.url:   # login navigated away → back
+                await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+                await asyncio.sleep(4)
 
             # ── 5. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(28, "Сбор результатов...")
             await _set_60(page, log)
             raw       = await _collect(page, qname, log)
-
-            # Unified search: results-page rows only (no opening / downloads / files).
-            # FamilySearch (not logged in) shows ONLY the first page → take page 1.
-            # Assess relevance ourselves and keep ONLY ≥90% matches (FS surname search
-            # is fuzzy and pads the tail with phonetic look-alikes).
-            if list_only:
-                qwords = [w for w in (qname or "").lower().split() if w]
-
-                def _rel(nm):
-                    nws = (nm or "").lower().split()
-                    if not qwords or not nws:
-                        return 0.0
-                    s = 100.0
-                    for q in qwords:
-                        b = 100.0 if q in (nm or "").lower() else \
-                            max((_sim(q, w) for w in nws), default=0.0)
-                        s = min(s, b)
-                    return s
-
-                def _row(r):                       # dynamic: omit empty fields
-                    d = {"Имя": r.get("name", "")}
-                    if r.get("coll"):
-                        d["Коллекция"] = r["coll"]
-                    if r.get("evts"):
-                        d["События"] = r["evts"]
-                    if r.get("rels"):
-                        d["Родственники"] = r["rels"]
-                    return d
-                kept = [r for r in raw if _rel(r.get("name", "")) >= 90]
-                rows = [_row(r) for r in kept]
-                log(f"  Совпадений ≥90%: {len(rows)} из {len(raw)}")
-                summary.update({"ok": True, "rows": rows, "n_records": len(rows)})
-                return summary
 
             qualified = [r for r in raw if r["score"] >= MIN_MATCH]
             log(f"  Подходящих (≥{MIN_MATCH}%): {len(qualified)}")

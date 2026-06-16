@@ -396,7 +396,6 @@ def run_scraper(
     progress                 = None,
     cancel_event             = None,
     ask_file_conflict        = None,   # callable(list[str]) → overwrite/append/skip
-    list_only:     bool      = False,  # unified search: results-table rows only
 ) -> dict:
 
     def _prog(pct, txt):
@@ -425,14 +424,6 @@ def run_scraper(
         _prog(5, "Поиск…")
         found, rows = search(family_name, soundslike, filters or {}, log)
         _prog(15, f"Найдено: {found} (строк: {len(rows)})")
-        if list_only:
-            # Results-table rows only (no card opening / files). Map the css-class
-            # keys to the English column headers; drop the internal url.
-            hdr = dict(TABLE_COLS)
-            mapped = [{hdr.get(k, k): v for k, v in r.items() if k != "url"}
-                      for r in rows]
-            summary.update({"ok": True, "rows": mapped, "n_records": len(mapped)})
-            return summary
         if not rows:
             summary.update({"ok": True, "n_records": 0,
                             "message": "Ничего не найдено."})

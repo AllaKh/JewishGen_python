@@ -159,6 +159,38 @@ class GwarApp(QMainWindow):
         self.setWindowIcon(app_icon())
         self._build_ui()
         self._load()
+        self._fit()
+        from PySide6.QtCore import QTimer
+        for _ms in (0, 120, 300, 600):
+            QTimer.singleShot(_ms, self._fit)
+
+    def _fit(self):
+        """Dynamic sizing — same pattern as Pamyat: window grows to the form's
+        natural size when the screen has room (no scroll), vertical scroll
+        appears when it doesn't, horizontal scroll is NEVER shown."""
+        if not hasattr(self, "_body"):
+            return
+        scr = QApplication.primaryScreen().availableGeometry()
+        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        self._scroll.setMinimumHeight(0); self._scroll.setMaximumHeight(16777215)
+        self._body.adjustSize()
+        body_w = self._body.sizeHint().width()
+        body_h = self._body.sizeHint().height()
+        self.adjustSize()
+        chrome_h = max(150, self.height() - self._scroll.height())
+        target_w = min(max(self.minimumWidth(), body_w + 24), scr.width() - 16)
+        avail_h  = scr.height() - 16
+        if chrome_h + body_h <= avail_h:
+            scroll_h = body_h + 4
+            target_h = chrome_h + scroll_h
+        else:
+            target_h = avail_h
+            scroll_h = max(120, target_h - chrome_h)
+        self._scroll.setMinimumHeight(scroll_h)
+        self._scroll.setMaximumHeight(scroll_h)
+        self.resize(target_w, target_h)
+        self.move(scr.x() + max(0, (scr.width() - self.width()) // 2),
+                  scr.y() + 8)
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
@@ -261,13 +293,16 @@ class GwarApp(QMainWindow):
         outer.addWidget(dg)
         outer.addStretch()
 
-        # Wrap the form in a scroll area (capped at 55% of the screen) so the tall
-        # form never runs off-screen — same as Память народа.
-        scroll = QScrollArea(); scroll.setWidget(body); scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        _scr_h = QApplication.primaryScreen().availableGeometry().height()
-        scroll.setMaximumHeight(int(_scr_h * 0.55))
-        main.addWidget(scroll, 1)
+        # Dynamic scroll area: no horizontal scrollbar ever, vertical only when the
+        # screen can't fit the form. Sized by _fit() based on the screen.
+        self._body   = body
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(body)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        main.addWidget(self._scroll, 1)
 
         # Output ─────────────────────────────────────────────────────────────
         og = QGroupBox("Output (Word)")
@@ -304,6 +339,8 @@ class GwarApp(QMainWindow):
         self._facet_box.setVisible(on)
         self._facet_btn.setText(("▼" if on else "▶") +
             "  Information sources / Awards / Losses / Notable persons")
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._fit)
 
     def _browse(self):
         p = QFileDialog.getExistingDirectory(self, "Output folder",

@@ -25,13 +25,11 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QApplication, QSizePolicy, QScrollArea,
-    QTabWidget,
 )
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap
 
 from gui._app_icon import app_icon
-from gui.unified_tab import UnifiedSearchTab
 
 # ---------------------------------------------------------------------------
 _HERE   = Path(__file__).resolve().parent   # …/gui/
@@ -268,12 +266,7 @@ class LauncherWindow(QMainWindow):
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setStyleSheet("QScrollArea{background:transparent;}")
 
-        # Tabs: the database cards + a «Unified Search» across all sites.
-        self._tabs = QTabWidget()
-        self._tabs.addTab(self._scroll, "Databases")
-        self._tabs.addTab(UnifiedSearchTab(), "Unified Search")
-        self._tabs.currentChanged.connect(self._on_tab_changed)
-        self._outer.addWidget(self._tabs)
+        self._outer.addWidget(self._scroll)
 
         # Footer
         self._footer = QLabel("© 2026 Alla Khananashvili")
@@ -282,42 +275,6 @@ class LauncherWindow(QMainWindow):
         self._outer.addWidget(self._footer)
 
     # ------------------------------------------------------------------
-    def _on_tab_changed(self, idx):
-        """Resize the window to the CURRENT tab. The window is pinned to the tall
-        «Databases» cards; without this the short «Unified Search» tab leaves a
-        giant empty band (white footer) underneath."""
-        if not self.isVisible():
-            return
-        from PySide6.QtWidgets import QSizePolicy
-        # Non-current pages must stop reserving height (else the tab widget keeps
-        # the tallest page's size) — the «collapse the stack» trick.
-        for i in range(self._tabs.count()):
-            w = self._tabs.widget(i)
-            pol = w.sizePolicy()
-            pol.setVerticalPolicy(QSizePolicy.Preferred if i == idx
-                                  else QSizePolicy.Ignored)
-            w.setSizePolicy(pol)
-        if idx == 0:
-            self._fit_to_cards()
-            return
-        # The tab widget is STRETCHED to fill the window, so shrinking its content
-        # doesn't shrink the window — I must set the window height from the current
-        # page's own content height + the surrounding chrome (same 210 as the cards
-        # fit: header + divider + tab bar + footer + margins).
-        scr = QApplication.primaryScreen().availableGeometry()
-        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
-        self._scroll.setMinimumHeight(0)          # cards stop forcing the stack tall
-        page = self._tabs.widget(idx)
-        page.adjustSize()
-        chrome = 210
-        final_h = min(chrome + page.sizeHint().height(), scr.height() - 16)
-        final_h = max(final_h, 360)
-        self.resize(self.width(), final_h)
-        self.setFixedHeight(final_h)
-        self.centralWidget().resize(self.width(), final_h)
-        self.move(scr.x() + max(0, (scr.width() - self.width()) // 2), scr.y() + 8)
-        self._outer.activate()
-
     # ------------------------------------------------------------------
     def _fit_to_cards(self, _scr_h=None):
         """Resize the window so all cards are visible, with NO empty gap and the
@@ -331,13 +288,6 @@ class LauncherWindow(QMainWindow):
         scr_h = _scr_h if _scr_h else scr.height()   # override only in tests
         final_w = min(920, scr.width() - 16)   # snug width; shrink on narrow screens
         self.setFixedWidth(final_w)
-        # Tabs span the FULL width (each tab = its share), not bunched in the corner.
-        # outer margins are 22+22=44; leave a hair so the tabs never overflow into
-        # scroll-arrows. Each tab gets an equal share of the row.
-        tw = max(140, (final_w - 48) // max(1, self._tabs.count()))
-        self._tabs.setStyleSheet(
-            f"QTabBar::tab{{width:{tw}px;height:26px;font-weight:bold;"
-            "padding:4px 0;}")
         # A QScrollArea's own sizeHint is small and unrelated to its content, so
         # the height must be pinned explicitly: max = content height (taller
         # would re-open the «empty band at the bottom» bug), min = whatever fits
@@ -345,8 +295,8 @@ class LauncherWindow(QMainWindow):
         # remaining space on small ones (scrollbar appears).
         cards_h = self._card_container.sizeHint().height()
         self._scroll.setMaximumHeight(cards_h + 2)
-        # header + divider + tab bar + footer + margins (the cards live in a tab now)
-        chrome = 210
+        # header + divider + footer + margins
+        chrome = 184
         avail  = (scr_h - 16) - chrome
         self._scroll.setMinimumHeight(max(120, min(cards_h + 2, avail)))
         self.centralWidget().resize(final_w, self.centralWidget().height())

@@ -984,7 +984,7 @@ async def try_autofill_login(page, email, password, timeout_s=15):
 
 
 async def wait_for_results_page(context, page, email, password=None,
-                                timeout_seconds=900, list_only=False):
+                                timeout_seconds=900):
     """Wait for the browser to land on the JewishGen results URL. If
     email+password are provided AND we hit the login page, try to autofill;
     otherwise pause passively while the user logs in by hand."""
@@ -996,15 +996,6 @@ async def wait_for_results_page(context, page, email, password=None,
         await page.wait_for_load_state("domcontentloaded", timeout=10_000)
     except Exception:
         pass
-
-    if list_only:
-        # Unified search: NEVER log in or prompt — just wait briefly for the results
-        # URL, then return whatever we have so the caller can copy the result rows.
-        try:
-            await page.wait_for_url(re.compile(r"jgform", re.I), timeout=30_000)
-        except PWTimeout:
-            pass
-        return page
 
     if await _looks_like_login(page):
         ok = await try_autofill_login(page, email, password)
@@ -1069,6 +1060,7 @@ async def collect_list_button_labels(page):
             return items;
         }"""
     )
+
 
 
 DONATE_BUTTON_RE = re.compile(r"Maybe Later|Continue to Site", re.I)
@@ -1142,8 +1134,7 @@ async def wait_for_login_to_finish(page, timeout_seconds=600):
         pass
 
 
-async def click_list_button_open_new_page(context, results_page, label, attempts=4,
-                                          list_only=False):
+async def click_list_button_open_new_page(context, results_page, label, attempts=4):
     """Click a 'List N records' button by its exact visible label. If the
     opened tab is the Auth0 login page, pause until the user has logged in
     (the tab is NOT closed). Dismiss any donation / discussion popups that
@@ -1160,8 +1151,7 @@ async def click_list_button_open_new_page(context, results_page, label, attempts
             await results_page.wait_for_load_state("domcontentloaded", timeout=15_000)
             new_page = results_page
 
-        if not list_only:                  # unified: never wait for / prompt a login
-            await wait_for_login_to_finish(new_page)
+        await wait_for_login_to_finish(new_page)
         await dismiss_popups(new_page)
 
         # Check for 503 / server error page.
@@ -2315,7 +2305,6 @@ async def run_scraper(
     log=print,
     cancel_event=None,
     progress=None,
-    list_only=False,          # unified search: collect result rows, write no files
 ):
     """Run the JewishGen search and write the matched rows into the chosen
     output folder. All parameters are explicit so this function can be
@@ -2416,7 +2405,7 @@ async def run_scraper(
                 return summary_result
             _progress(15, "Waiting for results page (log in if asked)…")
             page = await wait_for_results_page(
-                context, page, email, password=password, list_only=list_only
+                context, page, email, password=password
             )
 
             if _cancelled():
@@ -2452,7 +2441,6 @@ async def run_scraper(
             saved_docx_count = 0
             used_filenames = set()
             databases_for_xlsx = []  # one entry per DB that produced matches
-            list_rows = []           # unified list_only: flat rows across all DBs
             n_items = len(items)
             consecutive_unavailable = 0   # run of DBs that all 503'd → give up
             for i, item in enumerate(items, 1):
@@ -2479,7 +2467,7 @@ async def run_scraper(
                 for attempt in range(3):
                     try:
                         result_page = await click_list_button_open_new_page(
-                            context, page, label, list_only=list_only
+                            context, page, label
                         )
                         await ensure_not_503(result_page)
                         break
@@ -2555,19 +2543,6 @@ async def run_scraper(
                     log("    no match — skipping")
                     continue
 
-                if list_only:
-                    # Unified: keep the result rows AS-IS (no images, no files);
-                    # tag each with its database so the user can tell them apart.
-                    cols = acc.get("columns") or []
-                    for r in acc["rows"]:
-                        d = {"Database": desc}
-                        for ci, cval in enumerate(r):
-                            col = cols[ci] if ci < len(cols) else f"col{ci+1}"
-                            d[str(col)] = cval
-                        list_rows.append(d)
-                    log(f"    +{len(acc['rows'])} rows (list-only)")
-                    continue
-
                 # ── Download images linked from result rows ─────────── #
                 # Dir: {search_terms}_{db_name}
                 _db_part  = safe_filename(desc or label) or f"db_{i}"
@@ -2613,12 +2588,6 @@ async def run_scraper(
                     log(f"    saved {len(acc['rows'])} row(s) → {file_name}")
                 else:
                     log(f"    queued {len(acc['rows'])} row(s) for the workbook")
-
-            if list_only:
-                _progress(100, f"Готово (list-only): {len(list_rows)} строк(и).")
-                summary_result.update({"ok": True, "rows": list_rows,
-                                       "n_records": len(list_rows)})
-                return summary_result
 
             xlsx_path = None
             if want_xlsx and databases_for_xlsx:

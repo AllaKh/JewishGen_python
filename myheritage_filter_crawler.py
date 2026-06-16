@@ -1,33 +1,38 @@
 """
 myheritage_filter_crawler.py — standalone (NO GUI) crawler for MyHeritage's
-«Ограничить поиск по категории» (narrow-by-category) filter tree → JSON.
+«narrow by category» filter tree → JSON.
 =============================================================================
 Run it yourself:
 
-    python myheritage_filter_crawler.py                 # full recursion → JSON
-    python myheritage_filter_crawler.py --dry-run       # crawl + print, write nothing
-    python myheritage_filter_crawler.py --depth 3       # cap the depth
+    python myheritage_filter_crawler.py              # recurse to depth 4 (default)
+    python myheritage_filter_crawler.py --depth 6    # go deeper
+    python myheritage_filter_crawler.py --dry-run    # crawl + print, write nothing
     python myheritage_filter_crawler.py --user … --password …   # if not logged in
 
 What it does
 ------------
  1. Opens MyHeritage with the SAME persistent profile as myheritage_scraper.py
     (.mh_profile) so the login/cookies are reused; signs in once if creds given.
+    Picks the family site so the generic /research URL doesn't 404.
  2. Searches the surname «Smith» (reusing the scraper's own search) to land on a
-    results page that shows the category facet.
- 3. Walks the «narrow by category» facet to FULL DEPTH: reads the categories
-    (`.narrow_down_link` → `.name` + `.count`), clicks each to narrow, reads the
-    sub-categories that appear, recurses, and backtracks (re-search + click the
-    path) — collecting the whole tree.
- 4. Writes it to config/myheritage_categories.json (+ a raw dump alongside).
+    results page that shows the «narrow by category» facet.
+ 3. RECURSIVELY walks every category and every sub-category by clicking each one
+    to narrow the result set and re-reading the facet. Modelled on
+    ancestry_filter_crawler.py — same DFS + resume + raw dump.
+ 4. Writes labels (no counts — those are filter-result numbers and unstable) into
+    config/myheritage_categories.json as a nested Ancestry-style tree:
+        { "Category": { "children": { "Sub-cat": { "children": {…} } } } }
 
-Same shape as ancestry_filter_crawler.py (a template for more sites).
+Resume
+------
+After every visited node the script saves config/myheritage_categories_crawl_raw.json
+(a flat list of {path, label, depth}). Stop with Ctrl-C and re-run — any path
+whose children are already in the dump is NOT refetched (just traversed). Delete
+the raw dump file to force a fresh crawl.
 
 NOTE: MyHeritage is login-walled, anti-bot and CLICK-based (no category URL
-params), and is not reachable from the dev box — so the facet selectors below are
-best-effort, inferred from the page HTML. Every node is logged; if a level comes
-back empty, run with the window visible and adjust SITE["cat_*"] selectors. The
-raw dump preserves whatever was collected.
+params). The facet selectors are best-effort; every node is logged. If a level
+comes back empty, run with the window visible and adjust SITE["…"].
 """
 from __future__ import annotations
 import argparse
@@ -59,35 +64,32 @@ def _to_english(label: str) -> str:
 # ── SITE CONFIG (everything MyHeritage-specific) ─────────────────────────────── #
 SITE = {
     "name":     "myheritage",
-    "preset":   "English (.com EN)",         # ENGLISH .com site → English labels + the
-                                             # .com login cookies apply (NOT Hebrew .co.il!)
+    "preset":   "English (.com EN)",         # ENGLISH .com site → English labels +
+                                             # .com login cookies apply (NOT .co.il!)
     "surname":  "Smith",
     "json":     "myheritage_categories.json",
-    # MyHeritage's «narrow by category» is a FLAT list (15 categories, no children) —
-    # depth 1 reads them all from the first results page and STOPS. Without this the
-    # crawler re-searched once per category looking for children that don't exist
-    # (the «search → results → form reopens» loop). Override with --depth N to probe.
-    "max_depth": 1,
+    # Recurse to all available levels. Default 4 matches the Ancestry crawler;
+    # bump it with --depth N if MH later exposes deeper sub-categories.
+    "max_depth": 4,
     "all_label": "All Collections",          # the «no narrowing» row — recorded, not drilled
 
-    # the category facet rows (from the live HTML the user provided):
+    # Facet rows (live HTML):
     #   <span class="button_action_text narrow_down_link …" data-automations="action_text">
-    #     <div class="name">Газеты</div><span class="count">10 000+</span></span>
+    #     <div class="name">Newspapers</div><span class="count">10,000+</span></span>
+    # We read JUST the label; counts are filter results, not part of the taxonomy.
     "read_js": r"""() => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
         const out = [], seen = new Set();
         const sel = '[class*="narrow_down_link"], [data-automations="action_text"]';
         for (const n of document.querySelectorAll(sel)) {
             const nm  = n.querySelector('.name');
-            const cnt = n.querySelector('.count');
             const label = norm(nm ? nm.textContent : n.textContent);
             if (!label || label.length > 80 || seen.has(label)) continue;
             seen.add(label);
-            out.push({label: label, count: norm(cnt ? cnt.textContent : '')});
+            out.push(label);
         }
         return out;
     }""",
-    # click the category whose .name equals the label → narrows the results
     "click_js": r"""(label) => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
         const sel = '[class*="narrow_down_link"], [data-automations="action_text"]';
@@ -191,20 +193,55 @@ async def crawl(args):
     dump_path = _CONFIG / SITE["json"].replace(".json", "_crawl_raw.json")
     log(f"site: {preset}   (login {login_url})")
 
-    visited: set = set()
-    nodes: list = []          # {path: [...], label, count, depth}
+    max_depth = args.depth or SITE["max_depth"]
+
+    # nodes: flat list of {path: [str…], label: str, depth: int}
+    # path[i] = parent's English label at level i+1; depth = the node's own level.
+    nodes: list = []
+    visited: set = set()        # (tuple(path), label) keys — drops re-recordings
+
+    # ── Resume from dump ───────────────────────────────────────────────────── #
+    resumed_dropped = 0
+    if dump_path.exists():
+        try:
+            prev = json.loads(dump_path.read_text("utf-8"))
+        except Exception as e:
+            log(f"  !! could not parse resume dump ({type(e).__name__}) — starting fresh")
+            prev = []
+        for n in prev:
+            d = n.get("depth", 99)
+            label = _to_english(n.get("label") or "")
+            path  = [_to_english(p) for p in n.get("path") or []]
+            if d <= max_depth and label:
+                key = (tuple(path), label)
+                if key not in visited:
+                    nodes.append({"path": path, "label": label, "depth": d})
+                    visited.add(key)
+            else:
+                resumed_dropped += 1
+        if nodes:
+            log(f"  resume: loaded {len(nodes)} nodes "
+                f"(dropped {resumed_dropped} beyond depth {max_depth})")
+
+    # A parent path is "done" if at least one child was recorded under it.
+    # We then skip the re-search/click for that path and just recurse into the
+    # known children. ROOT (empty path) is added if anything was resumed.
+    done_paths: set = set()
+    kids_of: dict = {}
+    for n in nodes:
+        parent_key = tuple(n["path"])
+        done_paths.add(parent_key)
+        kids_of.setdefault(parent_key, []).append(n["label"])
+    if nodes:
+        done_paths.add(())                  # ROOT had its top-level read
 
     async with async_playwright() as pw:
-        # SAME anti-detect persistent context as the main scraper (profile +
-        # webdriver/plugins spoof + FB blocking) — no bare context, no bot flag.
         ctx, page = await M.make_browser_context(pw)
 
         try:
-            # Land on the site + ACCEPT COOKIES first (the banner blocks the form),
-            # then sign in if creds were given (the persistent profile usually
-            # already holds the session from the main scraper).
             try:
-                await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
+                await page.goto(login_url, wait_until="domcontentloaded",
+                                timeout=45000)
             except Exception as e:
                 log(f"  goto login: {type(e).__name__}: {e}")
             await M._accept_cookies(page, log)
@@ -215,9 +252,7 @@ async def crawl(args):
                 except Exception as e:
                     log(f"  login: {type(e).__name__}: {e}")
 
-            # CRITICAL: the generic «research/search/all/all» URL is «Page not found»
-            # until a family site is chosen — the main scraper picks one and gets the
-            # real «research?s=<id>» URL. Do the SAME here, else every goto 404s.
+            # Pick the family site so /research?s=<id>… works (the generic URL 404s).
             try:
                 site_url = await M._handle_select_site(page, None, log)
                 if site_url:
@@ -227,37 +262,53 @@ async def crawl(args):
                 log(f"  select-site: {type(e).__name__}: {e}")
 
             async def visit(path, depth):
-                results = await _fresh_results(page, search_url, params, has_cookies)
-                if results is None:
-                    log("  !! нет страницы результатов — стоп ветки")
-                    return
-                if path and not await _click_path(results, path):
-                    return
-                try:
-                    opts = await results.evaluate(SITE["read_js"])
-                except Exception as e:
-                    log(f"  !! read_js: {type(e).__name__}: {e}")
-                    opts = []
+                """Read the facet at `path` and recurse into each child."""
                 indent = "  " * depth
-                kids = [o for o in opts
-                        if tuple(path + [o["label"]]) not in visited]
-                log(f"{indent}[{path[-1] if path else 'ROOT'}] → {len(kids)} категори(й)")
-                for o in kids:
-                    visited.add(tuple(path + [o["label"]]))
-                    nodes.append({"path": list(path), "label": o["label"],
-                                  "count": o.get("count", ""), "depth": depth + 1})
-                try:
-                    dump_path.write_text(
-                        json.dumps(nodes, ensure_ascii=False, indent=2), "utf-8")
-                except Exception:
-                    pass
-                if depth + 1 < (args.depth or SITE["max_depth"]):
-                    for o in kids:
-                        if o["label"] == SITE["all_label"]:
-                            continue            # «Все коллекции» = no narrowing
-                        await visit(path + [o["label"]], depth + 1)
+                key = tuple(path)
+                if key in done_paths:
+                    # already fetched on a previous run → reuse known children
+                    kids = kids_of.get(key, [])
+                    log(f"{indent}[{path[-1] if path else 'ROOT'}] → {len(kids)} "
+                        f"категори(й) (resumed)")
+                else:
+                    results = await _fresh_results(page, search_url, params,
+                                                   has_cookies)
+                    if results is None:
+                        log("  !! нет страницы результатов — стоп ветки")
+                        return
+                    if path and not await _click_path(results, path):
+                        return
+                    try:
+                        labels = await results.evaluate(SITE["read_js"])
+                    except Exception as e:
+                        log(f"  !! read_js: {type(e).__name__}: {e}")
+                        labels = []
+                    kids = []
+                    for raw_label in labels:
+                        en = _to_english(raw_label)
+                        ckey = (tuple(path), en)
+                        if ckey in visited:
+                            continue
+                        visited.add(ckey)
+                        nodes.append({"path": list(path), "label": en,
+                                      "depth": depth + 1})
+                        kids.append(en)
+                    done_paths.add(key)
+                    kids_of[key] = kids
+                    log(f"{indent}[{path[-1] if path else 'ROOT'}] → {len(kids)} "
+                        f"категори(й)")
+                    try:
+                        dump_path.write_text(
+                            json.dumps(nodes, ensure_ascii=False, indent=2), "utf-8")
+                    except Exception:
+                        pass
+                if depth + 1 < max_depth:
+                    for child in kids:
+                        if child == SITE["all_label"]:
+                            continue       # «All Collections» = no narrowing
+                        await visit(path + [child], depth + 1)
 
-            log("==== crawling MyHeritage categories ====")
+            log(f"==== crawling MyHeritage categories (max depth {max_depth}) ====")
             await visit([], 0)
             log(f"==== done: {len(nodes)} nodes (raw dump → {dump_path.name}) ====")
         finally:
@@ -268,21 +319,35 @@ async def crawl(args):
 
 
 def _merge(nodes: list, dry: bool):
-    """nodes (path + label + count) → nested {label:{count, children:{…}}}."""
+    """nodes [{path, label, depth}] → nested {label:{children:{…}}}.
+
+    Ancestry-style: no counts, no codes — just labels and nested children. Keeps
+    every existing entry; only adds new ones."""
     jp = _CONFIG / SITE["json"]
     tree = json.loads(jp.read_text("utf-8")) if jp.exists() else {}
+
+    def _walk_to(parent_path):
+        """Walk the tree to the dict that should hold this node's siblings, adding
+        empty parents along the way if missing."""
+        cur = tree
+        for p in parent_path:
+            p_en = _to_english(p)
+            if p_en not in cur:
+                cur[p_en] = {"children": {}}
+            elif "children" not in cur[p_en]:
+                cur[p_en]["children"] = {}
+            cur = cur[p_en]["children"]
+        return cur
+
     added = 0
     for n in sorted(nodes, key=lambda x: x["depth"]):     # parents before children
-        cur = tree
-        for p in n["path"]:                                # walk to the parent (English)
-            p = _to_english(p)
-            cur = cur.setdefault(p, {"count": "", "children": {}})["children"]
-        label = _to_english(n["label"])                    # English canonical label
-        if label not in cur:
-            cur[label] = {"count": n.get("count", ""), "children": {}}
+        host = _walk_to(n["path"])
+        label = _to_english(n["label"])
+        if label not in host:
+            host[label] = {"children": {}}
             added += 1
-        elif n.get("count"):
-            cur[label]["count"] = n["count"]
+        elif "children" not in host[label]:
+            host[label]["children"] = {}
     log(f"categories: +{added} new")
     if not dry:
         jp.write_text(json.dumps(tree, ensure_ascii=False, indent=2), "utf-8")
@@ -292,11 +357,13 @@ def _merge(nodes: list, dry: bool):
 def main():
     ap = argparse.ArgumentParser(
         description="Crawl MyHeritage's narrow-by-category filter tree into the JSON.")
-    ap.add_argument("--depth", type=int, default=0, help="max depth (0 = full)")
+    ap.add_argument("--depth", type=int, default=0,
+                    help=f"max depth (0 = SITE default = {SITE['max_depth']})")
     ap.add_argument("--dry-run", action="store_true", help="crawl + print, no write")
     ap.add_argument("--site", default=None,
-                    help="site preset (default «English (.com EN)»); NOT Hebrew .co.il")
-    ap.add_argument("--user", default=None, help="MyHeritage e-mail (if not logged in)")
+                    help="site preset (default «English (.com EN)»); NOT .co.il")
+    ap.add_argument("--user", default=None,
+                    help="MyHeritage e-mail (if not logged in)")
     ap.add_argument("--password", default=None, help="MyHeritage password")
     args = ap.parse_args()
     try:

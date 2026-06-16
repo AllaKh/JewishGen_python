@@ -404,12 +404,10 @@ class AncestryApp(QMainWindow):
         # multi-select match forms (checkboxes in the dropdown) — like the site
         self.f_first_exact = CheckableComboBox(placeholder="— broad —")
         self.f_first_exact.add_items(FIRST_FORMS)
-        self.f_first_exact.add_info("About these settings")
         self.f_first_exact.setToolTip("Tick any combination of name match forms")
         self.f_first_exact.setMaximumWidth(170)
         self.f_last_exact  = CheckableComboBox(placeholder="— broad —")
         self.f_last_exact.add_items(SURNAME_FORMS)
-        self.f_last_exact.add_info("About these settings")
         self.f_last_exact.setToolTip("Tick any combination of surname match forms")
         self.f_last_exact.setMaximumWidth(170)
         self.f_first_exact.changed.connect(self._save)

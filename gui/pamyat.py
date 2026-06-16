@@ -126,6 +126,43 @@ class PamyatApp(QMainWindow):
         self.setWindowIcon(app_icon())
         self._build_ui()
         self._load()
+        # Initial fit + every time the layout settles after show.
+        self._fit()
+        from PySide6.QtCore import QTimer
+        for _ms in (0, 120, 300, 600):
+            QTimer.singleShot(_ms, self._fit)
+
+    def _fit(self):
+        """Dynamic sizing. Window grows to the form's natural width/height when the
+        screen has room (no scroll). When the screen is too short, height is capped
+        and the vertical scroll bar appears. Horizontal scroll is NEVER shown:
+        the window widens to the form's natural width, capped to the screen."""
+        if not hasattr(self, "_body"):
+            return
+        scr = QApplication.primaryScreen().availableGeometry()
+        # Unlock everything so the layout reports honest hints.
+        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        self._scroll.setMinimumHeight(0); self._scroll.setMaximumHeight(16777215)
+        self._body.adjustSize()
+        body_w = self._body.sizeHint().width()
+        body_h = self._body.sizeHint().height()
+        # Settle the layout once to measure non-scroll chrome (header + groupboxes
+        # + buttons + footer + margins).
+        self.adjustSize()
+        chrome_h = max(150, self.height() - self._scroll.height())
+        target_w = min(max(self.minimumWidth(), body_w + 24), scr.width() - 16)
+        avail_h  = scr.height() - 16
+        if chrome_h + body_h <= avail_h:                  # everything fits
+            scroll_h = body_h + 4
+            target_h = chrome_h + scroll_h
+        else:                                             # need vertical scroll
+            target_h = avail_h
+            scroll_h = max(120, target_h - chrome_h)
+        self._scroll.setMinimumHeight(scroll_h)
+        self._scroll.setMaximumHeight(scroll_h)
+        self.resize(target_w, target_h)
+        self.move(scr.x() + max(0, (scr.width() - self.width()) // 2),
+                  scr.y() + 8)
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
@@ -250,11 +287,17 @@ class PamyatApp(QMainWindow):
         outer.addWidget(self._src_box)
         outer.addStretch()
 
-        scroll = QScrollArea(); scroll.setWidget(body); scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        _scr_h = QApplication.primaryScreen().availableGeometry().height()
-        scroll.setMaximumHeight(int(_scr_h * 0.55))
-        main.addWidget(scroll, 1)
+        self._body   = body
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(body)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        # Horizontal scroll = «порнография» — NEVER show it. The window resizes
+        # horizontally to the form's natural width (capped to the screen).
+        # Vertical scroll appears ONLY when the screen is too short to fit it.
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        main.addWidget(self._scroll, 1)
 
         og = QGroupBox("Output (Word)")
         ol = QHBoxLayout(og); ol.setSpacing(6)
@@ -291,6 +334,10 @@ class PamyatApp(QMainWindow):
     def _toggle_src(self, on):
         self._src_box.setVisible(on)
         self._src_btn.setText(("▼" if on else "▶") + "  Information sources")
+        # The form just grew (or shrunk) — re-fit so the window expands to fit
+        # the new content if the screen has room, or scrolls if it doesn't.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._fit)
 
     def _src_checked(self):
         return [ru for fc in self._src_fc for ru in fc.checked()]

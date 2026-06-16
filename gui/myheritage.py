@@ -103,7 +103,7 @@ CATEGORY_OPTIONS = [
 ]
 
 # The full «narrow by category» tree (site labels, nested) — built by
-# myheritage_filter_crawler.py. {label: {count, children:{…}}}.
+# myheritage_filter_crawler.py. {label: {children:{…}}} — Ancestry-style nesting.
 def _load_categories():
     try:
         return json.loads(
@@ -508,14 +508,13 @@ class MyHeritageApp(QMainWindow):
         Children are built lazily the first time the arrow is opened."""
         data = data or {}
         children = data.get("children") or {}
-        count = (data.get("count") or "").strip()
         row = QHBoxLayout()
         row.setContentsMargins(depth * 16, 0, 0, 0); row.setSpacing(4)
         if children:
             arrow = QPushButton("▶"); arrow.setObjectName("advBtn")
             arrow.setFixedWidth(16); arrow.setCheckable(True)
             row.addWidget(arrow)
-        cb = QCheckBox(name + (f"   ({count})" if count else ""))
+        cb = QCheckBox(name)
         cb.stateChanged.connect(self._save)
         self._cat_checks.append((cb, name))
         row.addWidget(cb); row.addStretch()

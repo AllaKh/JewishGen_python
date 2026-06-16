@@ -1297,7 +1297,6 @@ async def run_scraper(
     progress                 = None,
     cancel_event             = None,
     ask_file_conflict        = None,
-    list_only:    bool       = False,  # unified search: collect the results list only
 ) -> dict:
 
     def _prog(pct, txt):
@@ -1356,16 +1355,13 @@ async def run_scraper(
 
         try:
             # 1. SIGN IN ONCE up front (persistent profile usually already has it).
-            # Unified search (list_only): the results list shows WITHOUT login →
-            # skip the sign-in entirely.
-            if not list_only:
-                _prog(5, "Открываю Ancestry...")
-                await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=40000)
-                await asyncio.sleep(3)
-                _prog(12, "Sign in...")
-                await _sign_in_if_needed(page, email or "", password or "",
-                                         logged_in_ref, log)
-                if _done(): return summary
+            _prog(5, "Открываю Ancestry...")
+            await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=40000)
+            await asyncio.sleep(3)
+            _prog(12, "Sign in...")
+            await _sign_in_if_needed(page, email or "", password or "",
+                                     logged_in_ref, log)
+            if _done(): return summary
 
             # 2. SEARCH (built URL, count=50)
             _prog(20, "Поиск...")
@@ -1415,22 +1411,6 @@ async def run_scraper(
                         seen.add(r["url"]); qual.append(r)
                 qual = qual[:MAX_SCRAPE]
                 log(f"  Подходящих (≥{MIN_MATCH}%): {len(qual)}")
-
-                # Unified search: return the results-page rows only (no opening,
-                # no downloads, no files) — caller writes the grouped output.
-                if list_only:
-                    rows = []
-                    for r in raw:
-                        det = " | ".join(
-                            ln.strip() for ln in (r.get("text") or "").split("\n")
-                            if ln.strip())[:600]
-                        rows.append({"Имя": r.get("name", ""),
-                                     "Запись": r.get("coll", ""),
-                                     "Сведения": det})
-                    summary["ok"] = True
-                    summary["rows"] = rows
-                    summary["n_records"] = len(rows)
-                    return summary
 
                 suffix    = safe_fn(pass_name) if pass_name else ""
                 pass_imgs = (images_root / suffix) if suffix else images_root
