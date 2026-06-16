@@ -2,10 +2,43 @@
 import threading
 from pathlib import Path
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QHBoxLayout, QPushButton
+from PySide6.QtCore import Qt, QObject, QEvent
+from PySide6.QtWidgets import (QLabel, QHBoxLayout, QPushButton, QApplication,
+                               QWidget, QComboBox, QAbstractSpinBox,
+                               QAbstractItemView)
 
 _CONFIG = Path(__file__).resolve().parent.parent / "config"
+
+
+# ── Mouse-wheel guard ──────────────────────────────────────────────────────── #
+# Scrolling the mouse over a dropdown / spin-box must NOT change its value — you
+# could silently change settings you never meant to. The combo opens only by click;
+# the OPEN popup list still scrolls normally (its view is allowed below).
+class _WheelGuard(QObject):
+    def eventFilter(self, obj, ev):
+        # Only widgets have parentWidget(); app-wide we also get QWindow/QObject
+        # events → guard with isinstance(QWidget) (a QWindow has no parentWidget).
+        if ev.type() == QEvent.Type.Wheel and isinstance(obj, QWidget):
+            w, depth = obj, 0
+            while isinstance(w, QWidget) and depth < 4:
+                if isinstance(w, QAbstractItemView):
+                    return False                    # open popup → allow scrolling
+                if isinstance(w, (QComboBox, QAbstractSpinBox)):
+                    return True                     # closed combo/spin → block change
+                w = w.parentWidget(); depth += 1
+        return False
+
+
+_wheel_guard = None
+
+
+def install_wheel_guard():
+    """Install the wheel guard on the QApplication once (idempotent)."""
+    global _wheel_guard
+    app = QApplication.instance()
+    if app is not None and _wheel_guard is None:
+        _wheel_guard = _WheelGuard(app)
+        app.installEventFilter(_wheel_guard)
 
 
 def make_cancel_button(window, row_layout) -> QPushButton:
@@ -43,6 +76,7 @@ def make_cancel_button(window, row_layout) -> QPushButton:
 
 def app_icon() -> QIcon:
     """Return the application window icon (config/app_icon.png)."""
+    install_wheel_guard()      # every GUI calls app_icon() → guard installed once
     pix = QPixmap(str(_CONFIG / "app_icon.png"))
     if not pix.isNull():
         return QIcon(pix)

@@ -71,10 +71,12 @@ COLLECTION_OPTIONS = ["All Collections", "USA", "UK & Ireland", "Europe",
                       "Canada", "Australia & New Zealand", "Jewish Family History"]
 # Name exactness — the site's slider levels (first name 5, surname 4). Last item
 # "Exact" maps to name_x=1; everything else is broad.
-FIRST_EXACT_OPTIONS   = ["Broad", "Exact + similar + sounds + initials",
-                         "Exact + sounds + similar", "Exact + similar", "Exact"]
-SURNAME_EXACT_OPTIONS = ["Broad", "Exact + sounds + similar",
-                         "Exact + similar", "Exact"]
+# Name match FORMS — exactly like the site: «Exact and…» on top, the fuzzy forms
+# indented under it (tick any combination). Code letters feed Ancestry's name_x:
+# p=sounds-like, s=similar, i=initials, 1=exact only.
+FIRST_FORMS   = [("Exact and…", "1"), ("    Sounds like", "p"),
+                 ("    Similar", "s"), ("    Initials", "i")]
+SURNAME_FORMS = [("Exact and…", "1"), ("    Sounds like", "p"), ("    Similar", "s")]
 
 # Result filters (left panel) — loaded from the per-section JSONs in config/
 # (single source of truth; edit those to add/correct filters). Record-type & date
@@ -122,9 +124,16 @@ def _rt_spec():
         return (label, d.get("code"), None, d.get("collections") or None)
     return [node(c, _RT[c]) for c in _RT]
 
+def _place_node(label, val):
+    # a place is either a bare code (leaf) or {code, places:{…}} that nests to ANY
+    # depth (county → city → locality …). Arrows open each level; no dropdowns.
+    if isinstance(val, dict):
+        kids = [_place_node(p, v) for p, v in sorted((val.get("places") or {}).items())]
+        return (label, val.get("code"), kids or None, None)
+    return (label, val, None, None)                  # leaf: val is the record_f code
+
 def _loc_spec():
-    # continent (site order) → country (A→Z) → state (A→Z) → places (A→Z).
-    # NO dropdowns: places are checkbox children opened by an arrow.
+    # continent (site order) → country (A→Z) → state (A→Z) → places (A→Z, nested).
     out = []
     for cont in (CONTINENT_ORDER + [c for c in LOCATIONS if c not in CONTINENT_ORDER]):
         if cont not in LOCATIONS:
@@ -136,20 +145,30 @@ def _loc_spec():
             states = []
             for st in sorted(ccd.get("states", {})):
                 sd = ccd["states"][st]
-                places = [(p, pc, None, None)
-                          for p, pc in sorted((sd.get("places") or {}).items())]
+                places = [_place_node(p, v)
+                          for p, v in sorted((sd.get("places") or {}).items())]
                 states.append((st, sd.get("code"), places or None, None))
             countries.append((ctry, ccd.get("code"), states or None, None))
         out.append((cont, cd.get("code"), countries, None))
     return out
 
 def _rd_spec():
-    # century → decades. NO dropdown: decades are checkbox children (arrow opens).
+    # century → decade → (year). NO dropdown: every level is a checkbox child that
+    # an arrow opens. A decade value is either a bare code (old schema) or a dict
+    # {code, years:{year:code}} (new schema from the filter crawler).
     out = []
     for c in sorted(_RD, key=_num_key):
         decs = sorted((_RD[c].get("decades") or {}).items(),
                       key=lambda kv: _num_key(kv[0]))
-        children = [(d, code, None, None) for d, code in decs]
+        children = []
+        for d, dv in decs:
+            if isinstance(dv, dict):
+                yrs = sorted((dv.get("years") or {}).items(),
+                             key=lambda kv: _num_key(kv[0]))
+                ych = [(y, yc, None, None) for y, yc in yrs]
+                children.append((d, dv.get("code"), ych or None, None))
+            else:
+                children.append((d, dv, None, None))      # old schema: code string
         out.append((c, _RD[c].get("code"), children or None, None))
     return out
 FAMILY_TYPES = [("Father", "father"), ("Mother", "mother"),
@@ -227,6 +246,14 @@ class CheckableComboBox(QComboBox):
         for label, code in pairs:
             self.add_item(label, code)
 
+    def add_info(self, label):
+        """A non-checkable info/link row (e.g. «About these settings») — shown but
+        never toggled, never part of checked()."""
+        it = QStandardItem(label)
+        it.setFlags(Qt.ItemIsEnabled)            # NOT user-checkable
+        it.setForeground(Qt.gray)
+        self.model().appendRow(it)
+
     def clear_items(self):
         self.model().clear()
         self._codes = {}
@@ -251,13 +278,14 @@ class CheckableComboBox(QComboBox):
             idx = self.view().indexAt(ev.pos())
             if idx.isValid():
                 it = self.model().itemFromIndex(idx)
-                it.setCheckState(Qt.Unchecked if it.checkState() == Qt.Checked
-                                 else Qt.Checked)
+                if it.isCheckable():        # skip non-checkable info/link rows
+                    it.setCheckState(Qt.Unchecked if it.checkState() == Qt.Checked
+                                     else Qt.Checked)
             return True                     # consume → popup stays open
         return super().eventFilter(obj, ev)
 
     def _refresh(self):
-        labels = [t for t, _c in self.checked()]
+        labels = [t.strip() for t, _c in self.checked()]   # drop indent in the line
         le = self.lineEdit()
         le.setText(", ".join(labels))
         le.setToolTip("\n".join(labels))
@@ -373,12 +401,19 @@ class AncestryApp(QMainWindow):
         for lbl, _v in YEAR_OPTIONS:
             self.f_year_range.addItem(lbl)
         self.f_year_range.setCurrentIndex(1)        # ± 1 year (default)
-        self.f_first_exact = QComboBox(); self.f_first_exact.addItems(FIRST_EXACT_OPTIONS)
-        self.f_first_exact.setToolTip("Name match exactness (like the site's slider)")
-        self.f_first_exact.setMaximumWidth(150)
-        self.f_last_exact  = QComboBox(); self.f_last_exact.addItems(SURNAME_EXACT_OPTIONS)
-        self.f_last_exact.setToolTip("Surname match exactness")
-        self.f_last_exact.setMaximumWidth(150)
+        # multi-select match forms (checkboxes in the dropdown) — like the site
+        self.f_first_exact = CheckableComboBox(placeholder="— broad —")
+        self.f_first_exact.add_items(FIRST_FORMS)
+        self.f_first_exact.add_info("About these settings")
+        self.f_first_exact.setToolTip("Tick any combination of name match forms")
+        self.f_first_exact.setMaximumWidth(170)
+        self.f_last_exact  = CheckableComboBox(placeholder="— broad —")
+        self.f_last_exact.add_items(SURNAME_FORMS)
+        self.f_last_exact.add_info("About these settings")
+        self.f_last_exact.setToolTip("Tick any combination of surname match forms")
+        self.f_last_exact.setMaximumWidth(170)
+        self.f_first_exact.changed.connect(self._save)
+        self.f_last_exact.changed.connect(self._save)
         self.f_place_exact = QCheckBox("Exact")
         bf.addWidget(QLabel("First Names:"), 0, 0)
         bf.addWidget(self.f_first,           0, 1)
@@ -712,13 +747,38 @@ class AncestryApp(QMainWindow):
                 e["open"]()
 
     def _clear_filters(self):
+        """Reset EVERY search constraint to broad (keeps the name being searched):
+        Birth Year, Gender, name/place exactness, place, spouse/family members,
+        events, keyword, race, collection focus + checkboxes, and the filter tree.
+        Without this the stale Birth Year / Gender keep wiping the results."""
+        # basic constraints
+        self.f_place.clear()
+        self.f_byear.clear()
+        self.f_year_range.setCurrentIndex(0)
+        self.f_first_exact.set_checked([])           # broad (nothing ticked)
+        self.f_last_exact.set_checked([])
+        self.f_place_exact.setChecked(False)
+        # advanced
+        self.f_gender.setCurrentIndex(0)             # «—» = no gender
+        self.f_race.clear()
+        self.f_keyword.clear()
+        self.f_collection.setCurrentIndex(0)         # All Collections
+        for cb in (self.f_hist, self.f_trees, self.f_stories, self.f_photos):
+            cb.setChecked(True)                      # site default: all four on
+        # remove every spouse/family + event row
+        for key in list(self._fam):
+            for rec in list(self._fam[key]):
+                self._remove_fam_row(key, rec)
+        for rec in list(self._events):
+            self._remove_event_row(rec)
+        # the record-type / location / date filter tree
         for reg in (self._rt_reg, self._loc_reg, self._rd_reg):
             for e in reg.values():
                 if e.get("cb"):
                     e["cb"].setChecked(False)
                 if e.get("combo"):
                     e["combo"].set_checked([])
-        self._save()
+        self._save(); self._fit()
 
     @staticmethod
     def _collect(checks, combos) -> list:
@@ -828,9 +888,9 @@ class AncestryApp(QMainWindow):
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _static_widgets(self) -> list:
+        # f_first_exact / f_last_exact are CheckableComboBox → wired via .changed
         return [self.f_user, self.f_pass, self.f_first, self.f_last, self.f_place,
-                self.f_byear, self.f_year_range, self.f_first_exact,
-                self.f_last_exact, self.f_place_exact, self.f_keyword,
+                self.f_byear, self.f_year_range, self.f_place_exact, self.f_keyword,
                 self.f_gender, self.f_race, self.f_collection,
                 self.f_hist, self.f_trees, self.f_stories, self.f_photos,
                 self.f_folder, self.f_docx, self.f_xlsx]
@@ -841,8 +901,8 @@ class AncestryApp(QMainWindow):
             "first_names": self.f_first.text(), "last_names": self.f_last.text(),
             "place_lived": self.f_place.text(), "birth_year": self.f_byear.text(),
             "year_range_i": self.f_year_range.currentIndex(),
-            "first_exact_i": self.f_first_exact.currentIndex(),
-            "last_exact_i":  self.f_last_exact.currentIndex(),
+            "first_forms": [l for l, _c in self.f_first_exact.checked()],
+            "last_forms":  [l for l, _c in self.f_last_exact.checked()],
             "place_exact": self.f_place_exact.isChecked(),
             "keyword": self.f_keyword.text(), "gender": self.f_gender.currentText(),
             "race": self.f_race.text(), "collection": self.f_collection.currentText(),
@@ -885,10 +945,8 @@ class AncestryApp(QMainWindow):
         _s(self.f_place, "place_lived"); _s(self.f_byear, "birth_year")
         if isinstance(d.get("year_range_i"), int):
             self.f_year_range.setCurrentIndex(d["year_range_i"])
-        if isinstance(d.get("first_exact_i"), int):
-            self.f_first_exact.setCurrentIndex(d["first_exact_i"])
-        if isinstance(d.get("last_exact_i"), int):
-            self.f_last_exact.setCurrentIndex(d["last_exact_i"])
+        self.f_first_exact.set_checked(d.get("first_forms") or [])
+        self.f_last_exact.set_checked(d.get("last_forms") or [])
         _s(self.f_place_exact, "place_exact"); _s(self.f_keyword, "keyword")
         i = self.f_gender.findText(str(d.get("gender", "—")))
         if i >= 0: self.f_gender.setCurrentIndex(i)
@@ -959,11 +1017,9 @@ class AncestryApp(QMainWindow):
             "year_range":  YEAR_OPTIONS[self.f_year_range.currentIndex()][1],
             "advanced":    self._build_advanced(),
             "exact": {
-                "name":    self.f_first_exact.currentText() == "Exact",
-                "surname": self.f_last_exact.currentText() == "Exact",
-                "place":   self.f_place_exact.isChecked(),
-                "name_level":    self.f_first_exact.currentText(),
-                "surname_level": self.f_last_exact.currentText(),
+                "place":         self.f_place_exact.isChecked(),
+                "name_forms":    [c for _l, c in self.f_first_exact.checked()],
+                "surname_forms": [c for _l, c in self.f_last_exact.checked()],
             },
             "filters": {
                 "types":     self._type_filters(),       # [{label, code}]

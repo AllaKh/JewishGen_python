@@ -502,7 +502,8 @@ def write_docx(path, recs, qlines, append=False):
         cells = tbl.add_row().cells
         cells[0].text = str(i)
         cells[1].text = r.get("label", "")
-        cells[2].text = Path(r.get("path", "")).name if r.get("path") else "— (не скачано)"
+        cells[2].text = (str(Path(r["path"]).resolve())   # точный путь куда сгружен
+                         if r.get("path") else "— (не скачано)")
         _add_hyperlink(cells[3].paragraphs[0], "Commons", r.get("page", ""))
         for cell, wd in zip(cells, widths):
             cell.width = wd

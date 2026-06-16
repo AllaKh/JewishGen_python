@@ -385,6 +385,8 @@ def write_docx(path: Path, records: list, query_info: dict):
                 doc.add_picture(img_path, width=Inches(3.5))
             except Exception:
                 doc.add_paragraph(f"  [{Path(img_path).name}]")
+            p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+            p.add_run(str(Path(img_path).resolve()))     # точный путь куда сгружен
         elif thumb:
             doc.add_paragraph("Превью:").runs[0].bold = True
             try:
@@ -423,7 +425,7 @@ def write_xlsx(path: Path, records: list, query_info: dict):
                 all_fields.append(k)
 
     # Columns: #, Имя, <all record fields…>, Фото, URL (link LAST)
-    cols = ["#", "Имя"] + all_fields + ["Фото", "URL"]
+    cols = ["#", "Имя"] + all_fields + ["Файл", "URL"]
     for ci, cn in enumerate(cols, 1):
         c = ws.cell(row=1, column=ci, value=cn)
         c.font = HN; c.fill = HF; c.border = T
@@ -433,10 +435,11 @@ def write_xlsx(path: Path, records: list, query_info: dict):
     for ri, rec in enumerate(records, 2):
         fields = rec.get("fields", {})
         name = rec.get("name", "")
-        has_img = "да" if rec.get("image_path") else "нет"
+        ip = rec.get("image_path")
+        doc_path = str(Path(ip).resolve()) if ip and Path(ip).exists() else ""
         vals = ([ri-1, name]
                 + [fields.get(f, "") for f in all_fields]
-                + [has_img, rec.get("url", "")])
+                + [doc_path, rec.get("url", "")])
         for ci, val in enumerate(vals, 1):
             c = ws.cell(row=ri, column=ci)
             if cols[ci-1] == "URL" and val:          # hidden hyperlink, not raw URL

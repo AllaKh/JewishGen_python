@@ -274,17 +274,20 @@ class FamilySearchApp(QMainWindow):
         # Ancestor Info — Alternate Names (up to 3, ✕ to remove, like the site)
         # and Sex.
         av.addWidget(_sechead("ANCESTOR INFORMATION"))
-        ai = QHBoxLayout(); ai.setSpacing(14)
         self._alt = []                                  # list of alt-name row dicts
+        # Sex — its OWN row (it's a property of the ancestor, NOT of the alt name).
+        sx = QHBoxLayout(); sx.setSpacing(8)
+        sx_lbl = QLabel("Sex:"); sx_lbl.setFixedWidth(95)
+        self.f_sex = QComboBox(); self.f_sex.addItems(GENDER_OPTIONS)
+        self.f_sex.setFixedWidth(170)
+        sx.addWidget(sx_lbl); sx.addWidget(self.f_sex); sx.addStretch()
+        av.addLayout(sx)
+        # «+ Alternate Name» on its own row, then the alt-name rows underneath.
         self._alt_link = QPushButton("+ Alternate Name")
         self._alt_link.setObjectName("advBtn")
         self._alt_link.clicked.connect(lambda _=0: self._add_alt_row())
-        ai.addWidget(self._alt_link)
-        ai.addWidget(QLabel("Sex:"))
-        self.f_sex = QComboBox(); self.f_sex.addItems(GENDER_OPTIONS)
-        ai.addWidget(self.f_sex)
-        ai.addStretch()
-        av.addLayout(ai)
+        al = QHBoxLayout(); al.addWidget(self._alt_link); al.addStretch()
+        av.addLayout(al)
         self._alt_box = QVBoxLayout(); self._alt_box.setSpacing(3)
         av.addLayout(self._alt_box)
         av.addWidget(_divider())

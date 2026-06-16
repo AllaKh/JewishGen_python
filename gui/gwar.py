@@ -15,9 +15,21 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
     QFileDialog, QProgressBar, QMessageBox, QApplication, QGroupBox,
+    QScrollArea, QFrame,
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from gui._app_icon import app_icon, make_header, make_cancel_button
+
+
+def _load_facets():
+    """gwar.mil.ru facets (Information sources / Awards / Losses / Notable persons),
+    EN label ↔ RU facet value. GUI shows EN; the scraper clicks the RU value."""
+    try:
+        return json.loads((Path(__file__).resolve().parent.parent / "config"
+                           / "gwar_facets.json").read_text("utf-8"))
+    except Exception:
+        return {"sources": [], "awards": [], "losses": [], "known": []}
+FACETS = _load_facets()
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -92,6 +104,52 @@ class Worker(QThread):
         self.finished.emit(result)
 
 
+class _FacetChecks(QWidget):
+    """A searchable checkbox list (mirrors the site's лупа + checkboxes). Shows the
+    EN labels; .checked() returns the RU facet values of the ticked rows. EN labels
+    keep the GUI English while the scraper still clicks the Russian site values."""
+    def __init__(self, items, all_checked=False, max_h=150,
+                 searchable=True, scroll=True, on_change=None):
+        super().__init__()
+        self._cbs = []                                   # (checkbox, ru-value)
+        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(3)
+        if searchable:
+            self._search = QLineEdit(); self._search.setPlaceholderText("Search…")
+            self._search.textChanged.connect(self._filter)
+            v.addWidget(self._search)
+        if scroll:
+            host = QWidget(); target = QVBoxLayout(host)
+            target.setContentsMargins(0, 0, 0, 0); target.setSpacing(1)
+        else:
+            target = v                                   # plain column — no scroll bar
+        for it in items:
+            cb = QCheckBox(it.get("en", it.get("ru", "")))
+            cb.setChecked(all_checked)
+            if on_change:
+                cb.stateChanged.connect(on_change)
+            self._cbs.append((cb, it.get("ru", "")))
+            target.addWidget(cb)
+        if scroll:
+            target.addStretch()
+            sc = QScrollArea(); sc.setWidget(host); sc.setWidgetResizable(True)
+            sc.setMaximumHeight(max_h); sc.setFrameShape(QFrame.NoFrame)
+            sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            v.addWidget(sc)
+
+    def _filter(self, text):
+        t = (text or "").strip().lower()
+        for cb, ru in self._cbs:
+            cb.setVisible(t in cb.text().lower() or t in ru.lower())
+
+    def checked(self):
+        return [ru for cb, ru in self._cbs if cb.isChecked()]
+
+    def set_checked(self, ru_values):
+        s = set(ru_values or [])
+        for cb, ru in self._cbs:
+            cb.setChecked(ru in s)
+
+
 class GwarApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -104,13 +162,17 @@ class GwarApp(QMainWindow):
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
-        outer = QVBoxLayout(root)
-        outer.setContentsMargins(16, 12, 16, 12); outer.setSpacing(10)
+        main = QVBoxLayout(root)
+        main.setContentsMargins(16, 12, 16, 12); main.setSpacing(8)
 
-        outer.addLayout(make_header("Voinalogo.png", "Heroes of the Great War",
-                                    color="#8a6d1f"))
-        outer.addWidget(QLabel("WWI (1914–1918) participant records "
-                               "(gwar.mil.ru) — the site is Russian only."))
+        main.addLayout(make_header("Voinalogo.png", "Heroes of the Great War",
+                                   color="#8a6d1f"))
+        main.addWidget(QLabel("WWI (1914–1918) participant records "
+                              "(gwar.mil.ru) — the site is Russian only."))
+
+        # Scrollable form (mirrors the site sections) — same as Память народа.
+        body = QWidget(); outer = QVBoxLayout(body)
+        outer.setContentsMargins(0, 0, 8, 0); outer.setSpacing(10)
 
         # 1) Basic data ──────────────────────────────────────────────────────
         bg = QGroupBox("Basic data")
@@ -148,6 +210,32 @@ class GwarApp(QMainWindow):
         secl.addStretch()
         outer.addWidget(secg)
 
+        # 3b) Information sources / Awards / Losses / Notable persons (collapsible —
+        #     keeps the window short; tick to narrow, all unticked = no narrowing).
+        self._facet_btn = QPushButton(
+            "▶  Information sources / Awards / Losses / Notable persons")
+        self._facet_btn.setObjectName("advBtn"); self._facet_btn.setCheckable(True)
+        self._facet_btn.toggled.connect(self._toggle_facets)
+        outer.addWidget(self._facet_btn)
+        self._facet_box = QWidget()
+        fgl = QGridLayout(self._facet_box); fgl.setSpacing(8)
+        self._fc_sources = _FacetChecks(FACETS.get("sources", []), searchable=False,
+                                        scroll=False, on_change=self._save)
+        self._fc_known   = _FacetChecks(FACETS.get("known", []), searchable=False,
+                                        scroll=False, on_change=self._save)
+        self._fc_awards  = _FacetChecks(FACETS.get("awards", []), max_h=210,
+                                        on_change=self._save)
+        self._fc_losses  = _FacetChecks(FACETS.get("losses", []), max_h=210,
+                                        on_change=self._save)
+        fgl.addWidget(QLabel("Information sources:"), 0, 0)
+        fgl.addWidget(self._fc_sources, 1, 0)
+        fgl.addWidget(QLabel("Notable persons:"), 2, 0)
+        fgl.addWidget(self._fc_known, 3, 0)
+        fgl.addWidget(QLabel("Awards:"), 0, 1); fgl.addWidget(self._fc_awards, 1, 1, 3, 1)
+        fgl.addWidget(QLabel("Losses:"), 0, 2); fgl.addWidget(self._fc_losses, 1, 2, 3, 1)
+        self._facet_box.setVisible(False)
+        outer.addWidget(self._facet_box)
+
         # 4) Additional search parameters ────────────────────────────────────
         ag = QGroupBox("Additional search parameters")
         agl = QGridLayout(ag); agl.setSpacing(6)
@@ -171,6 +259,15 @@ class GwarApp(QMainWindow):
         dgl.addWidget(QLabel("Inventory/Cabinet:"), 0, 2); dgl.addWidget(self.f_inv, 0, 3)
         dgl.addWidget(QLabel("File/Box:"), 1, 0);          dgl.addWidget(self.f_file, 1, 1)
         outer.addWidget(dg)
+        outer.addStretch()
+
+        # Wrap the form in a scroll area (capped at 55% of the screen) so the tall
+        # form never runs off-screen — same as Память народа.
+        scroll = QScrollArea(); scroll.setWidget(body); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        _scr_h = QApplication.primaryScreen().availableGeometry().height()
+        scroll.setMaximumHeight(int(_scr_h * 0.55))
+        main.addWidget(scroll, 1)
 
         # Output ─────────────────────────────────────────────────────────────
         og = QGroupBox("Output (Word)")
@@ -178,11 +275,11 @@ class GwarApp(QMainWindow):
         self.f_folder = QLineEdit(); self.f_folder.setText(_DEF_DIR)
         bb = QPushButton("Browse…"); bb.setFixedWidth(80); bb.clicked.connect(self._browse)
         ol.addWidget(QLabel("Save to:")); ol.addWidget(self.f_folder, 1); ol.addWidget(bb)
-        outer.addWidget(og)
+        main.addWidget(og)
 
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        outer.addWidget(self.pbar); outer.addWidget(self.stlbl)
+        main.addWidget(self.pbar); main.addWidget(self.stlbl)
 
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH"); self.start_btn.setObjectName("startBtn")
@@ -190,8 +287,8 @@ class GwarApp(QMainWindow):
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        outer.addLayout(br)
-        outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        main.addLayout(br)
+        main.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
         for w in (self.f_last, self.f_first, self.f_mid, self.f_birth,
                   self.f_gub, self.f_uezd, self.f_vol, self.f_set,
@@ -202,6 +299,11 @@ class GwarApp(QMainWindow):
         self.f_exact.stateChanged.connect(self._save)
         for cb in self._sec_cbs.values():
             cb.stateChanged.connect(self._save)
+
+    def _toggle_facets(self, on):
+        self._facet_box.setVisible(on)
+        self._facet_btn.setText(("▼" if on else "▶") +
+            "  Information sources / Awards / Losses / Notable persons")
 
     def _browse(self):
         p = QFileDialog.getExistingDirectory(self, "Output folder",
@@ -229,6 +331,10 @@ class GwarApp(QMainWindow):
             "inventory":   self.f_inv.text().strip(),
             "file":        self.f_file.text().strip(),
             "sections":    {n: cb.isChecked() for n, cb in self._sec_cbs.items()},
+            "info_sources": self._fc_sources.checked(),   # RU facet values, ticked only
+            "awards":      self._fc_awards.checked(),
+            "losses":      self._fc_losses.checked(),
+            "notable":     self._fc_known.checked(),
             "exact":       self.f_exact.isChecked(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":         print,
@@ -300,7 +406,11 @@ class GwarApp(QMainWindow):
                  "evplace": self.f_evplace.text(), "fund": self.f_fund.text(),
                  "inv": self.f_inv.text(), "file": self.f_file.text(),
                  "folder": self.f_folder.text(), "exact": self.f_exact.isChecked(),
-                 "sections": {n: cb.isChecked() for n, cb in self._sec_cbs.items()}}
+                 "sections": {n: cb.isChecked() for n, cb in self._sec_cbs.items()},
+                 "info_sources": self._fc_sources.checked(),
+                 "awards": self._fc_awards.checked(),
+                 "losses": self._fc_losses.checked(),
+                 "notable": self._fc_known.checked()}
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
@@ -328,6 +438,10 @@ class GwarApp(QMainWindow):
         secs = d.get("sections", {})
         for n, cb in self._sec_cbs.items():
             cb.setChecked(bool(secs.get(n, True)))
+        self._fc_sources.set_checked(d.get("info_sources", []))
+        self._fc_awards.set_checked(d.get("awards", []))
+        self._fc_losses.set_checked(d.get("losses", []))
+        self._fc_known.set_checked(d.get("notable", []))
 
 
 if __name__ == "__main__":

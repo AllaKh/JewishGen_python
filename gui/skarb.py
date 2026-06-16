@@ -1,5 +1,5 @@
 """
-gui/skarb.py — АИС Скарб search window
+gui/skarb.py — AIS Skarb search window (English UI; search terms stay Russian)
 """
 
 import asyncio, json, sys, threading
@@ -73,7 +73,7 @@ class Worker(QThread):
 class SkarbApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("АИС Скарб — поиск")
+        self.setWindowTitle("AIS Skarb — Search")
         self.setMinimumWidth(700)
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
@@ -88,16 +88,16 @@ class SkarbApp(QMainWindow):
         outer.setSpacing(10)
 
         # Logo + name (big letters next to the logo)
-        outer.addLayout(make_header("Skarblogo.png", "АИС Скарб", color="#2a4a7f"))
+        outer.addLayout(make_header("Skarblogo.png", "AIS Skarb", color="#2a4a7f"))
         outer.addWidget(QLabel(
-            "Автоматизированная информационная система архивов Беларуси"))
+            "Automated Information System of the Belarusian Archives"))
 
-        # Surnames
-        sg = QGroupBox("Фамилии для поиска")
+        # Surnames (search is in Russian — enter Cyrillic surnames)
+        sg = QGroupBox("Surnames to search")
         sl = QVBoxLayout(sg); sl.setSpacing(6)
         sl.addWidget(QLabel(
-            "Введите одну или несколько фамилий — каждую с новой строки.\n"
-            "Поиск ведётся по принципу ИЛИ (любая из фамилий)."))
+            "Enter one or more surnames — each on a new line (in Russian).\n"
+            "Search uses OR (any of the surnames)."))
         self.f_surnames = QTextEdit()
         self.f_surnames.setPlaceholderText(
             "Шендерович\nШур\nЛевин")
@@ -106,27 +106,27 @@ class SkarbApp(QMainWindow):
         outer.addWidget(sg)
 
         # Filters
-        fg = QGroupBox("Фильтр результатов (ключевые слова)")
+        fg = QGroupBox("Result filter (keywords)")
         fl = QVBoxLayout(fg); fl.setSpacing(8)
 
         mr = QHBoxLayout()
-        mr.addWidget(QLabel("Режим:"))
-        self.rb_or  = QRadioButton("ИЛИ (любое слово)")
-        self.rb_and = QRadioButton("И (все слова)")
+        mr.addWidget(QLabel("Mode:"))
+        self.rb_or  = QRadioButton("OR (any word)")
+        self.rb_and = QRadioButton("AND (all words)")
         self.rb_or.setChecked(True)
         mr.addWidget(self.rb_or); mr.addWidget(self.rb_and); mr.addStretch()
         fl.addLayout(mr)
 
         kr = QHBoxLayout(); kr.setSpacing(8)
-        self.f_kw1 = QLineEdit(); self.f_kw1.setPlaceholderText("Ключевое слово 1")
-        self.f_kw2 = QLineEdit(); self.f_kw2.setPlaceholderText("Ключевое слово 2")
-        self.f_kw3 = QLineEdit(); self.f_kw3.setPlaceholderText("Ключевое слово 3")
+        self.f_kw1 = QLineEdit(); self.f_kw1.setPlaceholderText("Keyword 1")
+        self.f_kw2 = QLineEdit(); self.f_kw2.setPlaceholderText("Keyword 2")
+        self.f_kw3 = QLineEdit(); self.f_kw3.setPlaceholderText("Keyword 3")
         kr.addWidget(self.f_kw1, 1); kr.addWidget(self.f_kw2, 1); kr.addWidget(self.f_kw3, 1)
         fl.addLayout(kr)
         outer.addWidget(fg)
 
         # Output
-        og = QGroupBox("Вывод")
+        og = QGroupBox("Output")
         ol = QVBoxLayout(og); ol.setSpacing(8)
         fr = QHBoxLayout()
         self.f_docx = QCheckBox("Word (.docx)"); self.f_docx.setChecked(True)
@@ -135,22 +135,22 @@ class SkarbApp(QMainWindow):
         ol.addLayout(fr)
         dr = QHBoxLayout(); dr.setSpacing(6)
         self.f_folder = QLineEdit(); self.f_folder.setText(_DEF_DIR)
-        bb = QPushButton("Обзор…"); bb.setFixedWidth(80)
+        bb = QPushButton("Browse…"); bb.setFixedWidth(80)
         bb.clicked.connect(self._browse)
-        dr.addWidget(QLabel("Сохранить в:"))
+        dr.addWidget(QLabel("Save to:"))
         dr.addWidget(self.f_folder, 1); dr.addWidget(bb)
         ol.addLayout(dr)
         outer.addWidget(og)
 
         # Progress
         self.pbar  = QProgressBar(); self.pbar.setValue(0)
-        self.stlbl = QLabel("Готов")
+        self.stlbl = QLabel("Ready")
         outer.addWidget(self.pbar)
         outer.addWidget(self.stlbl)
 
         # Start button
         br = QHBoxLayout()
-        self.start_btn = QPushButton("НАЧАТЬ ПОИСК")
+        self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn)
@@ -173,7 +173,7 @@ class SkarbApp(QMainWindow):
 
     def _browse(self):
         p = QFileDialog.getExistingDirectory(
-            self, "Папка для результатов", self.f_folder.text() or _DEF_DIR)
+            self, "Select output folder", self.f_folder.text() or _DEF_DIR)
         if p:
             self.f_folder.setText(p)
 
@@ -202,12 +202,12 @@ class SkarbApp(QMainWindow):
 
     def _validate(self):
         if not self._surnames():
-            QMessageBox.warning(self, "Нет фамилий",
-                                "Введите хотя бы одну фамилию.")
+            QMessageBox.warning(self, "No surnames",
+                                "Enter at least one surname.")
             return False
         if not _SCRAPER_OK:
-            QMessageBox.critical(self, "Ошибка",
-                                 "skarb_scraper.py не найден.")
+            QMessageBox.critical(self, "Error",
+                                 "skarb_scraper.py not found.")
             return False
         return True
 
@@ -218,7 +218,7 @@ class SkarbApp(QMainWindow):
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.pbar.setValue(0)
-        self.stlbl.setText("Запуск...")
+        self.stlbl.setText("Starting...")
         self.worker = Worker(self._payload())
         self.worker.progress.connect(
             lambda v, t: (self.pbar.setValue(v), self.stlbl.setText(t)))
@@ -230,15 +230,15 @@ class SkarbApp(QMainWindow):
         self.cancel_btn.setEnabled(False)
         if r.get("ok"):
             n = r.get("n_records", 0)
-            msg = f"{n} записей"
+            msg = f"{n} record(s)"
             if r.get("output_folder"):
-                msg += f"\n\nПапка:\n{r['output_folder']}"
-            QMessageBox.information(self, "Готово", msg)
-            self.stlbl.setText("Готово.")
+                msg += f"\n\nFolder:\n{r['output_folder']}"
+            QMessageBox.information(self, "Done", msg)
+            self.stlbl.setText("Done.")
         else:
-            QMessageBox.critical(self, "Ошибка",
-                                 r.get("message", "Ошибка — см. терминал."))
-            self.stlbl.setText("Ошибка.")
+            QMessageBox.critical(self, "Error",
+                                 r.get("message", "Error — see terminal."))
+            self.stlbl.setText("Error.")
 
     def _save(self, *_):
         try:

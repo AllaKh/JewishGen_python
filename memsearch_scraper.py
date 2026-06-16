@@ -652,6 +652,10 @@ def _docx_add_record(doc, i, rec):
         if png:
             try:
                 doc.add_picture(io.BytesIO(png), width=Inches(2.6))
+                ph = rec.get("photo")
+                if ph and Path(ph).exists():
+                    p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+                    p.add_run(str(Path(ph).resolve()))   # точный путь куда сгружен
             except Exception:
                 pass
     if rec.get("url"):
@@ -800,7 +804,8 @@ async def run_scraper(*,
                            "source": _host(src_url) or c.get("source", ""),
                            "summary": c.get("summary", ""),
                            "fields": fields,
-                           "thumb_bytes": ext.get("thumb_bytes")}
+                           "thumb_bytes": ext.get("thumb_bytes"),
+                           "photo": ext.get("photo")}
                     records.append(rec)
                     await asyncio.sleep(0.3)
                 if not await _goto_next_page(page, log):

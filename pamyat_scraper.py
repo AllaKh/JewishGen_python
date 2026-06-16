@@ -311,14 +311,17 @@ async def _do_search(page, params, lang, log) -> bool:
     await page.goto(url, wait_until="domcontentloaded", timeout=40000)
     await asyncio.sleep(2)
 
-    # Ignore the (empty) main search string, keep documents grouped per person.
-    for cid, want in (("use_main_string", True),
-                      ("use_person", bool(params.get("group_person", True)))):
+    # Checkboxes (id → desired state). use_main_string ON by default so the empty
+    # top search string doesn't interfere with the advanced fields.
+    for cid, want in (("use_main_string",      bool(params.get("ignore_main", True))),
+                      ("use_person",           bool(params.get("group_person", True))),
+                      ("use_collection",       bool(params.get("victory_lesson", False))),
+                      ("date_birth_period",    bool(params.get("birth_period", False))),
+                      ("data_vibitiya_period", bool(params.get("dep_period", False)))):
         try:
             cb = page.locator(f"#{cid}").first
             if await cb.count():
-                checked = await cb.is_checked()
-                if checked != want:
+                if (await cb.is_checked()) != want:
                     await cb.click(timeout=2500)
         except Exception:
             pass
@@ -334,6 +337,21 @@ async def _do_search(page, params, lang, log) -> bool:
                       params.get("place_service", ""), log)
     await _fill_by_id(page, "data_i_mesto_priziva",
                       params.get("place_conscription", ""), log)
+    await _fill_by_id(page, "ids",         params.get("record_id", ""), log)
+    # Departure / death info
+    await _fill_by_id(page, "data_vibitiya_from", params.get("dep_from", ""), log)
+    await _fill_by_id(page, "data_vibitiya_to",   params.get("dep_to", ""), log)
+    await _fill_by_id(page, "mesto_vibitiya", params.get("place_departure", ""), log)
+    await _fill_by_id(page, "gospital",    params.get("hospital", ""), log)
+    await _fill_by_id(page, "lager",       params.get("pow_camp", ""), log)
+    await _fill_by_id(page, "mesto_pleneniya", params.get("place_capture", ""), log)
+    # Award document + date
+    await _fill_by_id(page, "nomer_dokumenta", params.get("award_doc", ""), log)
+    await _fill_by_id(page, "data_dokumenta",  params.get("award_date", ""), log)
+    # Archive details
+    await _fill_by_id(page, "nomer_fonda", params.get("fund", ""), log)
+    await _fill_by_id(page, "nomer_opisi", params.get("inventory", ""), log)
+    await _fill_by_id(page, "nomer_dela",  params.get("file", ""), log)
     # Dropdowns: set the underlying <select> by value (language-independent).
     for sid, val in (("army_unit_rod", params.get("branch", "")),
                      ("award_ids", params.get("award", ""))):
@@ -1041,6 +1059,8 @@ def _docx_add_person(doc, i, rec):
             png = _to_png(Path(img).read_bytes())
             if png:
                 doc.add_picture(io.BytesIO(png), width=Inches(3.3))
+                p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+                p.add_run(str(Path(img).resolve()))      # точный путь куда сгружен
         except Exception:
             pass
 
@@ -1084,10 +1104,15 @@ def write_docx(path, persons, qlines, append=False):
 async def run_scraper(*,
     lang="ru",
     last_name="", first_name="", middle_name="",
-    birth_from="", birth_to="", place_birth="",
+    birth_from="", birth_to="", birth_period=False, place_birth="",
     rank="", branch="", place_service="", place_conscription="",
-    award="",
-    group_person=True,
+    record_id="", ignore_main=True, group_person=True, victory_lesson=False,
+    dep_from="", dep_to="", dep_period=False, place_departure="",
+    hospital="", pow_camp="", place_capture="",
+    award="", award_doc="", award_date="",
+    fund="", inventory="", file="",
+    result_tags=None,         # result-page filter tags (RU) — best-effort
+    info_sources=None,        # «Источники информации» (RU values) — ticked to narrow
     output_folder=Path("."),
     log=print,
     progress=None,
@@ -1102,21 +1127,40 @@ async def run_scraper(*,
         if progress:
             progress(pct, txt)
 
+    info_sources = [s for s in (info_sources or []) if s]
+    if info_sources:
+        # Applied on the search form once the exact source-checkbox DOM is confirmed
+        # (the user will send the Память-народа details); collected + logged for now.
+        log(f"  Источники информации (выбрано): {len(info_sources)}")
+
     def _done():
         return bool(cancel_event and cancel_event.is_set())
 
     params = dict(last_name=last_name.strip(), first_name=first_name.strip(),
                   middle_name=middle_name.strip(), birth_from=birth_from.strip(),
-                  birth_to=birth_to.strip(), place_birth=place_birth.strip(),
+                  birth_to=birth_to.strip(), birth_period=birth_period,
+                  place_birth=place_birth.strip(),
                   rank=rank.strip(), branch=branch, place_service=place_service.strip(),
-                  place_conscription=place_conscription.strip(), award=award,
-                  group_person=group_person)
+                  place_conscription=place_conscription.strip(),
+                  record_id=record_id.strip(), ignore_main=ignore_main,
+                  group_person=group_person, victory_lesson=victory_lesson,
+                  dep_from=dep_from.strip(), dep_to=dep_to.strip(), dep_period=dep_period,
+                  place_departure=place_departure.strip(), hospital=hospital.strip(),
+                  pow_camp=pow_camp.strip(), place_capture=place_capture.strip(),
+                  award=award, award_doc=award_doc.strip(), award_date=award_date.strip(),
+                  fund=fund.strip(), inventory=inventory.strip(), file=file.strip())
+    result_tags = [t for t in (result_tags or []) if t]
+    if result_tags:
+        log(f"  Фильтры результатов (выбрано): {len(result_tags)}")
     output_folder = Path(output_folder); output_folder.mkdir(parents=True, exist_ok=True)
     qkey = " ".join(p for p in (last_name, first_name, middle_name) if p) or "pamyat"
     images_dir = output_folder / "images" / (safe_fn(qkey) or "pamyat")
     summary = {"ok": False}
 
-    if not any(v for k, v in params.items() if k != "group_person"):
+    # «empty query» check ignores the always-set boolean flags
+    _BOOL = ("group_person", "ignore_main", "victory_lesson", "birth_period",
+             "dep_period")
+    if not any(v for k, v in params.items() if k not in _BOOL):
         _prog(100, "Пустой запрос.")
         return summary
 

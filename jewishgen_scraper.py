@@ -329,10 +329,13 @@ def _set_cell_lines(cell, lines, bold=False):
         render(cell.add_paragraph(), segs)
 
 
-def write_database_docx(out_path, db_name, header_lines, columns, rows, query_lines):
+def write_database_docx(out_path, db_name, header_lines, columns, rows, query_lines,
+                        row_files=None):
     """Write ONE .docx file for a single database. Each matched row from the
     JewishGen page becomes its own row in the .docx table, cell-for-cell —
-    multi-line cells stay multi-line, single-line cells stay single-line."""
+    multi-line cells stay multi-line, single-line cells stay single-line.
+    `row_files` ({row_index: [paths]}) adds a «Сохранённый файл» column with the
+    exact path of each downloaded document."""
     doc = Document()
 
     # A4 paper, landscape, minimal margins (5 mm) so wide JG tables fit.
@@ -392,6 +395,12 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
     if not rows:
         doc.save(out_path)
         return
+
+    # Add a «Сохранённый файл» column with the exact download path(s) per row.
+    if row_files:
+        columns = list(columns) + ["Сохранённый файл"]
+        rows = [list(r) + ["\n".join(row_files.get(i, []))]
+                for i, r in enumerate(rows)]
 
     def cell_text(c):
         """Flatten a cell into a single string (for synthetic-column check)."""
@@ -572,6 +581,13 @@ def write_xlsx_all(out_path, databases, query_lines):
         if not rows:
             skipped.append((name, "all rows empty after trim"))
             continue
+
+        # Add a «Сохранённый файл» column with the exact download path(s) per row.
+        row_files = db.get("row_files") or {}
+        if row_files:
+            columns = list(columns) + ["Сохранённый файл"]
+            rows = [list(r) + ["\n".join(row_files.get(i, []))]
+                    for i, r in enumerate(rows)]
 
         # Reduce columns to plain strings — Excel header rows don't need
         # multi-line formatting, just bold text.
@@ -968,7 +984,7 @@ async def try_autofill_login(page, email, password, timeout_s=15):
 
 
 async def wait_for_results_page(context, page, email, password=None,
-                                timeout_seconds=900):
+                                timeout_seconds=900, list_only=False):
     """Wait for the browser to land on the JewishGen results URL. If
     email+password are provided AND we hit the login page, try to autofill;
     otherwise pause passively while the user logs in by hand."""
@@ -980,6 +996,15 @@ async def wait_for_results_page(context, page, email, password=None,
         await page.wait_for_load_state("domcontentloaded", timeout=10_000)
     except Exception:
         pass
+
+    if list_only:
+        # Unified search: NEVER log in or prompt — just wait briefly for the results
+        # URL, then return whatever we have so the caller can copy the result rows.
+        try:
+            await page.wait_for_url(re.compile(r"jgform", re.I), timeout=30_000)
+        except PWTimeout:
+            pass
+        return page
 
     if await _looks_like_login(page):
         ok = await try_autofill_login(page, email, password)
@@ -1117,7 +1142,8 @@ async def wait_for_login_to_finish(page, timeout_seconds=600):
         pass
 
 
-async def click_list_button_open_new_page(context, results_page, label, attempts=4):
+async def click_list_button_open_new_page(context, results_page, label, attempts=4,
+                                          list_only=False):
     """Click a 'List N records' button by its exact visible label. If the
     opened tab is the Auth0 login page, pause until the user has logged in
     (the tab is NOT closed). Dismiss any donation / discussion popups that
@@ -1134,7 +1160,8 @@ async def click_list_button_open_new_page(context, results_page, label, attempts
             await results_page.wait_for_load_state("domcontentloaded", timeout=15_000)
             new_page = results_page
 
-        await wait_for_login_to_finish(new_page)
+        if not list_only:                  # unified: never wait for / prompt a login
+            await wait_for_login_to_finish(new_page)
         await dismiss_popups(new_page)
 
         # Check for 503 / server error page.
@@ -2210,14 +2237,17 @@ async def _process_images_for_db(context, rows, images_dir, fs_email, fs_passwor
     """
     Walk matched rows, detect image tasks, execute downloads.
     Images saved to images_dir/{row_label}[_tN].jpg
+    Returns {row_index: [saved full paths]} for the Word/Excel «file» column.
     """
+    row_files: dict = {}
     if not rows:
-        return
+        return row_files
     for ri, row in enumerate(rows):
         tasks = _row_image_tasks(row)
         if not tasks:
             continue
         label = _row_label(row) or f"row_{ri+1:03d}"
+        dests = []
         for ti, task in enumerate(tasks):
             sfx = f"_t{ti+1}" if len(tasks) > 1 else ""
             dest = images_dir / f"{label}{sfx}.jpg"
@@ -2226,12 +2256,24 @@ async def _process_images_for_db(context, rows, images_dir, fs_email, fs_passwor
                 await _do_fhl_download(
                     task["url"], task["img_num"],
                     dest, fs_email, fs_password, log)
+                dests.append(dest)
             elif task["type"] == "direct":
                 log(f"    [строка {ri+1}] Direct image → {dest.name}")
                 await _do_direct_download(context, task["url"], dest, log)
+                dests.append(dest)
             elif task["type"] == "ukraine":
                 log(f"    [строка {ri+1}] Ukrainian ref (ссылка сохранена, не скачиваем): "
                     f"{task['url'][:60]}")
+        # record every file actually written for this row (incl. _2/_3 variants)
+        saved = []
+        for d in dests:
+            for p in ([d] + sorted(images_dir.glob(d.stem + "_*"))):
+                p = Path(p)
+                if p.exists() and str(p.resolve()) not in saved:
+                    saved.append(str(p.resolve()))
+        if saved:
+            row_files[ri] = saved
+    return row_files
 
 
 # ---------- main ------------------------------------------------------------ #
@@ -2273,6 +2315,7 @@ async def run_scraper(
     log=print,
     cancel_event=None,
     progress=None,
+    list_only=False,          # unified search: collect result rows, write no files
 ):
     """Run the JewishGen search and write the matched rows into the chosen
     output folder. All parameters are explicit so this function can be
@@ -2373,7 +2416,7 @@ async def run_scraper(
                 return summary_result
             _progress(15, "Waiting for results page (log in if asked)…")
             page = await wait_for_results_page(
-                context, page, email, password=password
+                context, page, email, password=password, list_only=list_only
             )
 
             if _cancelled():
@@ -2409,6 +2452,7 @@ async def run_scraper(
             saved_docx_count = 0
             used_filenames = set()
             databases_for_xlsx = []  # one entry per DB that produced matches
+            list_rows = []           # unified list_only: flat rows across all DBs
             n_items = len(items)
             consecutive_unavailable = 0   # run of DBs that all 503'd → give up
             for i, item in enumerate(items, 1):
@@ -2435,7 +2479,7 @@ async def run_scraper(
                 for attempt in range(3):
                     try:
                         result_page = await click_list_button_open_new_page(
-                            context, page, label
+                            context, page, label, list_only=list_only
                         )
                         await ensure_not_503(result_page)
                         break
@@ -2511,13 +2555,27 @@ async def run_scraper(
                     log("    no match — skipping")
                     continue
 
+                if list_only:
+                    # Unified: keep the result rows AS-IS (no images, no files);
+                    # tag each with its database so the user can tell them apart.
+                    cols = acc.get("columns") or []
+                    for r in acc["rows"]:
+                        d = {"Database": desc}
+                        for ci, cval in enumerate(r):
+                            col = cols[ci] if ci < len(cols) else f"col{ci+1}"
+                            d[str(col)] = cval
+                        list_rows.append(d)
+                    log(f"    +{len(acc['rows'])} rows (list-only)")
+                    continue
+
                 # ── Download images linked from result rows ─────────── #
                 # Dir: {search_terms}_{db_name}
                 _db_part  = safe_filename(desc or label) or f"db_{i}"
                 _img_dir  = output_folder / "images" / f"{q_prefix}_{_db_part}"
                 _fs_u, _fs_p = _get_fs_credentials()
+                row_files = {}
                 try:
-                    await _process_images_for_db(
+                    row_files = await _process_images_for_db(
                         context, acc["rows"], _img_dir, _fs_u, _fs_p, log)
                 except Exception as _exc:
                     log(f"    !! image processing error: {_exc}")
@@ -2528,6 +2586,7 @@ async def run_scraper(
                         "header_lines": acc["headerLines"],
                         "columns": acc["columns"],
                         "rows": list(acc["rows"]),
+                        "row_files": row_files,
                     })
 
                 if want_docx:
@@ -2548,11 +2607,18 @@ async def run_scraper(
                         acc["columns"],
                         acc["rows"],
                         query_lines,
+                        row_files,
                     )
                     saved_docx_count += 1
                     log(f"    saved {len(acc['rows'])} row(s) → {file_name}")
                 else:
                     log(f"    queued {len(acc['rows'])} row(s) for the workbook")
+
+            if list_only:
+                _progress(100, f"Готово (list-only): {len(list_rows)} строк(и).")
+                summary_result.update({"ok": True, "rows": list_rows,
+                                       "n_records": len(list_rows)})
+                return summary_result
 
             xlsx_path = None
             if want_xlsx and databases_for_xlsx:

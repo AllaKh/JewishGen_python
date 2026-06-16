@@ -593,14 +593,23 @@ async def _collect(page, qname: str, log) -> list:
     """
     await asyncio.sleep(2)
     results, seen = [], set()
-    rows = await page.query_selector_all("tbody tr")
-    # Если таблица ещё не загрузилась — ждём ещё
-    if not rows:
-        await asyncio.sleep(5)
+    # The result table loads via XHR — wait until a row has a REAL record link, not
+    # just skeleton <tr>s. Otherwise we read N empty rows → 0 candidates (the «Строк:
+    # 12 → Кандидатов: 0» bug after a login redirect resets the table).
+    rows = []
+    for _ in range(25):                              # up to ~25s
         rows = await page.query_selector_all("tbody tr")
-    if not rows:
-        await asyncio.sleep(5)
-        rows = await page.query_selector_all("tbody tr")
+        ready = False
+        for row in rows:
+            for a in await row.query_selector_all("a[href]"):
+                if _is_record(await a.get_attribute("href") or ""):
+                    ready = True
+                    break
+            if ready:
+                break
+        if ready:
+            break
+        await asyncio.sleep(1)
     log(f"  Строк: {len(rows)}")
 
     for row in rows:
@@ -1061,6 +1070,40 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
 
 # ── 10. СКРАПИНГ СТРАНИЦЫ ЗАПИСИ ─────────────────────────────────────────── #
 
+# Clean «label | value» extractor for the FS «person details» panel — labels and
+# values are adjacent elements, so text_content() glues them («NameRuby…SexFemale»).
+# Require EXACTLY two single-line text children; skip anything wrapping a table.
+_FS_FIELDS_JS = r"""() => {
+    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+    const out = [], seen = new Set();
+    const BAD = /^(sign in|search|menu|save|print|share|view|home|family ?tree|memories|get involved|help|settings|tree|overview|sources|details|person details|tools|edit|add|learn more|collection information|cite this|attach|report|feedback|about)/i;
+    // junk values: the «Learn more … FamilySearch Wiki» line, account chrome, etc.
+    const BADV = /(learn more|familysearch wiki|sign in|log ?in|cite this|see all|view all)/i;
+    for (const el of document.querySelectorAll('li, div, dl, tr, section')) {
+        // Skip page chrome (the «A  Alla Khananashvili» account menu lives in the
+        // header/nav, the Wiki link in a footer/aside) — never genealogical fields.
+        if (el.closest('nav, header, footer, aside, [role=navigation], [role=banner], [role=menu], [role=menubar], [role=contentinfo]'))
+            continue;
+        let kids;
+        if (el.tagName === 'TR')
+            kids = [...el.querySelectorAll(':scope > td, :scope > th')];
+        else
+            kids = [...el.children].filter(c => norm(c.innerText));
+        if (kids.length !== 2) continue;
+        if (kids.some(c => c.querySelector && c.querySelector('table,td,th,tr,li,dl')))
+            continue;
+        const k = norm(kids[0].innerText), v = norm(kids[1].innerText);
+        if (!k || !v || k === v) continue;
+        if (k.includes('\n') || k.length < 2 || k.length >= 45 || v.length >= 300) continue;
+        if (!/[A-Za-z]/.test(k) || BAD.test(k) || BADV.test(v) || BADV.test(k)) continue;
+        const key = k.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key); out.push([k, v]);
+    }
+    return out;
+}"""
+
+
 async def _scrape_page(ctx, page, url: str, name_hint: str,
                        images_root: Path, logged_in_ref: list,
                        email: str, password: str, log) -> dict:
@@ -1104,17 +1147,20 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)
 
-    # Заголовок
-    for sel in ["h1", '[class*="title" i]', "h2"]:
+    # Заголовок — ТОЛЬКО h1/h2 (НЕ [class*="title"] — он хватал всю панель «person
+    # details» ОДНИМ слипшимся блоком: «…NameRuby…SexFemale…»). Первая строка,
+    # с капом длины: имя не бывает 250 символов, так слипшийся блок отсекается.
+    for sel in ["h1", "h2"]:
         try:
             t = (await page.locator(sel).first.text_content(timeout=3000) or "").strip()
-            if 3 < len(t) < 300:
+            t = t.split("\n")[0].strip()
+            if 2 < len(t) < 120:
                 rec["title"] = t
                 break
         except Exception:
             pass
 
-    # Данные: dl/dt/dd
+    # Данные: dl/dt/dd (с защитой от слипания — длинный «label» = не поле, а блок)
     td: dict = {}
     try:
         dts = await page.query_selector_all("dl dt")
@@ -1122,19 +1168,18 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
         for dt, dd in zip(dts, dds):
             k = (await dt.text_content() or "").strip().rstrip(":")
             v = (await dd.text_content() or "").strip()
-            if k and v:
+            if k and v and "\n" not in k and len(k) < 45 and len(v) < 300:
                 td[k] = v
     except Exception:
         pass
+    # «person details» панель + любые таблицы — КЛАСС-АГНОСТИЧНО через _FS_FIELDS_JS
+    # (ровно 2 однострочных ребёнка, label<45/value<300, без вложенных таблиц). НЕ
+    # свой loose-обход <table tr>: он хватал ВЕСЬ блок «Isidor Sitron person
+    # details…NARA)» одной ячейкой (text_content склеивает) → слипшаяся строка.
     if not td:
         try:
-            for row in await page.query_selector_all("table tr"):
-                cells = await row.query_selector_all("td, th")
-                if len(cells) >= 2:
-                    k = (await cells[0].text_content() or "").strip().rstrip(":")
-                    v = (await cells[1].text_content() or "").strip()
-                    if k and v:
-                        td[k] = v
+            for k, v in (await page.evaluate(_FS_FIELDS_JS)):
+                td.setdefault(k, v)
         except Exception:
             pass
     rec["table_data"] = td
@@ -1248,6 +1293,8 @@ def _docx_add_record(doc, i, rec):
             doc.add_picture(imgs[0], width=Inches(4))
         except Exception:
             doc.add_paragraph(f"  [{Path(imgs[0]).name}]")
+        p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+        p.add_run(str(Path(imgs[0]).resolve()))      # точный путь куда сгружен
     elif tb:
         doc.add_paragraph("Превью документа:").runs[0].bold = True
         try:
@@ -1342,7 +1389,7 @@ def write_xlsx(path: Path, records: list, qlines: list, append: bool = False):
     for n, rec in enumerate(records):
         ri   = start_row + n
         td   = rec.get("table_data", {})
-        imgs = "\n".join(Path(p).name for p in rec.get("images", []))
+        imgs = "\n".join(str(Path(p).resolve()) for p in rec.get("images", []))
         row  = {"#": start_num + n + 1, "База": "FamilySearch",
                 "Имя": rec.get("title", rec.get("name", "")),
                 "Совп. %": rec.get("score", ""),
@@ -1393,6 +1440,7 @@ async def run_scraper(
     progress                 = None,
     cancel_event             = None,
     ask_file_conflict        = None,  # callable(list[str]) → "overwrite"/"append"/"skip"
+    list_only:    bool       = False,  # unified search: collect the results list only
 ) -> dict:
 
     def _prog(pct, txt):
@@ -1466,18 +1514,55 @@ async def run_scraper(
             # never lands on the login page. The URL already carries tab=records
             # + every filter, so we must NOT click the HR tab (it rebuilds the
             # URL and would drop the filters — known FS behaviour).
-            _prog(16, "Sign in...")
-            await _sign_in_if_needed(page, email or "", password or "",
-                                     logged_in_ref, log)
-            if _done(): return summary
-            if "discovery/results" not in page.url:   # login navigated away → back
-                await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-                await asyncio.sleep(4)
+            # Unified search (list_only): the HR rows are visible WITHOUT login →
+            # NEVER touch the sign-in, just read the first page.
+            if not list_only:
+                _prog(16, "Sign in...")
+                await _sign_in_if_needed(page, email or "", password or "",
+                                         logged_in_ref, log)
+                if _done(): return summary
+                if "discovery/results" not in page.url:   # login navigated away → back
+                    await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+                    await asyncio.sleep(4)
 
             # ── 5. 60 НА СТРАНИЦУ + СБОР РЕЗУЛЬТАТОВ ─────────────────── #
             _prog(28, "Сбор результатов...")
             await _set_60(page, log)
             raw       = await _collect(page, qname, log)
+
+            # Unified search: results-page rows only (no opening / downloads / files).
+            # FamilySearch (not logged in) shows ONLY the first page → take page 1.
+            # Assess relevance ourselves and keep ONLY ≥90% matches (FS surname search
+            # is fuzzy and pads the tail with phonetic look-alikes).
+            if list_only:
+                qwords = [w for w in (qname or "").lower().split() if w]
+
+                def _rel(nm):
+                    nws = (nm or "").lower().split()
+                    if not qwords or not nws:
+                        return 0.0
+                    s = 100.0
+                    for q in qwords:
+                        b = 100.0 if q in (nm or "").lower() else \
+                            max((_sim(q, w) for w in nws), default=0.0)
+                        s = min(s, b)
+                    return s
+
+                def _row(r):                       # dynamic: omit empty fields
+                    d = {"Имя": r.get("name", "")}
+                    if r.get("coll"):
+                        d["Коллекция"] = r["coll"]
+                    if r.get("evts"):
+                        d["События"] = r["evts"]
+                    if r.get("rels"):
+                        d["Родственники"] = r["rels"]
+                    return d
+                kept = [r for r in raw if _rel(r.get("name", "")) >= 90]
+                rows = [_row(r) for r in kept]
+                log(f"  Совпадений ≥90%: {len(rows)} из {len(raw)}")
+                summary.update({"ok": True, "rows": rows, "n_records": len(rows)})
+                return summary
+
             qualified = [r for r in raw if r["score"] >= MIN_MATCH]
             log(f"  Подходящих (≥{MIN_MATCH}%): {len(qualified)}")
 

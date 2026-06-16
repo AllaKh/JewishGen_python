@@ -109,6 +109,14 @@ def _load_filter_codes() -> dict:
         if d.get("code"):
             codes[cat] = d["code"]
         walk(d)
+    def walk_places(places):                  # places nest to ANY depth (dict | code)
+        for pl, v in (places or {}).items():
+            if isinstance(v, dict):
+                if v.get("code"):
+                    codes[pl] = v["code"]
+                walk_places(v.get("places"))
+            else:
+                codes[pl] = v
     for cont, d in load("ancestry_locations.json").items():
         if d.get("code"):
             codes[cont] = d["code"]
@@ -118,13 +126,18 @@ def _load_filter_codes() -> dict:
             for st, sd in (cd.get("states") or {}).items():
                 if sd.get("code"):
                     codes[st] = sd["code"]
-                for pl, pc in (sd.get("places") or {}).items():
-                    codes[pl] = pc
+                walk_places(sd.get("places"))
     for century, d in load("ancestry_record_dates.json").items():
         if d.get("code"):
             codes[century] = d["code"]
-        for dec, c in (d.get("decades") or {}).items():
-            codes[dec] = c
+        for dec, dv in (d.get("decades") or {}).items():
+            if isinstance(dv, dict):          # {code, years:{year:code}}
+                if dv.get("code"):
+                    codes[dec] = dv["code"]
+                for yr, yc in (dv.get("years") or {}).items():
+                    codes[yr] = yc
+            else:
+                codes[dec] = dv
     codes.update(_CFG.get("category_codes", {}) or {})   # legacy overrides
     return codes
 
@@ -219,8 +232,14 @@ _NAME_X = {
 
 
 def _name_x_code(exact: dict) -> str:
-    """name_x is ONE param for the whole name → take the first-name level, falling
-    back to the surname level (and to the old bool «exact» flags)."""
+    """name_x is ONE param for the whole name. Build it from the ticked match FORMS
+    of first + surname (union, so neither is under-matched): letters p=sounds-like,
+    s=similar, i=initials in that order; «1» = exact only; nothing ticked = omit."""
+    forms = set(exact.get("name_forms") or []) | set(exact.get("surname_forms") or [])
+    if forms:
+        fuzzy = "".join(l for l in ("p", "s", "i") if l in forms)
+        return fuzzy or ("1" if "1" in forms else "")
+    # backward-compat with the old single-select level / bool flags
     nx = _NAME_X.get(exact.get("name_level", ""), None)
     if nx is None:
         nx = _NAME_X.get(exact.get("surname_level", ""), None)
@@ -667,7 +686,10 @@ def _pass_url(base_url: str, p: dict, codes: dict = None):
     if ptype:
         if not code:
             return None, bool(p.get("location"))     # unknown category → skip
-        if code.startswith("collection:"):
+        if re.match(r"^\d{4}-\d{4}$", code):
+            # Record Date (century/decade/year) is a record_f range, NOT a category
+            url = base_url + ("&" if "?" in base_url else "?") + "record_f=" + code
+        elif code.startswith("collection:"):
             seg = code.split(":", 1)[1]
             url = base_url.replace("/search/?",
                                    f"/search/collections/{seg}/?", 1)
@@ -840,8 +862,8 @@ _FIELDS_JS = r"""() => {
     const norm = s => (s||'').replace(/ /g,' ')
         .replace(/[ \t]+/g,' ').replace(/\n+/g,'\n').trim();
     const out = [], seen = new Set();
-    const BAD = /^(sign in|search|menu|save|print|share|detail|source|view|home|trees|memories|dna|add or update|report a problem|listen|suggested|neighbo|ancestry|cart|help|browse|filter|hint|collection|коллекц|zoom|увелич|уменьш|national archives|provided in|see all|rotate|tools)/i;
-    const BADVAL = /^(view|zoom in|zoom out|rotate|provided in association)/i;
+    const BAD = /^(sign in|search|menu|save|print|share|detail|source|view|home|trees|memories|dna|add or update|report a problem|listen|suggested|neighbo|ancestry|cart|help|browse|filter|hint|collection|коллекц|zoom|увелич|уменьш|national archives|provided in|see all|rotate|tools|nothing to see|stay tuned|notifications?|provide alternate|submit alternate|add your own|attach\b|reason\b|apply\b|edit\b)/i;
+    const BADVAL = /^(view|zoom in|zoom out|rotate|provided in association|stay tuned|we.?ll let you know|nothing to see|choose|cancel|close|apply|submit|attach)\b/i;
     const push = (k, v) => {
         k = norm(k).replace(/[: ]+$/,''); v = norm(v);
         if (!k || !v || k === v || k.length > 45 || v.length > 800) return;
@@ -867,10 +889,10 @@ _FIELDS_JS = r"""() => {
         let v = norm(kids[1].innerText);
         if (k.includes('\n') || v.includes('\n')) continue;   // not a clean field
         if (k.length >= 45 || v.length >= 800) continue;
-        // «Others in Record» etc.: a glued LIST of person links («Anna SmithJohn
+        // «Others in Record» is a glued list of person LINKS («Anna SmithJohn
         // Smith»). Split into lines ONLY when the links reconstruct the WHOLE value
-        // (a pure list) — never when the value is plain text + helper links
-        // (Search / View), which must keep its text value untouched.
+        // (a pure list); never when the value is plain text + helper links (Search /
+        // View) — that must keep its text value untouched (regression-safe).
         const links = [...kids[1].querySelectorAll('a')]
             .map(a => norm(a.innerText)).filter(Boolean);
         if (links.length >= 2 &&
@@ -879,7 +901,7 @@ _FIELDS_JS = r"""() => {
             const names = [...new Set(links.filter(x => !JUNK.test(x)))];
             if (names.length >= 2) v = names.join('\n');
         }
-        if (v && v.length < 800) push(k, v);
+        push(k, v);
     }
     // Household members table — ONLY a real «Household Members» table, short cells
     // (a wide neighbours table would glue, so reject long cells).
@@ -966,9 +988,21 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
     rec["household"] = data.get("household", []) or []
     rec["subtitle"]  = data.get("subtitle", "") or ""
 
-    # Image-viewer carries no Detail card → read it from the record detail page.
+    # Image-viewer carries no Detail card → read it from the record DETAIL page.
+    # The result-row link often has NO pId, so _detail_url(url) is None. Also try
+    # the post-redirect page.url (the viewer usually adds pId) and any detail link
+    # already on the page. The diagnostic log shows which path produced the URL.
     if len(td) < 3:
-        durl = _detail_url(url)
+        durl = _detail_url(url) or _detail_url(page.url)
+        if not durl:
+            try:
+                durl = (await page.evaluate(
+                    "() => { const a = document.querySelector("
+                    "'a[href*=\"/discoveryui-content/view/\"]'); return a ? a.href : ''; }"
+                )) or None
+            except Exception:
+                durl = None
+        log(f"    детальная: {durl or '— URL не найден'}  (запись …{url[-55:]})")
         if durl:
             pg = await ctx.new_page()
             try:
@@ -1119,6 +1153,8 @@ def _docx_add_record(doc, i, rec):
             doc.add_picture(imgs[0], width=Inches(4))
         except Exception:
             doc.add_paragraph(f"  [{Path(imgs[0]).name}]")
+        p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+        p.add_run(str(Path(imgs[0]).resolve()))      # точный путь куда сгружен
     elif tb:
         doc.add_paragraph("Превью документа:").runs[0].bold = True
         try:
@@ -1177,7 +1213,7 @@ def write_xlsx(path: Path, records: list, qlines: list, append: bool = False):
         for k in rec.get("table_data", {}):
             if k not in aff:
                 aff.append(k)
-    base_cols = ["#", "База", "Имя", "Запись", "Совп. %", "Домочадцы", "URL"]
+    base_cols = ["#", "База", "Имя", "Запись", "Совп. %", "Домочадцы", "Файл", "URL"]
 
     existing = append and Path(path).exists()
     if existing:
@@ -1209,11 +1245,14 @@ def write_xlsx(path: Path, records: list, qlines: list, append: bool = False):
         ri = start_row + n
         td = rec.get("table_data", {})
         hh = "; ".join(" ".join(c for c in r if c) for r in rec.get("household", []))
+        imgs = rec.get("images") or []
+        doc_path = str(Path(imgs[0]).resolve()) if imgs and Path(imgs[0]).exists() else ""
         row = {"#": start_num + n + 1, "База": SITE_NAME,
                "Имя": rec.get("title", rec.get("name", "")),
                "Запись": rec.get("subtitle", "") or rec.get("collection", ""),
                "Совп. %": rec.get("score", ""),
                "Домочадцы": hh,
+               "Файл": doc_path,
                "URL": rec.get("url", "")}
         for f in aff:
             row[f] = td.get(f, "")
@@ -1258,6 +1297,7 @@ async def run_scraper(
     progress                 = None,
     cancel_event             = None,
     ask_file_conflict        = None,
+    list_only:    bool       = False,  # unified search: collect the results list only
 ) -> dict:
 
     def _prog(pct, txt):
@@ -1315,14 +1355,17 @@ async def run_scraper(
             except Exception: pass
 
         try:
-            # 1. SIGN IN ONCE up front (persistent profile usually already has it)
-            _prog(5, "Открываю Ancestry...")
-            await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=40000)
-            await asyncio.sleep(3)
-            _prog(12, "Sign in...")
-            await _sign_in_if_needed(page, email or "", password or "",
-                                     logged_in_ref, log)
-            if _done(): return summary
+            # 1. SIGN IN ONCE up front (persistent profile usually already has it).
+            # Unified search (list_only): the results list shows WITHOUT login →
+            # skip the sign-in entirely.
+            if not list_only:
+                _prog(5, "Открываю Ancestry...")
+                await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=40000)
+                await asyncio.sleep(3)
+                _prog(12, "Sign in...")
+                await _sign_in_if_needed(page, email or "", password or "",
+                                         logged_in_ref, log)
+                if _done(): return summary
 
             # 2. SEARCH (built URL, count=50)
             _prog(20, "Поиск...")
@@ -1373,6 +1416,22 @@ async def run_scraper(
                 qual = qual[:MAX_SCRAPE]
                 log(f"  Подходящих (≥{MIN_MATCH}%): {len(qual)}")
 
+                # Unified search: return the results-page rows only (no opening,
+                # no downloads, no files) — caller writes the grouped output.
+                if list_only:
+                    rows = []
+                    for r in raw:
+                        det = " | ".join(
+                            ln.strip() for ln in (r.get("text") or "").split("\n")
+                            if ln.strip())[:600]
+                        rows.append({"Имя": r.get("name", ""),
+                                     "Запись": r.get("coll", ""),
+                                     "Сведения": det})
+                    summary["ok"] = True
+                    summary["rows"] = rows
+                    summary["n_records"] = len(rows)
+                    return summary
+
                 suffix    = safe_fn(pass_name) if pass_name else ""
                 pass_imgs = (images_root / suffix) if suffix else images_root
                 pass_recs = []
@@ -1391,37 +1450,9 @@ async def run_scraper(
                     pass_recs.append(det)
                     log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
 
-                # dedup: Ancestry lists the SAME record on several image refs, so
-                # URL dedup misses it. Within one title (collection + person) merge
-                # records whose fields DON'T conflict (one is a sparse copy of the
-                # other) → keep the richest. Different people (conflicting Age /
-                # Residence / …) keep their own entry.
-                def _rich(x):
-                    return (len(x.get("table_data") or {}),
-                            len(x.get("household") or []),
-                            1 if x.get("images") else 0)
-                def _compat(a, b):
-                    ta, tb = a.get("table_data") or {}, b.get("table_data") or {}
-                    common = set(ta) & set(tb)
-                    if not common:
-                        return False        # no shared fields → can't confirm same record
-                    for k in common:
-                        if str(ta[k]).strip().lower() != str(tb[k]).strip().lower():
-                            return False        # conflicting field → different person
-                    return True
-                deduped = []
-                for rec in pass_recs:
-                    title = (rec.get("title") or rec.get("name") or "").strip().lower()
-                    hit = next((k for k in deduped
-                                if (k.get("title") or k.get("name") or "").strip().lower()
-                                == title and _compat(rec, k)), None)
-                    if hit is None:
-                        deduped.append(rec)
-                    elif _rich(rec) > _rich(hit):
-                        deduped[deduped.index(hit)] = rec
-                if len(deduped) < len(pass_recs):
-                    log(f"  → дубликатов убрано: {len(pass_recs) - len(deduped)}")
-                pass_recs = deduped
+                # NO merging — one card on the site = one record in Word/Excel. The
+                # only dedup is by exact record URL (the same card collected twice),
+                # done during collection; similar/same-title cards stay SEPARATE.
 
                 if not pass_recs:
                     if pass_name:

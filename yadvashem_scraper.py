@@ -535,11 +535,15 @@ def _docx_add_record(doc, i, rec):
             doc.add_paragraph("")                 # one blank line between documents
         for img in r.get("images", []):
             if str(img).lower().endswith(".pdf"):
-                continue                          # can't embed a PDF as a picture
+                p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+                p.add_run(str(Path(img).resolve()))   # PDF can't embed — show path
+                continue
             try:
                 png = _to_png(Path(img).read_bytes())
                 if png:
                     doc.add_picture(io.BytesIO(png), width=Inches(3.2))
+                    p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+                    p.add_run(str(Path(img).resolve()))   # точный путь куда сгружен
             except Exception:
                 pass
         fields = r.get("fields") or []

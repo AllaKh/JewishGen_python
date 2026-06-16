@@ -1,0 +1,52 @@
+{
+  "_comment": "pamyat-naroda.ru «Источники информации» checkboxes. GUI shows `en`; the scraper toggles the checkbox whose label text == `ru`. All are ON by default on the site. Order = the order the user gave (NOT alphabetical).",
+  "groups": [
+    {
+      "en": "Awards", "ru": "Награды",
+      "items": [
+        {"en": "In award documents",                    "ru": "В наградных документах"},
+        {"en": "In the registration card index",        "ru": "В учетной картотеке"},
+        {"en": "In the anniversary card index",          "ru": "В юбилейной картотеке"},
+        {"en": "In the foreign-awards card index",       "ru": "В картотеке иностранных наград"},
+        {"en": "In the foreigners' awards card index",   "ru": "В картотеке награждений иностранцев"}
+      ]
+    },
+    {
+      "en": "Personnel information", "ru": "Сведения о личном составе",
+      "items": [
+        {"en": "In conscription & demobilization lists", "ru": "В списках призыва и демобилизации"},
+        {"en": "In transit-point & reserve-regiment lists (VPP & ZP)", "ru": "В списках военно-пересыльных пунктов и запасных полков (ВПП и ЗП)"},
+        {"en": "In named unit lists",                    "ru": "В именных списках частей"},
+        {"en": "In the wounds card index",               "ru": "В картотеке ранений"},
+        {"en": "In illness certificates",                "ru": "В свидетельствах о болезни"},
+        {"en": "In personal-file card indexes",          "ru": "В картотеках личных дел"},
+        {"en": "In the officer service-record index (UPK)", "ru": "В учётно-послужной картотеке офицерского состава (УПК)"},
+        {"en": "In the sailors card index",              "ru": "В картотеке моряков"},
+        {"en": "In the partisans card index",            "ru": "В картотеке партизан"}
+      ]
+    },
+    {
+      "en": "Losses", "ru": "Потери",
+      "items": [
+        {"en": "In irrecoverable-loss reports",          "ru": "В донесениях о безвозвратных потерях"},
+        {"en": "In hospital & medical-battalion documents", "ru": "В документах госпиталей и медсанбатов"},
+        {"en": "In loss-clarifying documents",           "ru": "В документах, уточняющих потери"},
+        {"en": "In named burial lists",                  "ru": "В поименных списках захоронений"},
+        {"en": "In POW documents",                       "ru": "В документах о военнопленных"},
+        {"en": "In removal-from-lists orders",           "ru": "В приказах об исключении из списков"},
+        {"en": "In card indexes",                        "ru": "В картотеках"},
+        {"en": "In conscription & demobilization lists ", "ru": "В списках призыва и демобилизации"},
+        {"en": "In named unit lists ",                   "ru": "В именных списках частей"}
+      ]
+    },
+    {
+      "en": "Additional sources", "ru": "Дополнительные источники",
+      "items": [
+        {"en": "In the 'Road of Memory' gallery",        "ru": "В галерее «Дорога памяти»"},
+        {"en": "In military-registration-office data by place of record", "ru": "В сведениях из военкоматов по месту учета"},
+        {"en": "In the officer databases of the Central Archive (TsAMO RF)", "ru": "В базах данных офицеров Центрального архива МО РФ (ЦА МО РФ)"},
+        {"en": "In the Books of Memory",                 "ru": "В Книгах Памяти"}
+      ]
+    }
+  ]
+}

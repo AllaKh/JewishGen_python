@@ -102,6 +102,17 @@ CATEGORY_OPTIONS = [
     "Government, land, court & wills",
 ]
 
+# The full «narrow by category» tree (site labels, nested) — built by
+# myheritage_filter_crawler.py. {label: {count, children:{…}}}.
+def _load_categories():
+    try:
+        return json.loads(
+            (Path(__file__).resolve().parent.parent / "config"
+             / "myheritage_categories.json").read_text("utf-8"))
+    except Exception:
+        return {}
+CATEGORIES = _load_categories()
+
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
 QGroupBox{font-weight:bold;font-size:11px;border:1px solid #b0b8c8;
@@ -406,15 +417,26 @@ class MyHeritageApp(QMainWindow):
         fl.addStretch()
         self._outer.addWidget(fg)
 
-        # ── Restrict by category (combo) ─────────────────────────────────── #
-        cgb = QGroupBox("Restrict search by category")
-        cgl = QHBoxLayout(cgb); cgl.setSpacing(10)
-        self.f_category = QComboBox(); self.f_category.addItems(CATEGORY_OPTIONS)
-        note2 = QLabel("Only results with ≥ 80 % match are saved.")
-        note2.setObjectName("note")
-        cgl.addWidget(QLabel("Category:")); cgl.addWidget(self.f_category)
-        cgl.addStretch(); cgl.addWidget(note2)
-        self._outer.addWidget(cgb)
+        # ── Restrict search by category — collapsible tree (arrow opens it) ── #
+        self._cat_btn = QPushButton("▶   Narrow down by category")
+        self._cat_btn.setObjectName("advBtn")
+        self._cat_btn.setCheckable(True)
+        self._cat_btn.toggled.connect(self._toggle_cat)
+        self._outer.addWidget(self._cat_btn)
+
+        self._cat_host = QWidget()
+        chl = QVBoxLayout(self._cat_host)
+        chl.setContentsMargins(8, 0, 0, 0); chl.setSpacing(1)
+        self._cat_checks = []                      # [(checkbox, label)]
+        for name, data in (CATEGORIES or {}).items():
+            self._cat_node(name, data, chl, 0)
+        chl.addStretch()
+        self._cat_scroll = QScrollArea()
+        self._cat_scroll.setWidget(self._cat_host)
+        self._cat_scroll.setWidgetResizable(True)
+        self._cat_scroll.setFrameShape(QFrame.NoFrame)
+        self._cat_scroll.setVisible(False)
+        self._outer.addWidget(self._cat_scroll)
 
         # ── Output ───────────────────────────────────────────────────────── #
         og = QGroupBox("Output")
@@ -472,6 +494,57 @@ class MyHeritageApp(QMainWindow):
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
 
+    # ── Category tree (Restrict search by category) ───────────────────────── #
+    def _toggle_cat(self, on):
+        self._cat_scroll.setVisible(on)
+        if on:
+            screen_h = QApplication.primaryScreen().availableGeometry().height()
+            self._cat_scroll.setMaximumHeight(int(screen_h * 0.45))
+        self._cat_btn.setText(("▼" if on else "▶") + "   Narrow down by category")
+        self._fit()
+
+    def _cat_node(self, name, data, parent_layout, depth):
+        """One category row: optional ▶ arrow (if it has children) + checkbox.
+        Children are built lazily the first time the arrow is opened."""
+        data = data or {}
+        children = data.get("children") or {}
+        count = (data.get("count") or "").strip()
+        row = QHBoxLayout()
+        row.setContentsMargins(depth * 16, 0, 0, 0); row.setSpacing(4)
+        if children:
+            arrow = QPushButton("▶"); arrow.setObjectName("advBtn")
+            arrow.setFixedWidth(16); arrow.setCheckable(True)
+            row.addWidget(arrow)
+        cb = QCheckBox(name + (f"   ({count})" if count else ""))
+        cb.stateChanged.connect(self._save)
+        self._cat_checks.append((cb, name))
+        row.addWidget(cb); row.addStretch()
+        parent_layout.addLayout(row)
+        if children:
+            holder = QWidget(); hb = QVBoxLayout(holder)
+            hb.setContentsMargins(0, 0, 0, 0); hb.setSpacing(1)
+            holder.setVisible(False)
+            parent_layout.addWidget(holder)
+            built = {"done": False}
+
+            def _toggle(on, _arrow=arrow, _hb=hb, _ch=children, _d=depth, _h=holder):
+                _arrow.setText("▼" if on else "▶")
+                if on and not built["done"]:
+                    for cn, cd in _ch.items():
+                        self._cat_node(cn, cd, _hb, _d + 1)
+                    built["done"] = True
+                _h.setVisible(on); self._fit()
+            arrow.toggled.connect(_toggle)
+
+    def _category_filters(self) -> list:
+        """Ticked category labels (excluding «Все коллекции» = no narrowing)."""
+        out = []
+        for cb, name in self._cat_checks:
+            if cb.isChecked() and name.strip().lower() not in (
+                    "все коллекции", "all collections"):
+                out.append(name)
+        return out
+
     def _fit(self):
         # Unlock height, force the layout to RECOMPUTE synchronously, then lock to
         # the fresh size. Without invalidate()/activate() the sizeHint right after
@@ -511,7 +584,7 @@ class MyHeritageApp(QMainWindow):
                 self.f_sp, self.f_sp_last,
                 self.f_dy, self.f_dp, self.f_res, self.f_mil, self.f_imm,
                 self.f_kw, self.f_gen, self.f_ex,
-                self.f_category, self.f_folder, self.f_docx, self.f_xlsx]
+                self.f_folder, self.f_docx, self.f_xlsx]
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _save(self, *_):
@@ -546,11 +619,12 @@ class MyHeritageApp(QMainWindow):
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
             "record_type":   self._record_type(),
-            "category":      self.f_category.currentText(),
+            "categories":    self._category_filters(),
             "output_folder": self.f_folder.text(),
             "fmt_docx":      self.f_docx.isChecked(),
             "fmt_xlsx":      self.f_xlsx.isChecked(),
             "adv_open":      self._adv_btn.isChecked(),
+            "cat_open":      self._cat_btn.isChecked(),
         }
         try:
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2),
@@ -593,7 +667,9 @@ class MyHeritageApp(QMainWindow):
         s(self.f_mil,    "military");   s(self.f_imm, "immigration")
         s(self.f_kw,     "keywords");   s(self.f_gen, "gender")
         s(self.f_ex,     "exact_match")
-        s(self.f_category, "category")
+        cats = set(d.get("categories") or [])
+        for cb, name in self._cat_checks:
+            cb.setChecked(name in cats)
         rt = d.get("record_type")
         if rt in self._rt_buttons:
             self._rt_buttons[rt].setChecked(True)
@@ -601,6 +677,8 @@ class MyHeritageApp(QMainWindow):
         s(self.f_docx,   "fmt_docx");  s(self.f_xlsx, "fmt_xlsx")
         if d.get("adv_open"):
             self._adv_btn.setChecked(True)
+        if d.get("cat_open"):
+            self._cat_btn.setChecked(True)
 
     # ── Helpers ───────────────────────────────────────────────────────────── #
     def _browse(self):
@@ -642,7 +720,7 @@ class MyHeritageApp(QMainWindow):
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
             "record_type":   self._record_type(),
-            "category":      self.f_category.currentText(),
+            "categories":    self._category_filters(),   # restrict-by-category passes
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "email":         self.f_email.text().strip() or None,

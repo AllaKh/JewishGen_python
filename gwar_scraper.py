@@ -732,6 +732,8 @@ def _docx_add_record(doc, i, rec):
             png = _to_png(Path(img).read_bytes())
             if png:
                 doc.add_picture(io.BytesIO(png), width=Inches(4.5))
+                p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+                p.add_run(str(Path(img).resolve()))      # точный путь куда сгружен
         except Exception:
             pass
 
@@ -770,12 +772,79 @@ def write_docx(path, records, qlines, append=False):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────── #
+async def _apply_facets(page, values, log):
+    """Tick the given facet values (RU text / data-facet-value) on the results sidebar
+    and click «Применить» so gwar narrows server-side. Awards/Losses lists are revealed
+    by the section's лупа, so we type the value there first, then click its checkbox. If
+    a value isn't present in the current results it's silently skipped (user's spec).
+    Best-effort — the live site is unreachable from dev, validate on a real run."""
+    wanted = [v for v in (values or []) if v]
+    if not wanted:
+        return
+
+    # 1) reveal hidden facet rows: type each value into every facet search box (лупа)
+    try:
+        await page.evaluate(
+            r"""(values) => {
+                const boxes = [...document.querySelectorAll(
+                    'input.field-text, .facet-search-button + input, input[data-placeholder]')];
+                for (const inp of boxes) {
+                    try {
+                        inp.value = '';
+                        inp.dispatchEvent(new Event('input', {bubbles: true}));
+                    } catch (e) {}
+                }
+            }""", wanted)
+    except Exception:
+        pass
+
+    CLICK_JS = r"""(values) => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        let n = 0;
+        for (const val of values) {
+            const want = norm(val);
+            let el = null;
+            for (const s of document.querySelectorAll(
+                    '[data-facet-value], .field-check-box-name-value')) {
+                const t = norm(s.getAttribute('data-facet-value') || s.textContent);
+                if (t === want) { el = s; break; }
+            }
+            if (!el) continue;                    // not in current results → skip
+            let t = el;                           // climb to a clickable row
+            for (let i = 0; i < 4 && t; i++) {
+                try { t.click(); } catch (e) {}
+                t = t.parentElement;
+            }
+            n++;
+        }
+        return n;
+    }"""
+    clicked = 0
+    try:
+        clicked = await page.evaluate(CLICK_JS, wanted)
+    except Exception as e:
+        log(f"  фасеты: {type(e).__name__}")
+    log(f"  Фильтры (фасеты) применены: {clicked}/{len(wanted)}")
+
+    for sel in ('input.heroes-filter-button[value="Применить"]',
+                'input.heroes-filter-button', 'button:has-text("Применить")'):
+        try:
+            btn = page.locator(sel).first
+            if await btn.count():
+                await btn.click(timeout=4000)
+                await asyncio.sleep(2.5)
+                return
+        except Exception:
+            pass
+
+
 async def run_scraper(*,
     last_name="", first_name="", middle_name="",
     birth_date="", gubernia="", uezd="", volost="", settlement="",
     rank="", unit="", event="", event_from="", event_to="", event_place="",
     fund="", inventory="", file="",
     sections=None, exact=False,
+    info_sources=None, awards=None, losses=None, notable=None,  # sidebar facets
     output_folder=Path("."),
     log=print,
     progress=None,
@@ -801,7 +870,9 @@ async def run_scraper(*,
         event=event, event_from=event_from.strip(), event_to=event_to.strip(),
         event_place=event_place.strip(), fund=fund.strip(),
         inventory=inventory.strip(), file=file.strip(),
-        sections=sections or {}, exact=bool(exact))
+        sections=sections or {}, exact=bool(exact),
+        info_sources=info_sources or [], awards=awards or [],
+        losses=losses or [], notable=notable or [])
 
     output_folder = Path(output_folder); output_folder.mkdir(parents=True, exist_ok=True)
     qkey = " ".join(p for p in (last_name, first_name, middle_name) if p) or "gwar"
@@ -828,67 +899,99 @@ async def run_scraper(*,
                                         ignore_https_errors=True)
         page = await ctx.new_page()
         try:
-            _prog(5, "Поиск…")
-            if not await _do_search(page, params, log):
-                summary["message"] = "Не удалось выполнить поиск."
-                return summary
-            if _done():
-                return summary
+            # PER-FILTER passes: EACH chosen facet value (source/award/loss/notable)
+            # gets its OWN search → narrowing → collected + saved records, in its own
+            # document (like Ancestry). No facets selected → one plain pass. Cancel is
+            # honoured between passes AND between records.
+            facet_values = []
+            for _k in ("info_sources", "awards", "losses", "notable"):
+                facet_values += [v for v in (params.get(_k) or []) if v]
+            passes = facet_values or [None]
+            n_passes = len(passes)
+            total_records = 0
+            used_names = set()
 
-            _prog(15, "Сбор результатов…")
-            recs_meta = await _collect_results(page, params, log, max_pages, max_records)
-            log(f"  Подходящих записей: {len(recs_meta)}")
-            if not recs_meta:
-                _prog(100, "Ничего подходящего не найдено.")
-                summary.update({"ok": True, "n_records": 0})
-                return summary
-
-            records = []
-            n = len(recs_meta)
-            for i, rm in enumerate(recs_meta, 1):
+            for pidx, fval in enumerate(passes, 1):
                 if _done():
                     break
-                _prog(20 + int(70 * i / n), f"[{i}/{n}] {rm['name'][:50]}…")
-                log(f"  [{i}/{n}] {rm['name']}")
-                try:
-                    dp = await ctx.new_page()
+                tag = f" [{fval}]" if fval else ""
+                _prog(5, f"Поиск{tag} (фильтр {pidx}/{n_passes})…")
+                if not await _do_search(page, params, log):
+                    if pidx == 1:
+                        summary["message"] = "Не удалось выполнить поиск."
+                        return summary
+                    log(f"    !! поиск не удался для фильтра{tag} — пропускаю")
+                    continue
+                if _done():
+                    break
+                if fval:                                  # apply THIS filter, then narrow
+                    await _apply_facets(page, [fval], log)
+                    if _done():
+                        break
+
+                _prog(15, f"Сбор результатов{tag}…")
+                recs_meta = await _collect_results(page, params, log, max_pages, max_records)
+                log(f"  Подходящих записей{tag}: {len(recs_meta)}")
+                if not recs_meta:
+                    continue
+
+                records = []
+                n = len(recs_meta)
+                for i, rm in enumerate(recs_meta, 1):
+                    if _done():
+                        break
+                    _prog(20 + int(70 * i / n), f"[{i}/{n}]{tag} {rm['name'][:50]}…")
+                    log(f"  [{i}/{n}] {rm['name']}")
                     try:
-                        rec = await _extract_record(dp, rm["href"], images_dir,
-                                                    output_folder, log,
-                                                    result_name=rm["name"])
-                    finally:
-                        await dp.close()
-                    if not rec.get("name"):
-                        rec["name"] = rm["name"]
-                    records.append(rec)
-                except Exception as _e:
-                    log(f"      !! пропускаю запись ({type(_e).__name__})")
-                    records.append({"name": rm["name"], "type": "", "url": rm["href"],
-                                    "fields": [], "scans": []})
-                await asyncio.sleep(0.3)
+                        dp = await ctx.new_page()
+                        try:
+                            rec = await _extract_record(dp, rm["href"], images_dir,
+                                                        output_folder, log,
+                                                        result_name=rm["name"])
+                        finally:
+                            await dp.close()
+                        if not rec.get("name"):
+                            rec["name"] = rm["name"]
+                        records.append(rec)
+                    except Exception as _e:
+                        log(f"      !! пропускаю запись ({type(_e).__name__})")
+                        records.append({"name": rm["name"], "type": "", "url": rm["href"],
+                                        "fields": [], "scans": []})
+                    await asyncio.sleep(0.3)
 
-            _prog(92, "Сохранение…")
-            base = safe_fn(f"gwar_{qkey}") or "gwar_results"
-            docx_p = output_folder / f"{base}.docx"
-            decision = "overwrite"
-            if docx_p.exists() and ask_file_conflict:
-                try:
-                    decision = (ask_file_conflict([docx_p.name]) or "overwrite").lower()
-                except Exception:
-                    decision = "overwrite"
-                log(f"  → Файл существует → {decision}")
-            if decision != "skip" and records:
-                try:
-                    write_docx(docx_p, records, qlines, append=(decision == "append"))
-                    log(f"  → Word: {docx_p.name}")
-                except PermissionError:
-                    alt = output_folder / f"{base}_{time.strftime('%H%M%S')}.docx"
-                    write_docx(alt, records, qlines, append=False)
-                    docx_p = alt
-                    log(f"  !! файл занят (открыт в Word) → сохранил как {alt.name}")
+                if not records:
+                    continue
+                _prog(92, f"Сохранение{tag}…")
+                suffix = f"__{safe_fn(fval)}" if fval else ""
+                base = (safe_fn(f"gwar_{qkey}") or "gwar_results") + suffix
+                file_name = f"{base}.docx"; _n = 2
+                while file_name in used_names:
+                    file_name = f"{base}_{_n}.docx"; _n += 1
+                used_names.add(file_name)
+                docx_p = output_folder / file_name
+                decision = "overwrite"
+                if docx_p.exists() and ask_file_conflict:
+                    try:
+                        decision = (ask_file_conflict([docx_p.name]) or "overwrite").lower()
+                    except Exception:
+                        decision = "overwrite"
+                    log(f"  → Файл существует → {decision}")
+                if decision != "skip":
+                    pass_qlines = qlines + ([f"Фильтр: {fval}"] if fval else [])
+                    try:
+                        write_docx(docx_p, records, pass_qlines,
+                                   append=(decision == "append"))
+                        log(f"  → Word: {docx_p.name}")
+                    except PermissionError:
+                        alt = output_folder / f"{base}_{time.strftime('%H%M%S')}.docx"
+                        write_docx(alt, records, pass_qlines, append=False)
+                        log(f"  !! файл занят (открыт в Word) → сохранил как {alt.name}")
+                total_records += len(records)
 
-            _prog(100, f"Готово — {len(records)} запис(ей).")
-            summary.update({"ok": True, "n_records": len(records),
+            if _done():
+                log("  ⛔ Отменено пользователем — сохранил собранное.")
+            _prog(100, f"Готово — {total_records} запис(ей), фильтров: {n_passes}.")
+            summary.update({"ok": True, "n_records": total_records,
                             "output_folder": str(output_folder)})
         except Exception as exc:
             summary["message"] = f"{type(exc).__name__}: {exc}"

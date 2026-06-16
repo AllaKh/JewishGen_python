@@ -66,7 +66,7 @@ TABLE_COLS = [
     ("notes",       "Notes"),
     ("found",       "Found"),
     ("register",    "Register"),
-    ("case",        "Case"),
+    ("case_number", "Case"),        # the cell class is pogroms-case_number
     ("archive",     "Archive"),
 ]
 
@@ -273,6 +273,8 @@ def _docx_add_person(doc, i, rec):
             doc.add_picture(rec["photo_path"], width=Inches(2.5))
         except Exception:
             pass
+        p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+        p.add_run(str(Path(rec["photo_path"]).resolve()))   # точный путь куда сгружен
     doc.add_paragraph("")
 
 
@@ -394,6 +396,7 @@ def run_scraper(
     progress                 = None,
     cancel_event             = None,
     ask_file_conflict        = None,   # callable(list[str]) → overwrite/append/skip
+    list_only:     bool      = False,  # unified search: results-table rows only
 ) -> dict:
 
     def _prog(pct, txt):
@@ -422,6 +425,14 @@ def run_scraper(
         _prog(5, "Поиск…")
         found, rows = search(family_name, soundslike, filters or {}, log)
         _prog(15, f"Найдено: {found} (строк: {len(rows)})")
+        if list_only:
+            # Results-table rows only (no card opening / files). Map the css-class
+            # keys to the English column headers; drop the internal url.
+            hdr = dict(TABLE_COLS)
+            mapped = [{hdr.get(k, k): v for k, v in r.items() if k != "url"}
+                      for r in rows]
+            summary.update({"ok": True, "rows": mapped, "n_records": len(mapped)})
+            return summary
         if not rows:
             summary.update({"ok": True, "n_records": 0,
                             "message": "Ничего не найдено."})

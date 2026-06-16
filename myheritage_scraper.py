@@ -2078,6 +2078,91 @@ async def _apply_record_type_filter(page, record_filter, log):
     return True
 
 
+# English (canonical, as shown in the GUI) → the label MyHeritage shows in each site
+# language. The GUI is ALWAYS English; the scraper translates here so the filter works
+# on any-language site. ru solid (the user's account); he/fr/de/es/pt best-effort.
+_CAT_I18N = {
+    "All Collections":                   ["Все коллекции", "כל האוספים", "Toutes les collections", "Alle Sammlungen", "Todas las colecciones", "Todas as coleções"],
+    "Schools & Universities":            ["Школы и университеты", "בתי ספר ואוניברסיטאות", "Écoles et universités", "Schulen & Universitäten", "Escuelas y universidades", "Escolas e universidades"],
+    "Census & Voter Lists":              ["Перепись и списки избирателей", "מפקדי אוכלוסין ורשימות מצביעים", "Recensements et listes électorales", "Volkszählungen & Wählerlisten", "Censos y listas de votantes", "Censos e listas de eleitores"],
+    "Directories, Guides & References":   ["Справочники, путеводители и ссылки", "מדריכים והפניות", "Annuaires, guides et références", "Verzeichnisse, Anleitungen & Referenzen", "Directorios, guías y referencias", "Diretórios, guias e referências"],
+    "Histories, Memories & Biographies":  ["Истории, мемуары и биографии", "היסטוריות, זיכרונות וביוגרפיות", "Histoires, mémoires et biographies", "Geschichten, Erinnerungen & Biografien", "Historias, memorias y biografías", "Histórias, memórias e biografias"],
+    "Maps":                              ["Карты", "מפות", "Cartes", "Karten", "Mapas", "Mapas"],
+    "Books & Publications":              ["Книги и публикации", "ספרים ופרסומים", "Livres et publications", "Bücher & Veröffentlichungen", "Libros y publicaciones", "Livros e publicações"],
+    "Birth, Marriage & Death":           ["Реестры рождения, браков и смерти", "לידה, נישואין ופטירה", "Naissance, mariage et décès", "Geburt, Heirat & Tod", "Nacimiento, matrimonio y defunción", "Nascimento, casamento e óbito"],
+    "Immigration & Travel":              ["Иммиграция и путешествия", "הגירה ונסיעות", "Immigration et voyages", "Einwanderung & Reisen", "Inmigración y viajes", "Imigração e viagens"],
+    "Public Records":                    ["Публичные отчёты", "רשומות ציבוריות", "Archives publiques", "Öffentliche Aufzeichnungen", "Registros públicos", "Registros públicos"],
+    "Military":                          ["Вооруженные силы", "צבא", "Militaire", "Militär", "Militar", "Militar"],
+    "Photos":                            ["Фото", "תמונות", "Photos", "Fotos", "Fotos", "Fotos"],
+    "Government, Land, Court & Wills":    ["Правительство, земля, суды и завещания", "ממשל, קרקעות, בתי משפט וצוואות", "Gouvernement, terres, tribunaux et testaments", "Regierung, Land, Gericht & Testamente", "Gobierno, tierras, tribunales y testamentos", "Governo, terras, tribunais e testamentos"],
+    "Family Trees":                      ["Семейные деревья", "אילנות יוחסין", "Arbres généalogiques", "Stammbäume", "Árboles genealógicos", "Árvores genealógicas"],
+    "Newspapers":                        ["Газеты", "עיתונים", "Journaux", "Zeitungen", "Periódicos", "Jornais"],
+}
+
+
+async def _apply_category_filter(page, label, log):
+    """Click the results-page «Narrow down by category» row whose .name matches the
+    English `label` OR any of its language variants (the site shows the label in its own
+    language) so MyHeritage narrows server-side. Best-effort — the facet selectors are
+    inferred from the live HTML; validate/extend the tree with myheritage_filter_crawler.py."""
+    labels = [label] + _CAT_I18N.get(label, [])
+    CLICK_JS = r"""(labels) => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+        const want = labels.map(norm);
+        const sel = '[class*="narrow_down_link"], [data-automations="action_text"]';
+        for (const n of document.querySelectorAll(sel)) {
+            const nm = n.querySelector('.name');
+            if (want.includes(norm(nm ? nm.textContent : n.textContent))) {
+                try { n.click(); } catch (e) {}
+                try { (nm || n).click(); } catch (e) {}
+                return true;
+            }
+        }
+        return false;
+    }"""
+    for _ in range(20):                              # wait for the result cards
+        try:
+            if await page.evaluate(
+                    "() => document.querySelectorAll('a[href*=\"showRecord\"]').length"):
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(0.5)
+    try:
+        before = await page.evaluate(
+            "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
+    except Exception:
+        before = ""
+    clicked = False
+    for _ in range(16):
+        for fr in page.frames:
+            try:
+                clicked = await fr.evaluate(CLICK_JS, labels)
+            except Exception:
+                clicked = False
+            if clicked:
+                break
+        if clicked:
+            break
+        try: await page.evaluate("() => window.scrollBy(0, 350)")
+        except Exception: pass
+        await asyncio.sleep(1.0)
+    if not clicked:
+        log(f"  !! категория «{label}» на странице результатов не найдена")
+        return False
+    for _ in range(24):                             # wait for the narrowed refresh
+        await asyncio.sleep(0.5)
+        try:
+            now = await page.evaluate(
+                "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
+        except Exception:
+            now = before
+        if now != before:
+            break
+    log(f"  ✓ Применена категория: {label}")
+    return True
+
+
 async def _search(page, search_url, params, has_cookies, log):
     log(f"  → Navigating to search: {search_url}")
     try:
@@ -3120,6 +3205,10 @@ def _docx_add_record(doc, i, rec):
                 doc.add_picture(io.BytesIO(png), width=Inches(2.2))
             except Exception:
                 pass
+    dp = rec.get("doc_path")
+    if dp and Path(dp).exists():
+        p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
+        p.add_run(str(Path(dp).resolve()))           # точный путь куда сгружен
     # "View full profile on this site" link
     if rec.get("profile_url"):
         pp = doc.add_paragraph()
@@ -3187,7 +3276,11 @@ def write_xlsx(path, records, qlines, append=False):
         for k in rec.get("table_data", {}):
             if k not in aff:
                 aff.append(k)
-    base_cols = ["#", "Full Name", "Category", "Match %", "Год", "URL"]
+    base_cols = ["#", "Full Name", "Category", "Match %", "Год", "Файл", "URL"]
+
+    def _doc_path(rec):
+        dp = rec.get("doc_path")
+        return str(Path(dp).resolve()) if dp and Path(dp).exists() else ""
 
     existing = append and Path(path).exists()
     if existing:
@@ -3219,6 +3312,7 @@ def write_xlsx(path, records, qlines, append=False):
                        "Category":  rec.get("category", ""),
                        "Match %":   rec.get("score", ""),
                        "Год":       _record_year(rec),
+                       "Файл":      _doc_path(rec),
                        "URL":       rec.get("url", "")}
             for f in aff:
                 rowdata[f] = td.get(f, "")
@@ -3237,7 +3331,8 @@ def write_xlsx(path, records, qlines, append=False):
         for ri, rec in enumerate(records, 2):
             td   = rec.get("table_data", {})
             vals = [ri-1, rec.get("full_name",""), rec.get("category",""),
-                    rec.get("score",""), _record_year(rec), rec.get("url","")] \
+                    rec.get("score",""), _record_year(rec), _doc_path(rec),
+                    rec.get("url","")] \
                 + [td.get(f,"") for f in aff]
             for ci, val in enumerate(vals, 1):
                 _put(ws.cell(row=ri, column=ci), cols[ci-1], val)
@@ -3248,6 +3343,68 @@ def write_xlsx(path, records, qlines, append=False):
                       for r in range(1, ws.max_row + 1)))
         ws.column_dimensions[letter].width = min(mw + 4, 60)
     wb.save(path)
+
+# Anti-detect init script (webdriver/plugins/languages spoof + Facebook kill) —
+# the SAME fingerprint hiding that stops MyHeritage flagging «ты скрипт».
+_ANTI_DETECT_JS = r"""
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+    Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
+    Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
+    window.chrome = { runtime: {} };
+    const _open = window.open;
+    window.open = function(u, ...rest) {
+        try { if (u && /facebook|fbcdn|accounts\.google|apple\.com/i.test(u)) return null; }
+        catch (e) {}
+        return _open ? _open.call(window, u, ...rest) : null;
+    };
+    const killFB = () => {
+        try {
+            document.querySelectorAll(
+                'a[href*="facebook.com"], a[href*="facebook.net"], '
+                + 'iframe[src*="facebook"], [class*="facebook" i], '
+                + '[data-href*="facebook"], .fb-page, .fb-like, .fb_iframe_widget'
+            ).forEach(e => { try { e.remove(); } catch (x) {} });
+        } catch (x) {}
+    };
+    try { setInterval(killFB, 400); } catch (e) {}
+    if (document.addEventListener) document.addEventListener('DOMContentLoaded', killFB);
+"""
+
+
+async def make_browser_context(pw):
+    """Launch the SAME anti-detect persistent MyHeritage context the main scraper
+    uses (the .mh_profile + webdriver/plugins/languages spoof + Facebook blocking),
+    so other tools (the category crawler) get the identical, non-bot-flagged session
+    instead of rolling their own bare context. Returns (ctx, page) with one clean page.
+    The caller still does cookie-accept / login via _accept_cookies / _login."""
+    for lk in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        try:
+            (MH_PROFILE_DIR / lk).unlink()
+        except Exception:
+            pass
+    MH_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    ctx = await pw.chromium.launch_persistent_context(
+        str(MH_PROFILE_DIR),
+        headless=False, accept_downloads=True, no_viewport=True,
+        args=["--start-maximized", "--disable-blink-features=AutomationControlled",
+              "--disable-infobars", "--disable-dev-shm-usage"],
+    )
+    await ctx.add_init_script(_ANTI_DETECT_JS)
+    for _pat in ("**/*facebook.com/**", "**/*facebook.net/**",
+                 "**/connect.facebook.net/**", "**/*fbcdn.net/**"):
+        try:
+            await ctx.route(_pat, lambda r: r.abort())
+        except Exception:
+            pass
+    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    for extra in list(ctx.pages):
+        if extra is not page:
+            try:
+                await extra.close()
+            except Exception:
+                pass
+    return ctx, page
+
 
 # ── MAIN ENTRY POINT ─────────────────────────────────────────────────────── #
 async def run_scraper(*,
@@ -3269,6 +3426,7 @@ async def run_scraper(*,
     record_filter  = "All Records",
     record_type    = "All records",
     category       = "All collections",
+    categories     = None,   # «Ограничить поиск по категории» — list of ticked labels
     output_format  = "both",
     output_folder  = Path("."),
     email          = None, password    = None,
@@ -3485,6 +3643,14 @@ async def run_scraper(*,
 
             if _done():
                 return summary
+
+            # «Ограничить поиск по категории» — narrow server-side by each ticked
+            # category before collecting (best-effort, like the record-type refine).
+            _cats = [c for c in (categories or []) if c]
+            if _cats:
+                _prog(28, "Ограничение по категории…")
+                for _c in _cats:
+                    await _apply_category_filter(page, _c, log)
 
             _prog(30, "Collecting results…")
             raw = await _collect(page, log,
@@ -3706,6 +3872,7 @@ async def run_scraper(*,
                     # longer overwrite each other to a single file).
                     fn = safe_fn(" — ".join(parts)) + f"_{i}" + ext
                     (images_dir / fn).write_bytes(data)
+                    det["doc_path"] = str((images_dir / fn).resolve())   # путь для Word/Excel
                     saved_imgs += 1
                 except Exception as _e:
                     log(f"    !! файл не сохранён на диск: {type(_e).__name__}: {_e}")
