@@ -772,55 +772,87 @@ def write_docx(path, records, qlines, append=False):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────── #
-async def _reset_facets(page, log):
-    """Click «Сбросить» so the sidebar returns to a clean state before we tick our
-    own filter (the user's flow: reset → pick → Применить → … → reset → next)."""
-    for sel in ('span.js-a-set-default_reset', 'span.a-set-default_reset',
-                '.js-a-set-default_reset', 'span.a-reset',
-                'span:has-text("Сбросить")'):
-        try:
-            b = page.locator(sel).first
-            if await b.count() and await b.is_visible():
-                await b.click(timeout=3000)
-                await asyncio.sleep(1.2)
-                return True
-        except Exception:
-            pass
-    return False
-
-
 async def _apply_facets(page, values, log):
-    """Reset the sidebar, then tick the given facet values (RU text / data-facet-value)
-    and click «Применить» so gwar narrows server-side. The facet sidebar loads by AJAX
-    after the search, so we WAIT for it and RETRY the tick (the «0/1 applied» bug was a
-    one-shot click before the sidebar had rendered). Values not present are skipped."""
+    """Tick the given sidebar facet values (RU text / data-facet-value) and click
+    «Применить» so gwar narrows server-side.
+
+    The sidebar loads by AJAX after the search, so we WAIT for it and RETRY. We tick
+    the REAL <input type=checkbox> exactly ONCE and verify it is :checked.
+
+    Two bugs this fixes (the «1/1 applied … ссылок 0» rage):
+      • the old tick clicked the label span AND every ancestor → if the checkbox is
+        inside a <label>, that toggled it an EVEN number of times → it ended up
+        UNCHECKED, yet was still counted → «Применить» applied nothing;
+      • clicking «Сбросить» first reset the whole search → 0 results. The facets start
+        unchecked, and the user's flow is pick → Применить, so no reset is needed."""
     wanted = [v for v in (values or []) if v]
     if not wanted:
         return
 
-    await _reset_facets(page, log)                 # clean state first
-
     CLICK_JS = r"""(values) => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        let n = 0;
-        for (const val of values) {
-            const want = norm(val);
-            let el = null;
-            for (const s of document.querySelectorAll(
-                    '[data-facet-value], .field-check-box-name-value, .field-check-box-name')) {
-                const t = norm(s.getAttribute('data-facet-value') || s.textContent);
-                if (t === want) { el = s; break; }
+        // facet rows render as «Документы о награждениях 35» — drop the trailing count
+        const strip = s => norm(s).replace(/\s+\d[\d.,\s]*$/, '').trim();
+        const wanted = values.map(norm);
+
+        // text of a checkbox's label: <label for=id>, a wrapping <label>, or the parent
+        const labelOf = (cb) => {
+            let txt = '';
+            try { if (cb.id) { const l = document.querySelector(
+                'label[for="' + ((window.CSS && CSS.escape) ? CSS.escape(cb.id) : cb.id) + '"]');
+                if (l) txt = l.textContent; } } catch (e) {}
+            if (!txt) { try { const p = cb.closest && cb.closest('label');
+                if (p) txt = p.textContent; } catch (e) {} }
+            if (!txt && cb.parentElement) txt = cb.parentElement.textContent;
+            return txt;
+        };
+        const tick = (cb) => {                          // ONE toggle, verify, force if needed
+            if (!cb) return false;
+            if (!cb.checked) { try { cb.click(); } catch (e) {} }
+            if (!cb.checked) {
+                cb.checked = true;
+                cb.dispatchEvent(new Event('input',  {bubbles: true}));
+                cb.dispatchEvent(new Event('change', {bubbles: true}));
             }
-            if (!el) continue;                     // not in current results → skip
-            let t = el;                            // climb to a clickable row/checkbox
-            for (let i = 0; i < 5 && t; i++) {
-                try { t.click(); } catch (e) {}
-                t = t.parentElement;
+            return cb.checked;
+        };
+
+        const boxes = Array.from(document.querySelectorAll('input[type=checkbox]'));
+        let done = 0;
+        for (const want of wanted) {
+            let cb = null;
+            // 1) anchor on a real checkbox by its (count-stripped) label text
+            for (const b of boxes) {
+                const t = labelOf(b);
+                if (norm(t) === want || strip(t) === want) { cb = b; break; }
             }
-            n++;
+            // 2) fallback: find the label element by text, climb to its checkbox
+            if (!cb) {
+                let span = null;
+                for (const s of document.querySelectorAll(
+                        '.field-check-box-name-value, [data-facet-value], .field-check-box-name, label, span, a')) {
+                    const t = (s.getAttribute && s.getAttribute('data-facet-value')) || s.textContent;
+                    if (norm(t) === want || strip(t) === want) { span = s; break; }
+                }
+                if (span) {
+                    let row = span;
+                    for (let i = 0; i < 6 && row && !cb; i++) {
+                        cb = row.querySelector && row.querySelector('input[type=checkbox]');
+                        row = row.parentElement;
+                    }
+                    if (!cb) { try { span.click(); done++; } catch (e) {} continue; }
+                }
+            }
+            if (tick(cb)) done++;
         }
-        return n;
+        return done;
     }"""
+    DIAG_JS = r"""() => ({
+        checked: document.querySelectorAll('input[type=checkbox]:checked').length,
+        found: (document.body.innerText.match(/Найдено документов:\s*([\d\s]+)/) || [])[1] || '?',
+        links: document.querySelectorAll('a[href*="/heroes/chelovek"]').length
+    })"""
+
     clicked = 0
     for _ in range(20):                            # wait for the AJAX sidebar, retry
         try:
@@ -834,30 +866,48 @@ async def _apply_facets(page, values, log):
         except Exception:
             pass
         await asyncio.sleep(0.7)
-    log(f"  Фильтры (фасеты) применены: {clicked}/{len(wanted)}")
+    try:
+        d = await page.evaluate(DIAG_JS)
+        log(f"  Фасеты отмечено: {clicked}/{len(wanted)} "
+            f"(чекбоксов :checked = {d['checked']})")
+    except Exception:
+        log(f"  Фасеты отмечено: {clicked}/{len(wanted)}")
 
+    applied = False
     for sel in ('input.heroes-filter-button[value="Применить"]',
                 'input.heroes-filter-button', 'button:has-text("Применить")',
                 'input[value="Применить"]'):
         try:
             btn = page.locator(sel).first
-            if await btn.count():
+            if await btn.count() and await btn.is_visible():
                 await btn.click(timeout=4000)
-                # gwar reloads the result list by AJAX — WAIT for it (the «ссылок 0»
-                # bug was collecting before the filtered results came back).
-                for _ in range(30):
-                    await asyncio.sleep(0.5)
-                    try:
-                        if await page.evaluate(
-                                "() => document.querySelectorAll("
-                                "'a[href*=\"/heroes/chelovek\"]').length"):
-                            break
-                    except Exception:
-                        pass
-                await asyncio.sleep(1)
-                return
+                applied = True
+                log("  → нажал «Применить»")
+                break
         except Exception:
             pass
+    if not applied:
+        log("  !! кнопка «Применить» не найдена")
+        return
+
+    # gwar reloads the result list by AJAX — WAIT for it (the «ссылок 0» bug was
+    # collecting before the filtered results came back).
+    for _ in range(30):
+        await asyncio.sleep(0.5)
+        try:
+            if await page.evaluate(
+                    "() => document.querySelectorAll("
+                    "'a[href*=\"/heroes/chelovek\"]').length"):
+                break
+        except Exception:
+            pass
+    await asyncio.sleep(1)
+    try:
+        d = await page.evaluate(DIAG_JS)
+        log(f"  После «Применить»: Найдено документов = {d['found']}, "
+            f"ссылок на странице = {d['links']}")
+    except Exception:
+        pass
 
 
 async def run_scraper(*,
