@@ -345,13 +345,14 @@ class GwarApp(QMainWindow):
             cb.stateChanged.connect(self._save)
 
     def _facet_hdr(self, name, fc):
-        """A facet section label with «all» / «none» buttons (По умолчанию / Сбросить)."""
+        """A facet section label with «All» / «None» buttons (По умолчанию / Сбросить)."""
         w = QWidget(); h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0); h.setSpacing(4)
         h.addWidget(QLabel(name))
-        ba = QPushButton("all"); ba.setObjectName("advBtn"); ba.setFixedWidth(36)
+        css = "QPushButton{padding:2px 8px;border:1px solid #c9bd9a;border-radius:4px;}"
+        ba = QPushButton("All"); ba.setStyleSheet(css); ba.setMinimumWidth(48)
         ba.clicked.connect(lambda _=0, f=fc: (f.set_all(True), self._save()))
-        bn = QPushButton("none"); bn.setObjectName("advBtn"); bn.setFixedWidth(44)
+        bn = QPushButton("None"); bn.setStyleSheet(css); bn.setMinimumWidth(56)
         bn.clicked.connect(lambda _=0, f=fc: (f.set_all(False), self._save()))
         h.addWidget(ba); h.addWidget(bn); h.addStretch()
         return w

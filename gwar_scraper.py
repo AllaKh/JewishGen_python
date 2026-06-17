@@ -921,76 +921,58 @@ async def run_scraper(*,
                                         ignore_https_errors=True)
         page = await ctx.new_page()
         try:
-            # PER-FILTER passes: EACH chosen facet value (source/award/loss/notable)
-            # gets its OWN search → narrowing → collected + saved records, in its own
-            # document (like Ancestry). No facets selected → one plain pass. Cancel is
-            # honoured between passes AND between records.
-            facet_values = []
+            # ONE search → tick ALL chosen facets together (sources + awards + losses
+            # + notable are multi-select checkboxes that combine) → Применить → collect
+            # → ONE document. NOT one search per filter (that re-searched the same name
+            # over and over and only ever applied 1/1).
+            all_facets = []
             for _k in ("info_sources", "awards", "losses", "notable"):
-                facet_values += [v for v in (params.get(_k) or []) if v]
-            passes = facet_values or [None]
-            n_passes = len(passes)
-            total_records = 0
-            used_names = set()
+                all_facets += [v for v in (params.get(_k) or []) if v]
 
-            for pidx, fval in enumerate(passes, 1):
+            _prog(5, "Поиск…")
+            if not await _do_search(page, params, log):
+                summary["message"] = "Не удалось выполнить поиск."
+                return summary
+            if _done():
+                return summary
+            if all_facets:
+                log(f"  Применяю фильтров: {len(all_facets)}")
+                await _apply_facets(page, all_facets, log)
+                if _done():
+                    return summary
+
+            _prog(15, "Сбор результатов…")
+            recs_meta = await _collect_results(page, params, log, max_pages, max_records)
+            log(f"  Подходящих записей: {len(recs_meta)}")
+
+            records = []
+            n = len(recs_meta)
+            for i, rm in enumerate(recs_meta, 1):
                 if _done():
                     break
-                tag = f" [{fval}]" if fval else ""
-                _prog(5, f"Поиск{tag} (фильтр {pidx}/{n_passes})…")
-                if not await _do_search(page, params, log):
-                    if pidx == 1:
-                        summary["message"] = "Не удалось выполнить поиск."
-                        return summary
-                    log(f"    !! поиск не удался для фильтра{tag} — пропускаю")
-                    continue
-                if _done():
-                    break
-                if fval:                                  # apply THIS filter, then narrow
-                    await _apply_facets(page, [fval], log)
-                    if _done():
-                        break
-
-                _prog(15, f"Сбор результатов{tag}…")
-                recs_meta = await _collect_results(page, params, log, max_pages, max_records)
-                log(f"  Подходящих записей{tag}: {len(recs_meta)}")
-                if not recs_meta:
-                    continue
-
-                records = []
-                n = len(recs_meta)
-                for i, rm in enumerate(recs_meta, 1):
-                    if _done():
-                        break
-                    _prog(20 + int(70 * i / n), f"[{i}/{n}]{tag} {rm['name'][:50]}…")
-                    log(f"  [{i}/{n}] {rm['name']}")
+                _prog(20 + int(70 * i / max(n, 1)), f"[{i}/{n}] {rm['name'][:50]}…")
+                log(f"  [{i}/{n}] {rm['name']}")
+                try:
+                    dp = await ctx.new_page()
                     try:
-                        dp = await ctx.new_page()
-                        try:
-                            rec = await _extract_record(dp, rm["href"], images_dir,
-                                                        output_folder, log,
-                                                        result_name=rm["name"])
-                        finally:
-                            await dp.close()
-                        if not rec.get("name"):
-                            rec["name"] = rm["name"]
-                        records.append(rec)
-                    except Exception as _e:
-                        log(f"      !! пропускаю запись ({type(_e).__name__})")
-                        records.append({"name": rm["name"], "type": "", "url": rm["href"],
-                                        "fields": [], "scans": []})
-                    await asyncio.sleep(0.3)
+                        rec = await _extract_record(dp, rm["href"], images_dir,
+                                                    output_folder, log,
+                                                    result_name=rm["name"])
+                    finally:
+                        await dp.close()
+                    if not rec.get("name"):
+                        rec["name"] = rm["name"]
+                    records.append(rec)
+                except Exception as _e:
+                    log(f"      !! пропускаю запись ({type(_e).__name__})")
+                    records.append({"name": rm["name"], "type": "", "url": rm["href"],
+                                    "fields": [], "scans": []})
+                await asyncio.sleep(0.3)
 
-                if not records:
-                    continue
-                _prog(92, f"Сохранение{tag}…")
-                suffix = f"__{safe_fn(fval)}" if fval else ""
-                base = (safe_fn(f"gwar_{qkey}") or "gwar_results") + suffix
-                file_name = f"{base}.docx"; _n = 2
-                while file_name in used_names:
-                    file_name = f"{base}_{_n}.docx"; _n += 1
-                used_names.add(file_name)
-                docx_p = output_folder / file_name
+            if records:
+                _prog(92, "Сохранение…")
+                base = safe_fn(f"gwar_{qkey}") or "gwar_results"
+                docx_p = output_folder / f"{base}.docx"
                 decision = "overwrite"
                 if docx_p.exists() and ask_file_conflict:
                     try:
@@ -999,21 +981,18 @@ async def run_scraper(*,
                         decision = "overwrite"
                     log(f"  → Файл существует → {decision}")
                 if decision != "skip":
-                    pass_qlines = qlines + ([f"Фильтр: {fval}"] if fval else [])
                     try:
-                        write_docx(docx_p, records, pass_qlines,
-                                   append=(decision == "append"))
+                        write_docx(docx_p, records, qlines, append=(decision == "append"))
                         log(f"  → Word: {docx_p.name}")
                     except PermissionError:
                         alt = output_folder / f"{base}_{time.strftime('%H%M%S')}.docx"
-                        write_docx(alt, records, pass_qlines, append=False)
+                        write_docx(alt, records, qlines, append=False)
                         log(f"  !! файл занят (открыт в Word) → сохранил как {alt.name}")
-                total_records += len(records)
 
             if _done():
                 log("  ⛔ Отменено пользователем — сохранил собранное.")
-            _prog(100, f"Готово — {total_records} запис(ей), фильтров: {n_passes}.")
-            summary.update({"ok": True, "n_records": total_records,
+            _prog(100, f"Готово — {len(records)} запис(ей).")
+            summary.update({"ok": True, "n_records": len(records),
                             "output_folder": str(output_folder)})
         except Exception as exc:
             summary["message"] = f"{type(exc).__name__}: {exc}"
