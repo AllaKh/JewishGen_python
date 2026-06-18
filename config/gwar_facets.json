@@ -116,8 +116,10 @@
     {"en": "died in captivity",        "ru": "погиб в плену"}
   ],
   "known": [
-    {"en": "Military commanders", "ru": "Военачальники"},
-    {"en": "Writers",             "ru": "Литераторы"},
-    {"en": "Doctors",             "ru": "Врачи"}
+    {"en": "Military commanders",    "ru": "Военачальники"},
+    {"en": "Writers",                "ru": "Литераторы"},
+    {"en": "Doctors",                "ru": "Врачи"},
+    {"en": "Scientists",             "ru": "Учёные"},
+    {"en": "Theatre & cinema figures", "ru": "Деятели театра и кино"}
   ]
 }

@@ -42,7 +42,7 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt, Mm
+from docx.shared import Pt, Mm, Inches
 from docx.enum.section import WD_ORIENT
 
 # Fix Playwright browser path inside PyInstaller bundle
@@ -448,6 +448,27 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
         for j in range(ncols):
             cell_val = row[j] if j < len(row) else ""
             _set_cell_lines(table.rows[start_row + i].cells[j], cell_lines(cell_val))
+
+    # ── fit the columns to the page ──────────────────────────────────────────
+    # Word auto-sizing let the table run to ~11.45" (wider than the 11.3" usable
+    # landscape-A4 area) and made one column hog the width. Set explicit widths,
+    # proportional to each column's longest content (capped so no column dominates),
+    # summing to the usable width.
+    usable_in = (297 - 5 - 5) / 25.4          # landscape A4 minus 5 mm margins
+    weights = []
+    for j in range(ncols):
+        longest = len(cell_text(columns[j])) if j < len(columns) else 4
+        for r in rows:
+            if j < len(r):
+                longest = max(longest, len(cell_text(r[j])))
+        weights.append(min(max(longest, 4), 32))   # clamp 4..32 chars
+    total_w = sum(weights) or ncols
+    table.autofit = False
+    table.allow_autofit = False
+    for j, col in enumerate(table.columns):
+        w = Inches(usable_in * weights[j] / total_w)
+        for cell in col.cells:
+            cell.width = w
 
     doc.save(out_path)
 
@@ -1134,13 +1155,31 @@ async def wait_for_login_to_finish(page, timeout_seconds=600):
         pass
 
 
-async def click_list_button_open_new_page(context, results_page, label, attempts=4):
-    """Click a 'List N records' button by its exact visible label. If the
-    opened tab is the Auth0 login page, pause until the user has logged in
-    (the tab is NOT closed). Dismiss any donation / discussion popups that
-    appear after that. Retries on 503 / server error pages."""
+async def click_list_button_open_new_page(context, results_page, label, idx=0, attempts=4):
+    """Click the idx-th 'List N records' button (NOT the first one matching the label).
+    Many databases share the same record count, so several buttons read e.g.
+    «List 4 records»; matching by label + .first ALWAYS opened the SAME database
+    (Family Finder), so Marriages got Family Finder's results and JGFF opened over and
+    over. We mark the idx-th List button fresh each attempt (robust to page reloads) and
+    click THAT one. If the opened tab is the Auth0 login page, pause until the user has
+    logged in (the tab is NOT closed). Dismiss donation/discussion popups. Retry on 503."""
     for attempt in range(attempts):
-        button = results_page.get_by_role("button", name=label, exact=True).first
+        marked = await results_page.evaluate(
+            r"""(idx) => {
+                let i = 0;
+                for (const el of document.querySelectorAll('input[type=submit], button')) {
+                    const t = (el.value || el.textContent || '').trim();
+                    if (!/^List\s+[\d,]+\s+record/i.test(t)) continue;
+                    el.removeAttribute('data-jg-click');
+                    if (i === idx) el.setAttribute('data-jg-click', '1');
+                    i++;
+                }
+                return i;
+            }""", idx)
+        if marked and idx < marked:
+            button = results_page.locator('[data-jg-click="1"]').first
+        else:    # fallback (page changed shape) — old label match
+            button = results_page.get_by_role("button", name=label, exact=True).first
         try:
             async with context.expect_page(timeout=10_000) as new_page_event:
                 await button.click()
@@ -1312,6 +1351,12 @@ __jg.gridifyByTable = function(trs) {
     });
     return out;
 };
+
+// Final completion value must NOT be a function: page.evaluate() of a script whose
+// last expression is a function makes Playwright CALL it (with no args) → the spurious
+// «gridifyByTable: Cannot read properties of null (reading 'forEach')» warning. Return
+// a plain value instead.
+true;
 """
 
 _JS_EXTRACT = r"""
@@ -1319,8 +1364,12 @@ _JS_EXTRACT = r"""
     var keywords = args.keywords;
     var mode     = args.mode || 'OR';   // 'OR' or 'AND'
 
-    var escape = function(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
-    var regexes = keywords.map(function(k) { return new RegExp(escape(k), 'i'); });
+    // «*» in a keyword is a WILDCARD = «any characters» (e.g. «Avr*» → Avrum, Avraham,
+    // Avrom). Escape every regex metachar EXCEPT «*», then turn «*» into «.*».
+    var toRegex = function(s) {
+        return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    };
+    var regexes = keywords.map(function(k) { return new RegExp(toRegex(k), 'i'); });
 
     var jg = window.__jg;
 
@@ -1366,7 +1415,7 @@ _JS_EXTRACT = r"""
     }
 
     // ── noise filter ──────────────────────────────────────────────────── //
-    var NOISE_RE = /Edmond\s+J\.?\s+Safra|36\s+Battery\s+Place|info@jewishgen\.org|JewishGen\s+is\s+actively\s+raising|actively\s+raising\s+funds|Mission\s+Our\s+Team\s+Get\s+Involved|Learn\s+more\s+about\s+our\s+org|©\s*JewishGen|All\s+Rights\s+Reserved.*JewishGen|Sign\s+In\s*\/\s*Register/i;
+    var NOISE_RE = /Edmond\s+J\.?\s+Safra|36\s+Battery\s+Place|info@jewishgen\.org|JewishGen\s+is\s+actively\s+raising|actively\s+raising\s+funds|Mission\s+Our\s+Team\s+Get\s+Involved|Learn\s+more\s+about\s+our\s+org|©\s*JewishGen|All\s+Rights\s+Reserved.*JewishGen|Sign\s+In\s*\/\s*Register|Logged\s+in:|My\s+Profile\s*\|\s*Logout|\bLogout\b|Genealogical\s+Research\s+Division|JGFF\s+FAQ|JGFF\s+Start\s+Page|Frequently\s+Asked\s+Questions|Save\s+this\s+as\s+a\s+favorite|Another\s+Search|\[\s*English\s*\]\s*[·•]|Subscribe\s+to\s+our\s+newsletter/i;
 
     function gridRowText(cells) {
         var t = '';
@@ -1425,11 +1474,14 @@ _JS_EXTRACT = r"""
         }
         var rowText = fullParts.join(' ');
 
-        if (!regexes.length) return;
-        var hit = mode === 'AND'
-            ? regexes.every(function(re) { return re.test(rowText); })
-            : regexes.some(function(re) { return re.test(rowText); });
-        if (!hit) return;
+        // No keyword → keep EVERY content row (optional filter: search by the site's
+        // own fields only). With keyword(s) → the row must match (OR / AND).
+        if (regexes.length) {
+            var hit = mode === 'AND'
+                ? regexes.every(function(re) { return re.test(rowText); })
+                : regexes.some(function(re) { return re.test(rowText); });
+            if (!hit) return;
+        }
 
         var cellsSegs = g.cells.map(function(c) {
             return c ? jg.getCellSegments(c) : [];
@@ -1442,16 +1494,23 @@ _JS_EXTRACT = r"""
         });
         // Drop single-cell noise rows
         if (cellsSegs.length === 1 && total > 200) return;
-        var rowFlat = '';
+        var rowFlat = '';       // visible text only — for the NOISE check
+        var rowKeyFull = '';    // text + every link HREF — for dedup
         cellsSegs.forEach(function(cell) {
             cell.forEach(function(line) {
-                line.forEach(function(s) { rowFlat += ' ' + (s.t || ''); });
+                line.forEach(function(s) {
+                    rowFlat += ' ' + (s.t || '');
+                    rowKeyFull += ' ' + (s.t || '') + '|' + (s.h || '');
+                });
             });
         });
         if (NOISE_RE.test(rowFlat)) return;
 
-        // JS-side deduplication by row content key
-        var rowKey = rowFlat.replace(/\s+/g, ' ').trim().slice(0, 500);
+        // Dedup by text AND link hrefs: two revision-list records can have identical
+        // visible text (same name/father) but DIFFERENT image/archive links — keying on
+        // text alone collapsed them (the «79 → 50» loss). Include the hrefs so distinct
+        // records survive.
+        var rowKey = rowKeyFull.replace(/\s+/g, ' ').trim().slice(0, 800);
         if (seenKeys.has(rowKey)) return;
         seenKeys.add(rowKey);
 
@@ -1503,12 +1562,12 @@ async def extract_matches(page, keywords, keyword_mode="OR"):
 
     keyword_mode: 'OR'  — row kept when ANY keyword matches (default)
                   'AND' — row kept only when ALL keywords match
+    No keywords → the filter is OPTIONAL: EVERY content row is kept (search by the
+    site's own fields only). (Previously a no-match sentinel dropped everything.)
     """
     if isinstance(keywords, str):
         keywords = [keywords]
     keywords = [k for k in (keywords or []) if (k or "").strip()]
-    if not keywords:
-        keywords = ["\x00__no_match__\x00"]
 
     await _inject_utils(page)
     return await page.evaluate(
@@ -1545,13 +1604,17 @@ async def follow_next_pages(page, keywords, acc, keyword_mode="OR",
     )
 
     def _row_fingerprint(row):
+        # include link HREFs, not just text — two revision-list records can share the
+        # same visible text but point to different image/archive links; keying on text
+        # alone collapsed distinct records (the «79 → 50» loss).
         parts = []
         for cell in row:
             for line in cell:
                 for seg in line:
                     t = (seg.get("t") or "").strip()
-                    if t:
-                        parts.append(t)
+                    h = (seg.get("h") or "").strip()
+                    if t or h:
+                        parts.append(t + "|" + h)
         return "|".join(parts)
 
     seen_page_sigs   = set()
@@ -1611,28 +1674,40 @@ async def follow_next_pages(page, keywords, acc, keyword_mode="OR",
 
         # ── find next button — NO /^Page\s+\d+/ ─────────────────────── #
         next_info = await page.evaluate(
-            """() => {
+            """(target) => {
                 for (var el of document.querySelectorAll('[data-pw-next]'))
                     el.removeAttribute('data-pw-next');
 
                 var candidates = Array.from(document.querySelectorAll(
                     'a, button, input[type=submit], input[type=button]'
                 ));
+                // 1) JewishGen forward link: «Page N: Records X to Y» where N == target
+                //    (the NEXT page number). Matching the exact next number — not any
+                //    «Page …» — means we never click backwards or loop.
+                for (var el of candidates) {
+                    var text = (el.value || el.innerText || el.textContent || '')
+                        .replace(/\\s+/g, ' ').trim();
+                    if (!text || text.length > 60) continue;
+                    var m = text.match(/^Page\\s+(\\d+)\\b/i);
+                    if (m && parseInt(m[1], 10) === target) {
+                        el.setAttribute('data-pw-next', '1');
+                        return {text: text};
+                    }
+                }
+                // 2) generic «Next» / arrows
                 for (var el of candidates) {
                     var text = (el.value || el.innerText || el.textContent || '')
                         .replace(/\\s+/g, ' ').trim();
                     if (!text || text.length > 40) continue;
                     if (/previous|prev\\b|^back\\b|^first\\b/i.test(text)) continue;
-                    if (
-                        /^next\\b/i.test(text) ||
-                        /^(>>+|»+|→+)$/.test(text)
-                    ) {
+                    if (/^next\\b/i.test(text) || /^(>>+|»+|→+)$/.test(text)) {
                         el.setAttribute('data-pw-next', '1');
-                        return {text: text, tag: el.tagName};
+                        return {text: text};
                     }
                 }
                 return null;
-            }"""
+            }""",
+            page_idx + 1,        # the page number we want to go to next
         )
         if not next_info:
             break
@@ -2232,6 +2307,11 @@ async def _process_images_for_db(context, rows, images_dir, fs_email, fs_passwor
     row_files: dict = {}
     if not rows:
         return row_files
+    # Consecutive photo-URL dedup (user's rule): compare the URL we're about to
+    # download with the PREVIOUS one actually downloaded; if it's byte-for-byte the
+    # same, skip it (and check the next the same way). Download as soon as the URL
+    # differs by even one character. `last_url` updates only on an actual download.
+    last_url = None
     for ri, row in enumerate(rows):
         tasks = _row_image_tasks(row)
         if not tasks:
@@ -2241,16 +2321,26 @@ async def _process_images_for_db(context, rows, images_dir, fs_email, fs_passwor
         for ti, task in enumerate(tasks):
             sfx = f"_t{ti+1}" if len(tasks) > 1 else ""
             dest = images_dir / f"{label}{sfx}.jpg"
+            # dedup key = exact photo source (FHL: viewer URL + the image number,
+            # since one film URL holds many distinct images)
+            key = task.get("url", "")
+            if task["type"] == "fhl":
+                key = f"{task.get('url', '')}#{task.get('img_num', '')}"
+            if task["type"] in ("fhl", "direct") and key and key == last_url:
+                log(f"    [строка {ri+1}] URL фото совпал с предыдущим — пропускаю")
+                continue
             if task["type"] == "fhl":
                 log(f"    [строка {ri+1}] FHL снимок {task['img_num']} → {dest.name}")
                 await _do_fhl_download(
                     task["url"], task["img_num"],
                     dest, fs_email, fs_password, log)
                 dests.append(dest)
+                last_url = key
             elif task["type"] == "direct":
                 log(f"    [строка {ri+1}] Direct image → {dest.name}")
                 await _do_direct_download(context, task["url"], dest, log)
                 dests.append(dest)
+                last_url = key
             elif task["type"] == "ukraine":
                 log(f"    [строка {ri+1}] Ukrainian ref (ссылка сохранена, не скачиваем): "
                     f"{task['url'][:60]}")
@@ -2305,6 +2395,7 @@ async def run_scraper(
     log=print,
     cancel_event=None,
     progress=None,
+    ask_file_conflict=None,   # callable(list[str]) → "overwrite"/"append"/"skip"
 ):
     """Run the JewishGen search and write the matched rows into the chosen
     output folder. All parameters are explicit so this function can be
@@ -2441,6 +2532,36 @@ async def run_scraper(
             saved_docx_count = 0
             used_filenames = set()
             databases_for_xlsx = []  # one entry per DB that produced matches
+            # overwrite/append/skip — ask ONCE (on the first existing file) and reuse
+            # the choice for the rest of this run. JewishGen writes many per-DB files.
+            _conflict = {"choice": None}
+
+            def _resolve_conflict(path):
+                """Return 'overwrite' / 'append' / 'skip' for an existing `path`.
+                Asks the GUI once via ask_file_conflict, then reuses the answer."""
+                if not Path(path).exists():
+                    return "overwrite"
+                if _conflict["choice"] is None:
+                    if ask_file_conflict:
+                        try:
+                            _conflict["choice"] = (
+                                ask_file_conflict([Path(path).name]) or "overwrite").lower()
+                        except Exception:
+                            _conflict["choice"] = "overwrite"
+                    else:
+                        _conflict["choice"] = "overwrite"
+                return _conflict["choice"]
+
+            def _free_name(path):
+                """A non-existing variant «name_2.docx», «name_3.docx» … (for «append»
+                when the writer can't merge into an existing file)."""
+                p = Path(path)
+                n = 2
+                cand = p
+                while cand.exists():
+                    cand = p.with_name(f"{p.stem}_{n}{p.suffix}")
+                    n += 1
+                return cand
             n_items = len(items)
             consecutive_unavailable = 0   # run of DBs that all 503'd → give up
             for i, item in enumerate(items, 1):
@@ -2467,7 +2588,7 @@ async def run_scraper(
                 for attempt in range(3):
                     try:
                         result_page = await click_list_button_open_new_page(
-                            context, page, label
+                            context, page, label, i - 1
                         )
                         await ensure_not_503(result_page)
                         break
@@ -2575,6 +2696,12 @@ async def run_scraper(
                     used_filenames.add(file_name)
 
                     out_path = output_folder / file_name
+                    decision = _resolve_conflict(out_path)
+                    if decision == "skip":
+                        log(f"    существует — пропускаю {file_name}")
+                        continue
+                    if decision == "append":      # writer can't merge → save as a new file
+                        out_path = _free_name(out_path)
                     write_database_docx(
                         out_path,
                         desc,
@@ -2585,7 +2712,7 @@ async def run_scraper(
                         row_files,
                     )
                     saved_docx_count += 1
-                    log(f"    saved {len(acc['rows'])} row(s) → {file_name}")
+                    log(f"    saved {len(acc['rows'])} row(s) → {out_path.name}")
                 else:
                     log(f"    queued {len(acc['rows'])} row(s) for the workbook")
 
@@ -2593,10 +2720,16 @@ async def run_scraper(
             if want_xlsx and databases_for_xlsx:
                 _progress(95, "Writing Excel workbook…")
                 target = output_folder / f"{q_prefix}_jewishgen_results.xlsx"
+                _xl_decision = _resolve_conflict(target)
+                if _xl_decision == "skip":
+                    log(f"    существует — пропускаю {target.name}")
+                    target = None
+                elif _xl_decision == "append":
+                    target = _free_name(target)
                 try:
                     wrote = write_xlsx_all(
                         target, databases_for_xlsx, query_lines
-                    )
+                    ) if target else False
                     # write_xlsx_all now returns either the path string it
                     # actually wrote to (so we can pick up the _new fallback
                     # name on PermissionError) or False if nothing was saved.

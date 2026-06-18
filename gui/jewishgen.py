@@ -119,15 +119,30 @@ except Exception:
 class Worker(QThread):
     progress = Signal(int, str)
     finished = Signal(dict)
+    request_file = Signal(str)        # existing file → ask overwrite/append/skip
 
     def __init__(self, payload: dict):
         super().__init__()
         self.payload = payload
+        self._file_choice = "overwrite"
+        self._file_event = threading.Event()
+
+    def provide_file_choice(self, choice: str):
+        self._file_choice = choice or "overwrite"
+        self._file_event.set()
 
     def run(self):
         def _cb(v, text):
             self.progress.emit(int(v), str(text))
         self.payload["progress"] = _cb
+
+        def _ask_file_conflict(names):
+            self._file_choice = "overwrite"
+            self._file_event.clear()
+            self.request_file.emit("\n".join(names))
+            self._file_event.wait(timeout=300)     # block until the user picks (≤5 min)
+            return self._file_choice or "overwrite"
+        self.payload["ask_file_conflict"] = _ask_file_conflict
         try:
             result = asyncio.run(scraper.run_scraper(**self.payload))
         except Exception as exc:
@@ -321,7 +336,7 @@ class JewishGenApp(QMainWindow):
         fl.addLayout(mr)
 
         kr = QHBoxLayout(); kr.setSpacing(8)
-        self.f1 = QLineEdit(); self.f1.setPlaceholderText("Keyword 1")
+        self.f1 = QLineEdit(); self.f1.setPlaceholderText("Keyword 1  (optional)")
         self.f2 = QLineEdit(); self.f2.setPlaceholderText("Keyword 2  (optional)")
         self.f3 = QLineEdit(); self.f3.setPlaceholderText("Keyword 3  (optional)")
         kr.addWidget(self.f1, 1); kr.addWidget(self.f2, 1); kr.addWidget(self.f3, 1)
@@ -578,10 +593,8 @@ class JewishGenApp(QMainWindow):
             QMessageBox.warning(self, "No search rows",
                                 "Please fill in at least one search row.")
             return
-        if not self._collect_keywords():
-            QMessageBox.warning(self, "No filter keywords",
-                                "Please enter at least one filter keyword.")
-            return
+        # Keyword filter is OPTIONAL — with no keyword the scraper returns every row
+        # the site's own field search produced (search by the site fields only).
         if not self.docx_cb.isChecked() and not self.xlsx_cb.isChecked():
             QMessageBox.warning(self, "No output format",
                                 "Select at least one output format.")
@@ -608,7 +621,23 @@ class JewishGenApp(QMainWindow):
         self.worker = Worker(self._build_payload())
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_done)
+        self.worker.request_file.connect(self._show_file_conflict)
         self.worker.start()
+
+    def _show_file_conflict(self, names: str):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("File already exists")
+        box.setText("These output files already exist:\n\n"
+                    f"{names}\n\nWhat should I do?")
+        b_over = box.addButton("Overwrite", QMessageBox.DestructiveRole)
+        box.addButton("Append (new file)", QMessageBox.AcceptRole)
+        b_skip = box.addButton("Skip", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        choice = ("overwrite" if clicked is b_over
+                  else "skip" if clicked is b_skip else "append")
+        self.worker.provide_file_choice(choice)
 
     def _on_progress(self, v: int, text: str):
         self.progress_bar.setValue(v)

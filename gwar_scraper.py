@@ -263,7 +263,10 @@ _GWAR_LABEL_RE = re.compile(
 _CHROME_MARKERS = ("О проекте", "Вопросы и ответы", "Как искать", "Обратная связь",
                    "Правовая информация", "Пользовательское соглашение",
                    "Министерство обороны", "© Министерство", "Перейти к просмотру",
-                   "Инструкция по поиску", "Видео-инструкция", "Главная страница")
+                   "Инструкция по поиску", "Видео-инструкция", "Главная страница",
+                   "Вы используете слишком старую", "Уважаемые пользователи",
+                   "Новое в 20", "Персоналий на образе", "Боевой путь строится",
+                   "Нет данных о точках", "В случае обнаружения")
 
 
 def _clean_block(txt: str) -> str:
@@ -503,7 +506,12 @@ def _with_page(url: str, n: int) -> str:
 _COLLECT_JS = r"""() => {
     const norm = s => (s || '').replace(/\s+/g, ' ').trim();
     const out = [], seen = new Set();
-    document.querySelectorAll('a[href*="/heroes/chelovek"]').forEach(a => {
+    // Result links carry class «heroes-list-item-name» regardless of path — normal
+    // records are /heroes/chelovek…, FAMOUS persons are /heroes/commander… (Военачальники)
+    // or /heroes/person…. Match the CLASS first (covers every type), then href patterns.
+    document.querySelectorAll(
+            'a.heroes-list-item-name, a[href*="/heroes/chelovek"], '
+            + 'a[href*="/heroes/person"], a[href*="/heroes/commander"]').forEach(a => {
         const href = a.href || '';
         const name = norm(a.textContent);
         if (!href || !name || seen.has(href)) return;
@@ -601,7 +609,33 @@ _DETAIL_JS = r"""(labels) => {
         while (n && !norm(n.textContent)) n = n.nextElementSibling;
         if (n) typ = norm(n.textContent).slice(0, 90);
     }
-    return {name, typ, body: norm(document.body.innerText)};
+    // FREE-TEXT blocks (Биография / Описание / История …): everything written on the
+    // card, not just the labelled fields. Grab leaf prose blocks (≥ 80 chars, no block
+    // children), drop site chrome; dedup; keep order.
+    const seen = new Set(), descParts = [];
+    // Site chrome / notices / system text that must NEVER land in the card — the user
+    // pasted these verbatim from a bad gwar_Иванов.docx.
+    const JUNK = new RegExp([
+        'О проекте','Урок Победы','Министерств','обратной связи','©','cookie',
+        'Памяти героев','слишком старую версию','обновите ваш браузер','устаревш',
+        'Уважаемые пользователи','временно ограничен','доступ к личным архивам',
+        'технологических работ','высокой нагрузк','Новое в 20\\d\\d',
+        'Добавлены документы','защитников Отечества','обнаружения технических',
+        'некорректных данных','Персоналий на образе','точках боевых действий',
+        'Боевой путь строится','координат воинской','Приносим извинения'
+    ].join('|'), 'i');
+    for (const el of document.querySelectorAll('p, div, span, article, section')) {
+        if (el.querySelector && el.querySelector('p, div, ul, ol, table, h1, h2, h3'))
+            continue;                                    // containers → skip (leaf only)
+        const t = norm(el.textContent);
+        if (t.length < 80 || JUNK.test(t) || seen.has(t)) continue;
+        // the page-number strip «1234567891011…755» = a leaf that is (almost) all digits
+        const digits = (t.match(/\d/g) || []).length;
+        if (digits > 40 && digits > t.length * 0.6) continue;
+        seen.add(t); descParts.push(t);
+    }
+    return {name, typ, body: norm(document.body.innerText),
+            desc: descParts.join('\n\n')};
 }"""
 
 
@@ -696,8 +730,10 @@ async def _extract_record(page, url, images_dir, base_dir, log, result_name=""):
         rec["name"] = info.get("name") or result_name
         rec["type"] = info.get("typ") or ""
         rec["fields"] = _parse_fields(info.get("body") or "")
+        rec["desc"] = _clean_block(info.get("desc") or "")     # full free text (Биография…)
         base = safe_fn(rec.get("name") or result_name or "record")
-        log(f"      полей: {len(rec['fields'])}, тип: {rec['type'] or '—'}")
+        log(f"      полей: {len(rec['fields'])}, тип: {rec['type'] or '—'}"
+            + (f", описание: {len(rec['desc'])} симв." if rec.get("desc") else ""))
         await _grab_doc_scans(page, images_dir, base, rec, log)
     except Exception as e:
         log(f"      !! страница записи ({type(e).__name__})")
@@ -726,6 +762,13 @@ def _docx_add_record(doc, i, rec):
 
     if rec.get("fields"):
         _kv_table(doc, rec["fields"])
+
+    # full free text from the card (Биография / описание) — each paragraph kept
+    if rec.get("desc"):
+        for para in str(rec["desc"]).split("\n\n"):
+            para = para.strip()
+            if para:
+                doc.add_paragraph(para)
 
     for img in rec.get("scans", []):
         try:
@@ -772,142 +815,234 @@ def write_docx(path, records, qlines, append=False):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────── #
-async def _apply_facets(page, values, log):
-    """Tick the given sidebar facet values (RU text / data-facet-value) and click
-    «Применить» so gwar narrows server-side.
+# gwar reflects sidebar facets in the RESULTS URL — the clickable facet rows do NOT
+# toggle through Playwright .click() («Выбрано 0/10»). Map «Источники информации» →
+# type code (+ group); «Известные личности» → filters=famous_type[…]. Verified against
+# the user's working URL: /heroes/?groups=awd:ptr:frc:cmd:prs&types=awd_nagrady:…:
+# prs_person&last_name=ivanov&filters=famous_type[Военачальники]  → Найдено: 1 (general).
+SOURCE_TYPE_CODES = {
+    "Документы о награждениях":          ("awd_nagrady", "awd"),
+    "Наградная картотека":               ("awd_kart", "awd"),
+    "Именные списки потерь":             ("potery_doneseniya_o_poteryah", "ptr"),
+    "Картотека потерь":                  ("potery_gospitali", "ptr"),
+    "Паспорта захоронений":              ("potery_spiski_zahoroneniy", "ptr"),
+    "Картотека военнопленных":           ("potery_voennoplen", "ptr"),
+    "Послужные списки":                  ("frc_list", "frc"),
+    "В справочнике командного состава":  ("cmd_commander", "cmd"),
+    "В известных личностях":             ("prs_person", "prs"),
+}
+DEFAULT_GROUPS = "awd:ptr:frc:cmd:prs"
+DEFAULT_TYPES  = ":".join(c for c, _g in SOURCE_TYPE_CODES.values())
 
-    The sidebar loads by AJAX after the search, so we WAIT for it and RETRY. We tick
-    the REAL <input type=checkbox> exactly ONCE and verify it is :checked.
+_TRANSLIT = {'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+             'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'i', 'к': 'k', 'л': 'l', 'м': 'm',
+             'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+             'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+             'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'}
 
-    Two bugs this fixes (the «1/1 applied … ссылок 0» rage):
-      • the old tick clicked the label span AND every ancestor → if the checkbox is
-        inside a <label>, that toggled it an EVEN number of times → it ended up
-        UNCHECKED, yet was still counted → «Применить» applied nothing;
-      • clicking «Сбросить» first reset the whole search → 0 results. The facets start
-        unchecked, and the user's flow is pick → Применить, so no reset is needed."""
-    wanted = [v for v in (values or []) if v]
-    if not wanted:
-        return
 
-    CLICK_JS = r"""(values) => {
-        const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        // facet rows render as «Документы о награждениях 35» — drop the trailing count
-        const strip = s => norm(s).replace(/\s+\d[\d.,\s]*$/, '').trim();
-        const wanted = values.map(norm);
+def _translit(s: str) -> str:
+    return ''.join(_TRANSLIT.get(c, c) for c in (s or '').lower())
 
-        // text of a checkbox's label: <label for=id>, a wrapping <label>, or the parent
-        const labelOf = (cb) => {
-            let txt = '';
-            try { if (cb.id) { const l = document.querySelector(
-                'label[for="' + ((window.CSS && CSS.escape) ? CSS.escape(cb.id) : cb.id) + '"]');
-                if (l) txt = l.textContent; } } catch (e) {}
-            if (!txt) { try { const p = cb.closest && cb.closest('label');
-                if (p) txt = p.textContent; } catch (e) {} }
-            if (!txt && cb.parentElement) txt = cb.parentElement.textContent;
-            return txt;
-        };
-        const tick = (cb) => {                          // ONE toggle, verify, force if needed
-            if (!cb) return false;
-            if (!cb.checked) { try { cb.click(); } catch (e) {} }
-            if (!cb.checked) {
-                cb.checked = true;
-                cb.dispatchEvent(new Event('input',  {bubbles: true}));
-                cb.dispatchEvent(new Event('change', {bubbles: true}));
-            }
-            return cb.checked;
-        };
 
-        const boxes = Array.from(document.querySelectorAll('input[type=checkbox]'));
-        let done = 0;
-        for (const want of wanted) {
-            let cb = null;
-            // 1) anchor on a real checkbox by its (count-stripped) label text
-            for (const b of boxes) {
-                const t = labelOf(b);
-                if (norm(t) === want || strip(t) === want) { cb = b; break; }
-            }
-            // 2) fallback: find the label element by text, climb to its checkbox
-            if (!cb) {
-                let span = null;
-                for (const s of document.querySelectorAll(
-                        '.field-check-box-name-value, [data-facet-value], .field-check-box-name, label, span, a')) {
-                    const t = (s.getAttribute && s.getAttribute('data-facet-value')) || s.textContent;
-                    if (norm(t) === want || strip(t) === want) { span = s; break; }
-                }
-                if (span) {
-                    let row = span;
-                    for (let i = 0; i < 6 && row && !cb; i++) {
-                        cb = row.querySelector && row.querySelector('input[type=checkbox]');
-                        row = row.parentElement;
-                    }
-                    if (!cb) { try { span.click(); done++; } catch (e) {} continue; }
-                }
-            }
-            if (tick(cb)) done++;
-        }
-        return done;
-    }"""
-    DIAG_JS = r"""() => ({
-        checked: document.querySelectorAll('input[type=checkbox]:checked').length,
-        found: (document.body.innerText.match(/Найдено документов:\s*([\d\s]+)/) || [])[1] || '?',
-        links: document.querySelectorAll('a[href*="/heroes/chelovek"]').length
-    })"""
-
-    clicked = 0
-    for _ in range(20):                            # wait for the AJAX sidebar, retry
-        try:
-            clicked = await page.evaluate(CLICK_JS, wanted)
-        except Exception:
-            clicked = 0
-        if clicked >= len(wanted):
-            break
-        try:
-            await page.evaluate("() => window.scrollBy(0, 250)")
-        except Exception:
-            pass
-        await asyncio.sleep(0.7)
+async def _click_facet(page, value, log):
+    """Toggle a gwar sidebar facet by its data-facet-value, with a REAL mouse click.
+    gwar's custom checkbox does NOT toggle on a JS .click() (that was the «Выбрано
+    0/10» bug) — a genuine Playwright mouse event does. Match is whitespace-normalized
+    because the live site has double spaces (e.g. «Георгиевский крест  IV-й степени»)."""
     try:
-        d = await page.evaluate(DIAG_JS)
-        log(f"  Фасеты отмечено: {clicked}/{len(wanted)} "
-            f"(чекбоксов :checked = {d['checked']})")
+        ok = await page.evaluate(r"""(want) => {
+            const norm = s => (s||'').replace(/\s+/g,' ').trim();
+            const w = norm(want);
+            document.querySelectorAll('[data-pw-facet]').forEach(
+                e => e.removeAttribute('data-pw-facet'));
+            for (const el of document.querySelectorAll('[data-facet-value]')) {
+                if (norm(el.getAttribute('data-facet-value')) === w) {
+                    (el.closest('.field-check-box') || el).setAttribute('data-pw-facet','1');
+                    return true;
+                }
+            }
+            return false;
+        }""", value)
+    except Exception as e:
+        log(f"    !! поиск фасета «{value}»: {type(e).__name__}")
+        return False
+    if not ok:
+        log(f"    !! фасет не найден на странице: «{value}»")
+        return False
+    clicked = False
+    try:
+        await page.locator('[data-pw-facet="1"]').first.click(timeout=4000)   # REAL click
+        clicked = True
+        log(f"    ✓ фасет отмечен: «{value}»")
+    except Exception as e:
+        log(f"    !! клик по фасету «{value}»: {type(e).__name__}")
+    try:
+        await page.evaluate("() => document.querySelectorAll('[data-pw-facet]')"
+                            ".forEach(e => e.removeAttribute('data-pw-facet'))")
     except Exception:
-        log(f"  Фасеты отмечено: {clicked}/{len(wanted)}")
+        pass
+    return clicked
 
+
+async def _apply_award_loss_clicks(page, awards, losses, log):
+    """«Награды»/«Потери» have no URL key, so apply them EXACTLY like the user showed:
+    real-click each data-facet-value, with a 5-sec pause BEFORE each («перед КАЖДЫМ
+    фильтром 5 сек»), then ONE «Применить» so all picked filters apply in a single
+    search (gwar's facets combine; cb79c8d = one search, not one-per-filter)."""
+    to_click = list(awards) + list(losses)
+    if not to_click:
+        return
+    log(f"  Награды/Потери — кликаю {len(to_click)} фасет(ов) по data-facet-value:")
+    for val in to_click:
+        await asyncio.sleep(5)                      # 5 sec BEFORE each filter
+        log(f"    (жду 5с) кликаю: «{val}»")
+        await _click_facet(page, val, log)
+    # ONE «Применить» for everything together (famous_type from the URL stays checked
+    # in the sidebar, so it is re-applied alongside the just-clicked awards/losses).
     applied = False
-    for sel in ('input.heroes-filter-button[value="Применить"]',
-                'input.heroes-filter-button', 'button:has-text("Применить")',
-                'input[value="Применить"]'):
+    for sel in ('input.button-search-big[value="Применить"]',
+                'input[value="Применить"]', 'button:has-text("Применить")',
+                'a:has-text("Применить")', '.heroes-filter-apply', '.filter-apply'):
         try:
             btn = page.locator(sel).first
             if await btn.count() and await btn.is_visible():
                 await btn.click(timeout=4000)
                 applied = True
-                log("  → нажал «Применить»")
+                log(f"  «Применить» нажата ({sel}) — все фильтры одним поиском")
                 break
         except Exception:
-            pass
+            continue
     if not applied:
-        log("  !! кнопка «Применить» не найдена")
+        log("  «Применить» не найдена — фасеты применяются по клику (AJAX), это ок")
+    await asyncio.sleep(5)                           # wait for the filtered re-search
+    _LINK_SEL = ("() => document.querySelectorAll('a.heroes-list-item-name, "
+                 "a[href*=\"/heroes/chelovek\"], a[href*=\"/heroes/person\"], "
+                 "a[href*=\"/heroes/commander\"]').length")
+    links = 0
+    for _ in range(40):
+        try:
+            links = int(await page.evaluate(_LINK_SEL))
+        except Exception:
+            links = 0
+        if links:
+            break
+        await asyncio.sleep(0.5)
+    try:
+        found = await page.evaluate(
+            "() => (document.body.innerText.match(/Найдено документов:\\s*([\\d\\s]+)/)"
+            " || [])[1] || '?'")
+        log(f"  После наград/потерь: Найдено документов = {found}, ссылок = {links}")
+    except Exception:
+        log(f"  После наград/потерь: ссылок = {links}")
+
+
+async def _apply_facets_url(page, params, sec, log):
+    """Apply the chosen facets via the RESULTS URL (gwar's clickable facet rows don't
+    toggle through Playwright). «Источники информации» → types=/groups=, «Известные
+    личности» → filters=famous_type[…]. Rebuild the current results URL with those
+    params and navigate, then wait for the AJAX result list.
+
+    The URL carries ONLY last_name (+ facets) — first/patronymic are dropped here and
+    applied fuzzily in _collect_results (this mirrors the user's working URL, which had
+    just last_name + filters, and avoids the famous DB returning 0 on a strict ФИО)."""
+    base = page.url or (BASE + "/heroes/")
+    sp = urlsplit(base)
+    q = dict(parse_qsl(sp.query, keep_blank_values=True))
+
+    # «Источники информации» → types / groups (subset narrows; none → defaults)
+    codes, groups = [], []
+    for ru in (sec.get("info_sources") or []):
+        cg = SOURCE_TYPE_CODES.get(ru)
+        if cg and cg[0] not in codes:
+            codes.append(cg[0])
+            if cg[1] not in groups:
+                groups.append(cg[1])
+    q["types"]  = ":".join(codes)  if codes  else (q.get("types")  or DEFAULT_TYPES)
+    q["groups"] = ":".join(groups) if groups else (q.get("groups") or DEFAULT_GROUPS)
+
+    # name: KEEP last_name + first_name + middle_name (Cyrillic, NOT translit — gwar's
+    # URL search is Cyrillic, the live URL was last_name=%D0%98%D0%B2%D0%B0%D0%BD…=Иванов).
+    # The user SEARCHES by имя+отчество — dropping first/patronymic gave «100 325 Ивановых»
+    # instead of «Иванов Григорий …». Use the form-search URL's value if present, else the
+    # GUI param as-is; an empty field is removed so it doesn't blank-filter.
+    for k in ("last_name", "first_name", "middle_name"):
+        v = (params.get(k) or "").strip()
+        if q.get(k):
+            continue                       # keep what the form search already put in URL
+        if v:
+            q[k] = v                       # Cyrillic, exactly as typed
+        else:
+            q.pop(k, None)
+
+    # «Известные личности» → filters=famous_type[…] in the URL (CONFIRMED working —
+    # user's URL had filters=famous_type[Военачальники]). «Награды»/«Потери» have NO
+    # URL key I know, so they are NOT put in the URL — they are applied right after by
+    # REAL-clicking their data-facet-value spans (see below), exactly the elements the
+    # user pointed at: <span class="field-check-box-name-value" data-facet-value="…">.
+    filt = []
+    notable = [v for v in (sec.get("notable") or []) if v]
+    awards  = [v for v in (sec.get("awards")  or []) if v]
+    losses  = [v for v in (sec.get("losses")  or []) if v]
+    if notable:
+        filt.append("famous_type[" + ",".join(notable) + "]")
+    if filt:
+        q["filters"] = ":".join(filt)
+    q["page"] = "1"
+
+    url = urlunsplit((sp.scheme or "https", sp.netloc or "gwar.mil.ru",
+                      sp.path or "/heroes/", urlencode(q, safe="[],:"), ""))
+    log(f"  Применяю фильтры через URL: {url}")
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+    except Exception as e:
+        log(f"  !! goto фильтр-URL: {type(e).__name__}")
         return
 
-    # gwar reloads the result list by AJAX — WAIT for it (the «ссылок 0» bug was
-    # collecting before the filtered results came back).
-    for _ in range(30):
-        await asyncio.sleep(0.5)
+    # gwar updates the «Найдено» COUNT first, then renders the result CARDS a moment
+    # later. The «ссылок 0» bug was breaking the wait as soon as the count text showed
+    # (Найдено=1) — before the card link existed. So: wait a fixed 5s for the AJAX to
+    # UPDATE (user: «жди 5 секунд»), THEN poll for the actual result link, NOT the count.
+    await asyncio.sleep(5)
+    _LINK_SEL = ("() => document.querySelectorAll('a.heroes-list-item-name, "
+                 "a[href*=\"/heroes/chelovek\"], a[href*=\"/heroes/person\"], "
+                 "a[href*=\"/heroes/commander\"]').length")
+    links = 0
+    for _ in range(40):                        # up to ~20s more for the card to render
         try:
-            if await page.evaluate(
-                    "() => document.querySelectorAll("
-                    "'a[href*=\"/heroes/chelovek\"]').length"):
-                break
+            links = int(await page.evaluate(_LINK_SEL))
         except Exception:
-            pass
-    await asyncio.sleep(1)
+            links = 0
+        if links:
+            break
+        await asyncio.sleep(0.5)
     try:
-        d = await page.evaluate(DIAG_JS)
-        log(f"  После «Применить»: Найдено документов = {d['found']}, "
-            f"ссылок на странице = {d['links']}")
+        found = await page.evaluate(
+            "() => (document.body.innerText.match(/Найдено документов:\\s*([\\d\\s]+)/)"
+            " || [])[1] || '?'")
+        log(f"  После URL-фильтра: Найдено документов = {found}, ссылок = {links}")
     except Exception:
         pass
+    if not links:
+        # Diagnostic: dump the result-area links so we learn the famous-person URL
+        # format (the famous filter returns a link my selector didn't match).
+        try:
+            dump = await page.evaluate(
+                "() => Array.from(document.querySelectorAll('a[href*=\"/heroes/\"]'))"
+                ".map(a => a.getAttribute('href') + ' :: ' + "
+                "(a.textContent||'').replace(/\\s+/g,' ').trim().slice(0,45))"
+                ".filter(s => !/\\/heroes\\/?($| ::)/.test(s)).slice(0, 20)")
+            if dump:
+                log("  !! ссылок 0 — ссылки /heroes/ на странице (диагностика):")
+                for s in dump:
+                    log(f"      {s}")
+        except Exception:
+            pass
+
+    # Now apply «Награды»/«Потери» by real-clicking their data-facet-value (no URL
+    # key known), 5 sec before each, then ONE «Применить» — the notable (famous_type)
+    # filter from the URL stays applied alongside them.
+    await _apply_award_loss_clicks(page, awards, losses, log)
 
 
 async def run_scraper(*,
@@ -975,9 +1110,19 @@ async def run_scraper(*,
             # + notable are multi-select checkboxes that combine) → Применить → collect
             # → ONE document. NOT one search per filter (that re-searched the same name
             # over and over and only ever applied 1/1).
-            all_facets = []
-            for _k in ("info_sources", "awards", "losses", "notable"):
-                all_facets += [v for v in (params.get(_k) or []) if v]
+            _sec = {k: [v for v in (params.get(k) or []) if v]
+                    for k in ("info_sources", "awards", "losses", "notable")}
+            all_facets = (_sec["info_sources"] + _sec["awards"]
+                          + _sec["losses"] + _sec["notable"])
+            # Show EXACTLY what each GUI section sent — so «выбрал всю первую секцию,
+            # но не выбрал военачальников» is visible at a glance (and: gwar OR-s the
+            # facets, so adding the 9 «Information sources» broadens to ~2000 and
+            # drowns a narrow «Notable persons → Военачальники» pick).
+            log(f"  Фильтры из GUI — источники: {len(_sec['info_sources'])}, "
+                f"награды: {len(_sec['awards'])}, потери: {len(_sec['losses'])}, "
+                f"известные личности: {len(_sec['notable'])}")
+            if _sec["notable"]:
+                log(f"    известные личности: {', '.join(_sec['notable'])}")
 
             _prog(5, "Поиск…")
             if not await _do_search(page, params, log):
@@ -987,7 +1132,7 @@ async def run_scraper(*,
                 return summary
             if all_facets:
                 log(f"  Применяю фильтров: {len(all_facets)}")
-                await _apply_facets(page, all_facets, log)
+                await _apply_facets_url(page, params, _sec, log)
                 if _done():
                     return summary
 

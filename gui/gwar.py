@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox,
     QFileDialog, QProgressBar, QMessageBox, QApplication, QGroupBox,
-    QScrollArea, QFrame,
+    QScrollArea, QFrame, QSizePolicy,
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from gui._app_icon import app_icon, make_header, make_cancel_button
@@ -112,7 +112,7 @@ class _FacetChecks(QWidget):
                  searchable=True, scroll=True, on_change=None):
         super().__init__()
         self._cbs = []                                   # (checkbox, ru-value)
-        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(3)
+        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(2)
         if searchable:
             self._search = QLineEdit(); self._search.setPlaceholderText("Search…")
             self._search.textChanged.connect(self._filter)
@@ -132,9 +132,16 @@ class _FacetChecks(QWidget):
         if scroll:
             target.addStretch()
             sc = QScrollArea(); sc.setWidget(host); sc.setWidgetResizable(True)
-            sc.setMaximumHeight(max_h); sc.setFrameShape(QFrame.NoFrame)
+            sc.setFrameShape(QFrame.NoFrame)
             sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            v.addWidget(sc)
+            # EXPAND to fill the column height (same look as the left list) — no empty
+            # gap below the search box; max_h is only an upper bound now.
+            sc.setMaximumHeight(max_h)
+            sc.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+            v.addWidget(sc, 1)
+        # fill the grid cell (top-aligned, full column width) — no gap above the search
+        # box and the same width as the left column
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def _filter(self, text):
         t = (text or "").strip().lower()
@@ -178,6 +185,20 @@ class GwarApp(QMainWindow):
         if not hasattr(self, "_body"):
             return
         scr = QApplication.primaryScreen().availableGeometry()
+        max_w = scr.width() - 16
+        # On a screen narrower than the 820 design width, the window MUST be allowed to
+        # shrink below 820 — otherwise it sticks out past the screen edge and a horizontal
+        # scrollbar appears (the «никогда горизонтальный скролл» rule). So cap the minimum
+        # width by the screen.
+        self.setMinimumWidth(min(820, max_w))
+        # facet columns: 3 equal columns that FILL the available width on a big screen and
+        # SHRINK on a low-res one, sized so 3×colw + chrome never exceeds the usable width
+        # (so they never force a horizontal scrollbar).
+        if hasattr(self, "_facet_grid"):
+            usable = min(max_w - 48, 1232)         # minus outer margins/frame/spacing
+            colw = max(130, usable // 3)
+            for _c in (0, 1, 2):
+                self._facet_grid.setColumnMinimumWidth(_c, colw)
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
         self._scroll.setMinimumHeight(0); self._scroll.setMaximumHeight(16777215)
         self._body.adjustSize()
@@ -222,9 +243,10 @@ class GwarApp(QMainWindow):
         bgl.addWidget(QLabel("First name:"), 0, 2); bgl.addWidget(self.f_first, 0, 3)
         bgl.addWidget(QLabel("Patronymic:"), 1, 0); bgl.addWidget(self.f_mid, 1, 1)
         bgl.addWidget(QLabel("Birth date:"), 1, 2); bgl.addWidget(self.f_birth, 1, 3)
-        self.f_exact = QCheckBox("Exact match (surname / first name / patronymic)")
-        self.f_exact.setChecked(True)
-        bgl.addWidget(self.f_exact, 2, 0, 1, 4)
+        # «Exact match» checkbox REMOVED per the user — it forced strict ФИО equality
+        # and rejected valid hits (e.g. the Военачальник «Иванов Николай Иудович»).
+        # The scraper now always uses fuzzy matching (surname ~0.7, given/patronymic
+        # by initial / stem) — see exact=False in the payload below.
         outer.addWidget(bg)
 
         # 2) Place of residence / conscription ───────────────────────────────
@@ -258,13 +280,16 @@ class GwarApp(QMainWindow):
         outer.addWidget(self._facet_btn)
         self._facet_box = QWidget()
         fgl = QGridLayout(self._facet_box); fgl.setSpacing(8)
-        self._fc_sources = _FacetChecks(FACETS.get("sources", []), searchable=False,
-                                        scroll=False, on_change=self._save)
+        self._facet_grid = fgl          # kept so _fit() can re-size columns for low-res
+        # «Источники информации» — ALL 9 checked by default (user's request). They map
+        # to types=… (the full default set), so checking them all = the site's default.
+        self._fc_sources = _FacetChecks(FACETS.get("sources", []), all_checked=True,
+                                        searchable=False, scroll=False, on_change=self._save)
         self._fc_known   = _FacetChecks(FACETS.get("known", []), searchable=False,
                                         scroll=False, on_change=self._save)
-        self._fc_awards  = _FacetChecks(FACETS.get("awards", []), max_h=210,
+        self._fc_awards  = _FacetChecks(FACETS.get("awards", []), max_h=600,
                                         on_change=self._save)
-        self._fc_losses  = _FacetChecks(FACETS.get("losses", []), max_h=210,
+        self._fc_losses  = _FacetChecks(FACETS.get("losses", []), max_h=600,
                                         on_change=self._save)
         fgl.addWidget(self._facet_hdr("Information sources:", self._fc_sources), 0, 0)
         fgl.addWidget(self._fc_sources, 1, 0)
@@ -274,6 +299,10 @@ class GwarApp(QMainWindow):
         fgl.addWidget(self._fc_awards, 1, 1, 3, 1)
         fgl.addWidget(self._facet_hdr("Losses:", self._fc_losses), 0, 2)
         fgl.addWidget(self._fc_losses, 1, 2, 3, 1)
+        # three equal-width columns (Awards/Losses as wide as the left column)
+        for _c in (0, 1, 2):
+            fgl.setColumnStretch(_c, 1)
+            fgl.setColumnMinimumWidth(_c, 200)   # base; _fit() widens to fill / shrinks
         self._facet_box.setVisible(False)
         outer.addWidget(self._facet_box)
 
@@ -340,7 +369,6 @@ class GwarApp(QMainWindow):
                   self.f_fund, self.f_inv, self.f_file, self.f_folder):
             w.textChanged.connect(self._save)
         self.f_event.currentTextChanged.connect(self._save)
-        self.f_exact.stateChanged.connect(self._save)
         for cb in self._sec_cbs.values():
             cb.stateChanged.connect(self._save)
 
@@ -394,7 +422,7 @@ class GwarApp(QMainWindow):
             "awards":      self._fc_awards.checked(),
             "losses":      self._fc_losses.checked(),
             "notable":     self._fc_known.checked(),
-            "exact":       self.f_exact.isChecked(),
+            "exact":       False,   # «строгое соответствие» removed → always fuzzy ФИО
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":         print,
             "cancel_event": getattr(self, "_cancel_ev", None),
@@ -464,7 +492,7 @@ class GwarApp(QMainWindow):
                  "evfrom": self.f_evfrom.text(), "evto": self.f_evto.text(),
                  "evplace": self.f_evplace.text(), "fund": self.f_fund.text(),
                  "inv": self.f_inv.text(), "file": self.f_file.text(),
-                 "folder": self.f_folder.text(), "exact": self.f_exact.isChecked(),
+                 "folder": self.f_folder.text(),
                  "sections": {n: cb.isChecked() for n, cb in self._sec_cbs.items()},
                  "info_sources": self._fc_sources.checked(),
                  "awards": self._fc_awards.checked(),
@@ -493,14 +521,16 @@ class GwarApp(QMainWindow):
         i = self.f_event.findText(d.get("event", ""))
         if i >= 0:
             self.f_event.setCurrentIndex(i)
-        self.f_exact.setChecked(bool(d.get("exact", True)))
         secs = d.get("sections", {})
         for n, cb in self._sec_cbs.items():
             cb.setChecked(bool(secs.get(n, True)))
-        self._fc_sources.set_checked(d.get("info_sources", []))
-        self._fc_awards.set_checked(d.get("awards", []))
-        self._fc_losses.set_checked(d.get("losses", []))
-        self._fc_known.set_checked(d.get("notable", []))
+        # NB: the sidebar facets (Information sources / Awards / Losses / Notable
+        # persons) are NOT restored — they start UNCHECKED every session. They are
+        # per-search refinements applied server-side; silently re-checking a stale set
+        # (e.g. all 9 «Information sources» left over from a previous run) quietly
+        # broadens the search and drowns the narrow filter you actually want now — the
+        # «выбрал всю первую секцию, но не выбрал военачальников» bug. The name / place
+        # / storage fields above ARE restored — that's the search history worth keeping.
 
 
 if __name__ == "__main__":
