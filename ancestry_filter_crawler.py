@@ -7,6 +7,9 @@ Run it yourself from the command line, e.g.:
     python ancestry_filter_crawler.py --dry-run       # crawl + show, do NOT write JSON
     python ancestry_filter_crawler.py --only dates     # one axis only
     python ancestry_filter_crawler.py --depth 4        # locations down to cities too
+    python ancestry_filter_crawler.py --us             # ONLY the United States, down to
+                                                       #   LEVEL 5 (cities); levels 1-4 and
+                                                       #   every other country are left as-is
     python ancestry_filter_crawler.py --headless       # no visible window
 
 What it does
@@ -177,6 +180,9 @@ async def crawl_axis(page, axis: str, args) -> list:
     cfg = SITE["axes"][axis]
     base = SITE["results_base"]
     max_depth = args.depth or cfg["max_depth"]   # 0 → use cfg default
+    us_only = bool(getattr(args, "us", False)) and axis == "locations"
+    if us_only and not args.depth:
+        max_depth = 5                            # continent→country→state→county→CITY
     visited: set[str] = set()
     nodes: list[dict] = []
     dump_path = _CONFIG / cfg["json"].replace(".json", "_crawl_raw.json")
@@ -242,10 +248,24 @@ async def crawl_axis(page, axis: str, args) -> list:
             except Exception:
                 pass
         if depth < max_depth:
-            for lbl, code in kids:
+            rec = kids
+            if us_only:
+                # Stay on the United States branch only: at depth 1 (continents) descend
+                # ONLY into North America; at depth 2 (its countries) ONLY into the United
+                # States; depth ≥3 (US states→counties→cities) descend into everything.
+                def _is(lbl, *subs):
+                    L = _clean_label(lbl).lower()
+                    return any(s in L for s in subs)
+                if depth == 1:
+                    rec = [(l, c) for (l, c) in kids if _is(l, "north america")]
+                elif depth == 2:
+                    rec = [(l, c) for (l, c) in kids
+                           if _is(l, "united states", "usa")]
+            for lbl, code in rec:
                 await visit(code, _clean_label(lbl), depth + 1)
 
-    log(f"\n==== crawling {axis} (max depth {max_depth}) ====")
+    log(f"\n==== crawling {axis} (max depth {max_depth})"
+        f"{' — US only, level 5' if us_only else ''} ====")
     await visit(None, None, 1)
     log(f"==== {axis}: {len(nodes)} nodes (raw dump → {dump_path.name}) ====")
     return nodes
@@ -475,6 +495,9 @@ def main():
     ap.add_argument("--delay", type=int, default=1800, help="ms to wait after each page load")
     ap.add_argument("--user", default=None, help="Ancestry username (if not already logged in)")
     ap.add_argument("--password", default=None, help="Ancestry password (if not already logged in)")
+    ap.add_argument("--us", action="store_true",
+                    help="ONLY re-crawl the United States down to LEVEL 5 (cities); levels "
+                         "1-4 and all other countries are left untouched (merge preserves them)")
     args = ap.parse_args()
     try:
         asyncio.run(main_async(args))
