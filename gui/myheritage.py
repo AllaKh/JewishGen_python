@@ -428,6 +428,7 @@ class MyHeritageApp(QMainWindow):
         chl = QVBoxLayout(self._cat_host)
         chl.setContentsMargins(8, 0, 0, 0); chl.setSpacing(1)
         self._cat_checks = []                      # [(checkbox, label)]
+        self._cat_paths = {}                        # checkbox → (L1, …, this) drill path
         for name, data in (CATEGORIES or {}).items():
             self._cat_node(name, data, chl, 0)
         chl.addStretch()
@@ -503,21 +504,32 @@ class MyHeritageApp(QMainWindow):
         self._cat_btn.setText(("▼" if on else "▶") + "   Narrow down by category")
         self._fit()
 
-    def _cat_node(self, name, data, parent_layout, depth):
+    def _cat_node(self, name, data, parent_layout, depth, path=()):
         """One category row: optional ▶ arrow (if it has children) + checkbox.
-        Children are built lazily the first time the arrow is opened."""
+        Children are built lazily the first time the arrow is opened. `path` is the
+        chain of ancestor labels — recorded per checkbox so a DEEP category can be
+        drilled L1→L2→L3 by the scraper (it clicks each name on the facet in turn)."""
         data = data or {}
         children = data.get("children") or {}
+        my_path = tuple(path) + (name,)
         row = QHBoxLayout()
-        row.setContentsMargins(depth * 16, 0, 0, 0); row.setSpacing(4)
+        row.setContentsMargins(depth * 18, 0, 0, 0); row.setSpacing(4)
+        # The LEADING slot is ALWAYS an 18×18 widget — an arrow button when the node has
+        # children, otherwise an identical-size blank placeholder. Using the SAME widget
+        # size (not addSpacing) makes every checkbox start at the same x AND every row the
+        # same height, so arrow rows and leaf rows line up («неровно» fix).
         if children:
             arrow = QPushButton("▶"); arrow.setObjectName("advBtn")
-            arrow.setFixedWidth(16); arrow.setCheckable(True)
+            arrow.setFixedSize(18, 18); arrow.setCheckable(True)
             row.addWidget(arrow)
+        else:
+            ph = QWidget(); ph.setFixedSize(18, 18)
+            row.addWidget(ph)
         cb = QCheckBox(name)
         cb.stateChanged.connect(self._save)
         self._cat_checks.append((cb, name))
-        row.addWidget(cb); row.addStretch()
+        self._cat_paths[cb] = my_path
+        row.addWidget(cb, 0); row.addStretch(1)
         parent_layout.addLayout(row)
         if children:
             holder = QWidget(); hb = QVBoxLayout(holder)
@@ -526,22 +538,42 @@ class MyHeritageApp(QMainWindow):
             parent_layout.addWidget(holder)
             built = {"done": False}
 
-            def _toggle(on, _arrow=arrow, _hb=hb, _ch=children, _d=depth, _h=holder):
+            def _toggle(on, _arrow=arrow, _hb=hb, _ch=children, _d=depth, _h=holder,
+                        _p=my_path):
                 _arrow.setText("▼" if on else "▶")
                 if on and not built["done"]:
                     for cn, cd in _ch.items():
-                        self._cat_node(cn, cd, _hb, _d + 1)
+                        self._cat_node(cn, cd, _hb, _d + 1, _p)
                     built["done"] = True
                 _h.setVisible(on); self._fit()
             arrow.toggled.connect(_toggle)
 
     def _category_filters(self) -> list:
-        """Ticked category labels (excluding «Все коллекции» = no narrowing)."""
+        """Ticked category labels (for autosave) — excluding «Все коллекции» (no narrowing)."""
         out = []
         for cb, name in self._cat_checks:
             if cb.isChecked() and name.strip().lower() not in (
                     "все коллекции", "all collections"):
                 out.append(name)
+        return out
+
+    def _category_paths(self) -> list:
+        """Drill sequence for the scraper: for every ticked node, its FULL path
+        L1→…→node, merged in tree order and de-duplicated. The scraper clicks each name
+        on the «Narrow down by category» facet in turn, so a deep category is reachable
+        (clicking only the leaf on the top-level facet would never find it). Ancestors of
+        a ticked node are included so the drill passes through them; «Все коллекции» = no
+        narrowing → skipped. `_cat_checks` is in tree pre-order, so ancestors precede
+        descendants here."""
+        out = []
+        for cb, name in self._cat_checks:
+            if not cb.isChecked():
+                continue
+            if name.strip().lower() in ("все коллекции", "all collections"):
+                continue
+            for p in self._cat_paths.get(cb, (name,)):
+                if p not in out:
+                    out.append(p)
         return out
 
     def _fit(self):
@@ -719,7 +751,7 @@ class MyHeritageApp(QMainWindow):
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
             "record_type":   self._record_type(),
-            "categories":    self._category_filters(),   # restrict-by-category passes
+            "categories":    self._category_paths(),     # full drill path(s) for the scraper
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "email":         self.f_email.text().strip() or None,
