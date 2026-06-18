@@ -525,7 +525,12 @@ class MyHeritageApp(QMainWindow):
         else:
             ph = QWidget(); ph.setFixedSize(18, 18)
             row.addWidget(ph)
-        cb = QCheckBox(name)
+        # Dual label «English / Русский» (user's request): English first (display), the
+        # Russian original next to it. The checkbox IDENTITY stays the Russian name — the
+        # scraper clicks the facet by the site-language (Russian) text, and save/load keys
+        # on it. `data["en"]` is the matched-or-translated English from mh_add_english.py.
+        en = (data.get("en") or "").strip()
+        cb = QCheckBox(f"{en} / {name}" if en and en != name else name)
         cb.stateChanged.connect(self._save)
         self._cat_checks.append((cb, name))
         self._cat_paths[cb] = my_path
