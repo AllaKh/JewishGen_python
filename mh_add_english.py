@@ -20,8 +20,10 @@ Output: config/myheritage_categories.json rewritten as
 (ru stays the key/structure; en is display + English-site search).
 """
 from __future__ import annotations
+import difflib
 import json
 import re
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
@@ -144,10 +146,32 @@ def _stem(w):
         if len(w) > 4 and w.endswith(suf):
             return w[:-len(suf)] + ("y" if suf == "ies" else "")
     return w
-def _ten(s):
-    return set(_stem(w) for w in re.findall(r'[a-z0-9]+', s.lower())
-               if w not in _STOP_EN and len(w) > 2)
+def _deacc(s):
+    return ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
 def _years(s): return frozenset(re.findall(r'\b(1[5-9]\d\d|20\d\d)\b', s))
+def _ten(s):
+    """Comparable token set: deaccented, lowercased, stemmed. Keeps small numbers like a
+    «Part 5» (so part 5 ≠ part 4) but NOT 4-digit years (those go in the year-set)."""
+    out = set()
+    for w in re.findall(r'[a-z0-9]+', _deacc(s).lower()):
+        if w in _STOP_EN:
+            continue
+        if w.isdigit():
+            if not re.fullmatch(r'1[5-9]\d\d|20\d\d', w):
+                out.add(w)
+        elif len(w) > 2:
+            out.add(_stem(w))
+    return out
+def _fuzov(rt, et):
+    """How many RU tokens have an equal or near-equal (≥0.85) EN token (place-name drift
+    like Оребро→orebro≈örebro→orebro)."""
+    n = 0
+    for r in rt:
+        if r in et:
+            n += 1
+        elif any(len(e) > 3 and difflib.SequenceMatcher(None, r, e).ratio() >= 0.85 for e in et):
+            n += 1
+    return n
 
 def _geo(word):
     """Geo translation tolerant of Russian case endings (Канады→Canada): match the
@@ -195,44 +219,68 @@ def main():
             continue
         en_names.append(t)
     en_names = list(dict.fromkeys(en_names))
-    by_year = defaultdict(list)
-    for e in en_names:
-        by_year[_years(e)].append((e, _ten(e)))
+    EN = [(e, _ten(e), _years(e)) for e in en_names]
+    yidx, tidx = defaultdict(set), defaultdict(set)   # year/token → candidate indices
+    for i, (e, et, ey) in enumerate(EN):
+        for y in ey:
+            yidx[y].add(i)
+        for w in et:
+            tidx[w].add(i)
 
-    def best(ru):
-        # candidates MUST share the exact year-set (empty year-set for concept names),
-        # so a no-year concept («Школы») can never match a year-bearing collection.
-        ys = _years(ru); rt = _tokens_ru_as_en(ru)
-        cands = by_year.get(ys, [])
-        best_e, best_sc = None, 0.0
-        for e, et in cands:
-            if not et or not rt:
-                continue
-            inter = len(rt & et)
-            if ys:                          # year-bearing → year+place overlap is enough
-                sc = inter / min(len(rt), len(et))
-            else:                           # no-year concept → JACCARD (tight match only;
-                sc = inter / len(rt | et)   # a long unrelated name scores low)
-            if sc > best_sc:
-                best_sc, best_e = sc, e
-        return best_e, best_sc
+    def ranked(ru):
+        """Ranked EN candidates for `ru` (best first). Candidates share a year (or, for
+        no-year names, a token); score = fuzzy Jaccard, years weighted ×2."""
+        ry = _years(ru); rt = _ten(ru_to_en(ru))
+        cand = set()
+        for y in ry:
+            cand |= yidx[y]
+        if not ry:
+            for w in rt:
+                cand |= tidx.get(w, set())
+        if not cand:
+            cand = set(range(len(EN)))
+        scored = []
+        for i in cand:
+            e, et, ey = EN[i]
+            yo = len(ry & ey); to = _fuzov(rt, et)
+            inter = to + 2 * yo
+            union = len(rt) + 2 * len(ry) + len(et) + 2 * len(ey) - inter
+            scored.append((inter / max(union, 1), i))
+        scored.sort(reverse=True)
+        return scored[:12]
 
     tree = json.loads(_JSON.read_text("utf-8"))
-    stats = {"match": 0, "trans": 0}
+    ru_names = []
+    def collect(t):
+        for ru, v in t.items():
+            ru_names.append(ru)
+            if v.get("children"):
+                collect(v["children"])
+    collect(tree)
+
+    def is_latin(s):           # already-English names (book titles, «BillionGraves»…)
+        return not re.search(r'[а-яё]', s, re.I)
+
+    assign, score_of = {}, {}
+    for ru in set(ru_names):
+        if is_latin(ru):                          # already English → keep as-is (exact)
+            assign[ru], score_of[ru] = ru, 1.0
+        elif ru in L1_EN:                         # the 14 top categories — exact
+            assign[ru], score_of[ru] = L1_EN[ru], 1.0
+        else:
+            c = ranked(ru)
+            if c and c[0][0] >= 0.2:              # confident EN-docx match
+                assign[ru], score_of[ru] = EN[c[0][1]][0], c[0][0]
+            else:                                 # not findable in EN docx → translate
+                assign[ru], score_of[ru] = ru_to_en(ru), (c[0][0] if c else 0.0)
+
+    low = sorted(((score_of[ru], ru, assign[ru]) for ru in assign), key=lambda x: x[0])
+    n_low = sum(1 for s, _, _ in low if s < 0.34)
 
     def walk(t):
         new = {}
         for ru, v in t.items():
-            if ru in L1_EN:                       # the 14 top categories — exact
-                en = L1_EN[ru]; stats["match"] += 1
-            else:
-                e, sc = best(ru)
-                thresh = 0.55 if _years(ru) else 0.6   # year→ratio, no-year→Jaccard
-                if e and sc >= thresh:
-                    en = e; stats["match"] += 1
-                else:
-                    en = ru_to_en(ru); stats["trans"] += 1
-            node = {"en": en}
+            node = {"en": assign.get(ru, ru_to_en(ru))}
             if v.get("children"):
                 node["children"] = walk(v["children"])
             new[ru] = node
@@ -240,9 +288,14 @@ def main():
 
     out = walk(tree)
     _JSON.write_text(json.dumps(out, ensure_ascii=False, indent=2), "utf-8")
-    tot = stats["match"] + stats["trans"]
-    print(f"nodes: {tot} | matched in EN-docx: {stats['match']} "
-          f"({100*stats['match']//max(tot,1)}%) | auto-translated: {stats['trans']}")
+    print(f"nodes: {len(ru_names)} unique: {len(assign)} | low-confidence (<0.34): {n_low}")
+    print("--- lowest-confidence (verify these): ---")
+    for sc, ru, en in low[:30]:
+        print(f"  [{sc:.2f}] {ru[:38]}  →  {en[:38]}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
