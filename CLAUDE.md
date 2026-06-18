@@ -279,6 +279,12 @@ no_viewport=True, accept_downloads=True
 - **`category` в поиске НЕ участвует** (только при чтении записи) — её перевод косметический.
 - **Иврит — best-effort** (ивритские подписи MyHeritage я не сверял с живым сайтом). Если на HE-сайте пилл не открывается — уточнить точный текст подписи и поправить `_UI_I18N`.
 
+### GUI расширенного поиска — переделан «как на сайте» (gui/myheritage.py)
+- **6 ДАТ жизненных событий** (Birth, Marriage, Death, Military, Immigration, Any), каждая = виджет `_DateField`: **Year** + ▾-дропдаун («Match year exactly» чекбокс + радио This year/±1/±2/±5/±10/±20) + **Place** + ▾-дропдаун («Place must match»). Дропдаун = `QToolButton`+`QMenu` с `QWidgetAction`-обёрнутыми чекбоксами/радио (`_menu_dropdown`).
+- **5 РОДСТВЕННИКОВ** (Father, Mother, Spouse, Child, Sibling — Child/Sibling раньше НЕ было), каждый = `_NameField`: First name + ▾(«Match name exactly»/«Spelling variations»/«Match initials»/«Starts with specific letters») + Surname + ▾(«Match name exactly»).
+- Внизу: **«Match all terms exactly»** (вместо старого «Exact match for all parameters») + кнопка **«Clear all filters»** (`_clear_filters` сбрасывает все даты/имена/поля).
+- **Payload (`_payload`)**: birth/death/father/mother/spouse шлёт СТАРЫЕ ключи (скрапер работает как раньше) + год-флаги из BIRTH-даты (`_birth_year_params`→ year_exact/year_1..year_20, place_match) + НОВЫЕ ключи (marriage_*, military_year/place, immigration_year/place, any_*, child/_last, sibling/_last) + структуры `dates`/`relatives` (с per-field match-опциями). Новые ключи в сигнатуре `run_scraper` (дефолты) — приняты, но в форму MH вшиты **best-effort** (полное заполнение marriage/military/immigration/any/child/sibling в попапе «+More» — доделать; birth/death/father/mother/spouse работают). `_save`/`_load` хранят `dates`/`relatives` целиком.
+
 ### Форма поиска
 - Форма может быть в **iframe** — искать во всех `page.frames`.
 - Если селекторы инпутов не совпадают — **разметить от кнопки «Поиск»**: подняться к контейнеру формы, пометить текстовые инпуты `data-pw-rf=first/last/year/place` по `data-automations`/плейсхолдеру/порядку, печатать через `page.keyboard`.

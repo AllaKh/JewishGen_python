@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QToolButton, QMenu, QWidgetAction,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
-from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction
+from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction, QIntValidator
 from gui._app_icon import app_icon, make_header, make_cancel_button
 
 
@@ -227,6 +227,137 @@ class Worker(QThread):
                       "message": f"{type(exc).__name__}: {exc}"}
         self.finished.emit(result)
 
+
+_DROP_QSS = ("QToolButton{padding:4px 9px;border:1px solid #9aa4b2;border-radius:5px;}"
+             "QToolButton::menu-indicator{image:none;}")
+
+
+def _menu_dropdown(label, widgets):
+    """A ▾ button whose menu holds real QWidgets (checkboxes/radios), like the MH site."""
+    btn = QToolButton(); btn.setText(label)
+    btn.setPopupMode(QToolButton.InstantPopup)
+    btn.setCursor(Qt.PointingHandCursor); btn.setStyleSheet(_DROP_QSS)
+    m = QMenu(btn)
+    for i, w in enumerate(widgets):
+        if w is None:
+            m.addSeparator(); continue
+        w.setStyleSheet("QCheckBox,QRadioButton{padding:5px 12px;}")
+        wa = QWidgetAction(m); wa.setDefaultWidget(w); m.addAction(wa)
+    btn.setMenu(m)
+    return btn
+
+
+class _DateField(QWidget):
+    """A life-event date+place row exactly like MyHeritage: Year + ▾ («Match year exactly»
+    checkbox + This year/±1/±2/±5/±10/±20 radios) + Place + ▾ («Place must match»)."""
+    _SPANS = [("This year", "0"), ("+/- 1 year", "1"), ("+/- 2 years", "2"),
+              ("+/- 5 years", "5"), ("+/- 10 years", "10"), ("+/- 20 years", "20")]
+
+    def __init__(self, on_change=None):
+        super().__init__()
+        self._on = on_change
+        h = QHBoxLayout(self); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
+        self.year = QLineEdit(); self.year.setPlaceholderText("Year")
+        self.year.setFixedWidth(62); self.year.setMaxLength(4)
+        self.year.setValidator(QIntValidator(0, 2100, self))
+        self.exact = QCheckBox("Match year exactly")
+        self._grp = QButtonGroup(self); self._radios = {}
+        radios = []
+        for txt, val in self._SPANS:
+            rb = QRadioButton(txt); self._grp.addButton(rb); self._radios[val] = rb
+            if val == "5":
+                rb.setChecked(True)
+            radios.append(rb)
+        ybtn = _menu_dropdown("years ▾", [self.exact, None] + radios)
+        self.place = QLineEdit(); self.place.setPlaceholderText("Place")
+        self.place_match = QCheckBox("Place must match")
+        pbtn = _menu_dropdown("place ▾", [self.place_match])
+        h.addWidget(self.year); h.addWidget(ybtn)
+        h.addWidget(self.place, 1); h.addWidget(pbtn)
+        for w in (self.year, self.place):
+            w.textChanged.connect(self._chg)
+        for w in [self.exact, self.place_match] + radios:
+            w.toggled.connect(self._chg)
+
+    def _chg(self, *a):
+        if self._on:
+            self._on()
+
+    def state(self):
+        span = next((v for v, rb in self._radios.items() if rb.isChecked()), "5")
+        return {"year": self.year.text().strip(), "exact": self.exact.isChecked(),
+                "span": span, "place": self.place.text().strip(),
+                "place_match": self.place_match.isChecked()}
+
+    def set_state(self, d):
+        d = d or {}
+        self.year.setText(str(d.get("year", "") or ""))
+        self.exact.setChecked(bool(d.get("exact")))
+        self.place.setText(d.get("place", "") or "")
+        self.place_match.setChecked(bool(d.get("place_match")))
+        (self._radios.get(str(d.get("span", "5"))) or self._radios["5"]).setChecked(True)
+
+    def clear(self):
+        self.year.clear(); self.place.clear()
+        self.exact.setChecked(False); self.place_match.setChecked(False)
+        self._radios["5"].setChecked(True)
+
+
+class _NameField(QWidget):
+    """A relative row like MyHeritage: First name + ▾ (Match name exactly / Spelling
+    variations / Match initials / Starts with specific letters) + Surname + ▾ (Match
+    name exactly)."""
+    _FIRST = [("exact", "Match name exactly"), ("variations", "Spelling variations"),
+              ("initials", "Match initials"), ("starts", "Starts with specific letters")]
+
+    def __init__(self, on_change=None):
+        super().__init__()
+        self._on = on_change
+        h = QHBoxLayout(self); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
+        self.first = QLineEdit(); self.first.setPlaceholderText("First name(s)")
+        self._fcb = {}
+        fbtn = self._drop("match ▾", self._FIRST, self._fcb)
+        self.last = QLineEdit(); self.last.setPlaceholderText("Surname")
+        self._lcb = {}
+        lbtn = self._drop("match ▾", [("exact", "Match name exactly")], self._lcb)
+        h.addWidget(self.first, 1); h.addWidget(fbtn)
+        h.addWidget(self.last, 1); h.addWidget(lbtn)
+        for w in (self.first, self.last):
+            w.textChanged.connect(self._chg)
+
+    def _drop(self, label, opts, store):
+        cbs = []
+        for key, text in opts:
+            cb = QCheckBox(text); cb.toggled.connect(self._chg)
+            store[key] = cb; cbs.append(cb)
+        return _menu_dropdown(label, cbs)
+
+    def _chg(self, *a):
+        if self._on:
+            self._on()
+
+    def state(self):
+        return {"first": self.first.text().strip(),
+                "first_opts": [k for k, cb in self._fcb.items() if cb.isChecked()],
+                "last": self.last.text().strip(),
+                "last_exact": self._lcb["exact"].isChecked()}
+
+    def set_state(self, d):
+        d = d or {}
+        self.first.setText(d.get("first", "") or "")
+        self.last.setText(d.get("last", "") or "")
+        opts = set(d.get("first_opts") or [])
+        for k, cb in self._fcb.items():
+            cb.setChecked(k in opts)
+        self._lcb["exact"].setChecked(bool(d.get("last_exact")))
+
+    def clear(self):
+        self.first.clear(); self.last.clear()
+        for cb in self._fcb.values():
+            cb.setChecked(False)
+        self._lcb["exact"].setChecked(False)
+
+
 # ── Main window ───────────────────────────────────────────────────────────── #
 class MyHeritageApp(QMainWindow):
     def __init__(self):
@@ -346,54 +477,34 @@ class MyHeritageApp(QMainWindow):
         # Advanced panel — wrapped in a QScrollArea (like FamilySearch)
         self._adv = QGroupBox()
         af = QFormLayout(self._adv); af.setSpacing(8)
-        self.f_by  = _YearSpin(); self.f_by.setRange(0,2025); self.f_by.setValue(0)
-        self.f_by.setSpecialValueText("—"); self.f_by.setFixedWidth(110)
-        self.f_bp  = QLineEdit(); self.f_bp.setPlaceholderText("City, country…")
-        self.f_fa  = QLineEdit(); self.f_fa.setPlaceholderText("Father's name")
-        self.f_fa_last = QLineEdit(); self.f_fa_last.setPlaceholderText("Father's surname")
-        self.f_mo  = QLineEdit(); self.f_mo.setPlaceholderText("Mother's name")
-        self.f_mo_last = QLineEdit(); self.f_mo_last.setPlaceholderText("Mother's surname")
-        self.f_sp  = QLineEdit(); self.f_sp.setPlaceholderText("Spouse's name")
-        self.f_sp_last = QLineEdit(); self.f_sp_last.setPlaceholderText("Spouse's surname")
-        self.f_dy  = _YearSpin(); self.f_dy.setRange(0,2025); self.f_dy.setValue(0)
-        self.f_dy.setSpecialValueText("—"); self.f_dy.setFixedWidth(110)
-        self.f_dp  = QLineEdit(); self.f_dp.setPlaceholderText("City, country…")
+        # Life-event DATES — each: Year + ▾(Match year exactly / This year / ±1..±20) +
+        # Place + ▾(Place must match). Mirrors the MyHeritage site (Birth, Marriage,
+        # Death, Military, Immigration, Any).
+        self._dates = {}
+        for key, label in [("birth", "Birth"), ("marriage", "Marriage"),
+                           ("death", "Death"), ("military", "Military"),
+                           ("immigration", "Immigration"), ("any", "Any")]:
+            w = _DateField(self._save); self._dates[key] = w
+            af.addRow(f"{label}:", w)
+        # RELATIVES — each: First name + ▾(exact / spelling variations / initials /
+        # starts with) + Surname + ▾(exact). Father, Mother, Spouse, Child, Sibling.
+        self._names = {}
+        for key, label in [("father", "Father"), ("mother", "Mother"),
+                           ("spouse", "Spouse"), ("child", "Child"),
+                           ("sibling", "Sibling")]:
+            w = _NameField(self._save); self._names[key] = w
+            af.addRow(f"{label}:", w)
         self.f_res = QLineEdit(); self.f_res.setPlaceholderText("City / region")
-        self.f_mil = QLineEdit(); self.f_mil.setPlaceholderText("Unit, branch…")
-        self.f_imm = QLineEdit(); self.f_imm.setPlaceholderText("Destination / year")
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
-        self.f_ex  = QCheckBox("Exact match for all parameters")
-        # Per-field match options: birth-year tolerance (combo) + a visible
-        # «place must match» checkbox next to the place field.
-        self.f_ym  = QComboBox()
-        self.f_ym.addItems(["—", "Exact", "± 1", "± 2", "± 5", "± 10", "± 20"])
-        self.f_ym.setCurrentText("± 5")
-        self.f_ym.setFixedWidth(110)
-        pl_btn = self._match_btn("match ▾", [
-            ("place_match", "Location must match", False),
-        ])
-        _byrow = QHBoxLayout(); _byrow.setSpacing(8)
-        _byrow.addWidget(self.f_by); _byrow.addWidget(QLabel("match:"))
-        _byrow.addWidget(self.f_ym); _byrow.addStretch()
-        _bprow = QHBoxLayout(); _bprow.setSpacing(8)
-        _bprow.addWidget(self.f_bp, 1); _bprow.addWidget(pl_btn)
-        af.addRow("Birth year:",  _byrow)
-        af.addRow("Birth place:", _bprow)
-        af.addRow("Father (name):",    self.f_fa)
-        af.addRow("Father (surname):", self.f_fa_last)
-        af.addRow("Mother (name):",    self.f_mo)
-        af.addRow("Mother (surname):", self.f_mo_last)
-        af.addRow("Spouse (name):",    self.f_sp)
-        af.addRow("Spouse (surname):", self.f_sp_last)
-        af.addRow("Death year:",  self.f_dy)
-        af.addRow("Death place:", self.f_dp)
+        self.f_ex  = QCheckBox("Match all terms exactly")
         af.addRow("Residence:",   self.f_res)
-        af.addRow("Military:",    self.f_mil)
-        af.addRow("Immigration:", self.f_imm)
         af.addRow("Keywords:",    self.f_kw)
         af.addRow("Gender:",      self.f_gen)
         af.addRow("",             self.f_ex)
+        clr = QPushButton("Clear all filters"); clr.setFixedWidth(150)
+        clr.clicked.connect(self._clear_filters)
+        af.addRow("",             clr)
 
         self._adv_scroll = QScrollArea()
         self._adv_scroll.setWidget(self._adv)
@@ -600,27 +711,29 @@ class MyHeritageApp(QMainWindow):
                 return opt
         return RECORD_TYPE_OPTIONS[0]
 
-    def _year_match(self) -> str:
-        """Combo text → scraper value: «—»→«» (don't set), «Exact»→«exact»,
-        «± 5»→«5»."""
-        t = self.f_ym.currentText().lower()
-        if t.strip() in ("—", "-", ""):
-            return ""
-        if "exact" in t or "точ" in t:
-            return "exact"
-        m = "".join(ch for ch in t if ch.isdigit())
-        return m or ""
+    def _clear_filters(self):
+        """«Clear all filters» — reset every advanced date/relative/field."""
+        for w in self._dates.values():
+            w.clear()
+        for w in self._names.values():
+            w.clear()
+        self.f_res.clear(); self.f_kw.clear()
+        self.f_gen.setCurrentIndex(0); self.f_ex.setChecked(False)
+        self._save()
 
-    # ── Field list ────────────────────────────────────────────────────────── #
+    def _birth_year_params(self) -> dict:
+        """Birth-date field → the scraper's global year-tolerance flags (MH applies the
+        year range to the birth year)."""
+        st = self._dates["birth"].state()
+        sp = st["span"]
+        return {"year_exact": bool(st["exact"]), "year_1": sp == "1", "year_2": sp == "2",
+                "year_5": sp == "5", "year_10": sp == "10", "year_20": sp == "20"}
+
+    # ── Field list (disabled while running) ───────────────────────────────── #
     def _all_fields(self):
         return [self.f_site, self.f_email, self.f_pass, self.f_imap_pass,
-                self.f_first, self.f_surname,
-                self.f_by, self.f_ym, self.f_bp,
-                self.f_fa, self.f_fa_last, self.f_mo, self.f_mo_last,
-                self.f_sp, self.f_sp_last,
-                self.f_dy, self.f_dp, self.f_res, self.f_mil, self.f_imm,
-                self.f_kw, self.f_gen, self.f_ex,
-                self.f_folder, self.f_docx, self.f_xlsx]
+                self.f_first, self.f_surname, self.f_res, self.f_kw, self.f_gen,
+                self.f_ex, self.f_folder, self.f_docx, self.f_xlsx]
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _save(self, *_):
@@ -636,21 +749,9 @@ class MyHeritageApp(QMainWindow):
             "name_initials":   self._match_actions["name_initials"].isChecked(),
             "name_startswith": self._match_actions["name_startswith"].isChecked(),
             "surname_strict":  self._match_actions["surname_strict"].isChecked(),
-            "year_match":      self.f_ym.currentText(),
-            "place_match":     self._match_actions["place_match"].isChecked(),
-            "birth_year":    self.f_by.value(),
-            "birth_place":   self.f_bp.text(),
-            "father":        self.f_fa.text(),
-            "father_last":   self.f_fa_last.text(),
-            "mother":        self.f_mo.text(),
-            "mother_last":   self.f_mo_last.text(),
-            "spouse":        self.f_sp.text(),
-            "spouse_last":   self.f_sp_last.text(),
-            "death_year":    self.f_dy.value(),
-            "death_place":   self.f_dp.text(),
+            "dates":         {k: w.state() for k, w in self._dates.items()},
+            "relatives":     {k: w.state() for k, w in self._names.items()},
             "residence":     self.f_res.text(),
-            "military":      self.f_mil.text(),
-            "immigration":   self.f_imm.text(),
             "keywords":      self.f_kw.text(),
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
@@ -690,17 +791,14 @@ class MyHeritageApp(QMainWindow):
         s(self.f_imap_pass, "imap_password")
         s(self.f_first,  "first_name"); s(self.f_surname, "surname")
         for _k in ("name_strict", "name_variants", "name_initials",
-                   "name_startswith", "surname_strict", "place_match"):
+                   "name_startswith", "surname_strict"):
             if _k in d and _k in self._match_actions:
                 self._match_actions[_k].setChecked(bool(d[_k]))
-        s(self.f_ym, "year_match")
-        s(self.f_by,     "birth_year"); s(self.f_bp,  "birth_place")
-        s(self.f_fa,     "father");     s(self.f_fa_last, "father_last")
-        s(self.f_mo,     "mother");     s(self.f_mo_last, "mother_last")
-        s(self.f_sp,     "spouse");     s(self.f_sp_last, "spouse_last")
-        s(self.f_dy,     "death_year")
-        s(self.f_dp,     "death_place"); s(self.f_res,"residence")
-        s(self.f_mil,    "military");   s(self.f_imm, "immigration")
+        for k, w in self._dates.items():
+            w.set_state((d.get("dates") or {}).get(k))
+        for k, w in self._names.items():
+            w.set_state((d.get("relatives") or {}).get(k))
+        s(self.f_res,    "residence")
         s(self.f_kw,     "keywords");   s(self.f_gen, "gender")
         s(self.f_ex,     "exact_match")
         cats = set(d.get("categories") or [])
@@ -728,7 +826,9 @@ class MyHeritageApp(QMainWindow):
         return "both" if d and x else ("docx" if d else "xlsx" if x else "both")
 
     def _payload(self):
-        return {
+        D = {k: w.state() for k, w in self._dates.items()}      # birth/marriage/death/…
+        R = {k: w.state() for k, w in self._names.items()}      # father/mother/spouse/…
+        p = {
             "site_preset":   self.f_site.currentText(),
             "first_name":    self.f_first.text().strip(),
             "surname":       self.f_surname.text().strip(),
@@ -737,21 +837,27 @@ class MyHeritageApp(QMainWindow):
             "name_initials":   self._match_actions["name_initials"].isChecked(),
             "name_startswith": self._match_actions["name_startswith"].isChecked(),
             "surname_strict":  self._match_actions["surname_strict"].isChecked(),
-            "year_match":      self._year_match(),
-            "place_match":     self._match_actions["place_match"].isChecked(),
-            "birth_year":    str(self.f_by.value()) if self.f_by.value() else "",
-            "birth_place":   self.f_bp.text().strip(),
-            "father":        self.f_fa.text().strip(),
-            "father_last":   self.f_fa_last.text().strip(),
-            "mother":        self.f_mo.text().strip(),
-            "mother_last":   self.f_mo_last.text().strip(),
-            "spouse":        self.f_sp.text().strip(),
-            "spouse_last":   self.f_sp_last.text().strip(),
-            "death_year":    str(self.f_dy.value()) if self.f_dy.value() else "",
-            "death_place":   self.f_dp.text().strip(),
+            "year_match":      True,
+            "place_match":     bool(D["birth"]["place_match"]),
+            # birth / death keep the existing scraper keys (so search still works)
+            "birth_year":    D["birth"]["year"],   "birth_place":   D["birth"]["place"],
+            "death_year":    D["death"]["year"],   "death_place":   D["death"]["place"],
+            # new life-event dates (year + place) — used best-effort by the scraper
+            "marriage_year": D["marriage"]["year"],     "marriage_place": D["marriage"]["place"],
+            "military_year": D["military"]["year"],      "military_place": D["military"]["place"],
+            "immigration_year": D["immigration"]["year"],"immigration_place": D["immigration"]["place"],
+            "any_year":      D["any"]["year"],          "any_place":      D["any"]["place"],
+            "military":      D["military"]["place"],     # legacy text key
+            "immigration":   D["immigration"]["place"],
+            # relatives: existing keys + new (child, sibling)
+            "father":  R["father"]["first"],  "father_last":  R["father"]["last"],
+            "mother":  R["mother"]["first"],  "mother_last":  R["mother"]["last"],
+            "spouse":  R["spouse"]["first"],  "spouse_last":  R["spouse"]["last"],
+            "child":   R["child"]["first"],   "child_last":   R["child"]["last"],
+            "sibling": R["sibling"]["first"], "sibling_last": R["sibling"]["last"],
+            "dates":         D,              # full structured detail (per-field match opts)
+            "relatives":     R,
             "residence":     self.f_res.text().strip(),
-            "military":      self.f_mil.text().strip(),
-            "immigration":   self.f_imm.text().strip(),
             "keywords":      self.f_kw.text().strip(),
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
@@ -766,6 +872,8 @@ class MyHeritageApp(QMainWindow):
             "cancel_event": getattr(self, "_cancel_ev", None),
             # ask_2fa_code injected by Worker
         }
+        p.update(self._birth_year_params())              # year_exact / year_1..year_20
+        return p
 
     def _validate(self):
         if not self.f_first.text().strip() and not self.f_surname.text().strip():
