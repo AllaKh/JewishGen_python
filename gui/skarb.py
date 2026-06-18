@@ -56,13 +56,28 @@ QProgressBar::chunk{background:#4472c4;border-radius:3px;}
 class Worker(QThread):
     progress = Signal(int, str)
     finished = Signal(dict)
+    request_file = Signal(object)        # ask main thread about an existing file
 
     def __init__(self, payload: dict):
         super().__init__()
         self.payload = payload
+        self._file_choice = None
+        self._file_event = threading.Event()
+
+    def provide_file_choice(self, choice: str):
+        self._file_choice = choice
+        self._file_event.set()
+
+    def _ask_file_conflict(self, names):
+        """Called from the scraper thread; blocks until the GUI answers."""
+        self._file_event.clear()
+        self.request_file.emit(names)
+        self._file_event.wait(timeout=300)
+        return self._file_choice or "overwrite"
 
     def run(self):
         self.payload["progress"] = lambda v, t: self.progress.emit(int(v), str(t))
+        self.payload["ask_file_conflict"] = self._ask_file_conflict
         try:
             result = asyncio.run(_scraper.run_scraper(**self.payload))
         except Exception as exc:
@@ -222,8 +237,25 @@ class SkarbApp(QMainWindow):
         self.worker = Worker(self._payload())
         self.worker.progress.connect(
             lambda v, t: (self.pbar.setValue(v), self.stlbl.setText(t)))
+        self.worker.request_file.connect(self._show_file_conflict)
         self.worker.finished.connect(self._done)
         self.worker.start()
+
+    def _show_file_conflict(self, names):
+        """A result file already exists — ask Overwrite / Append (new file) / Skip."""
+        nm = ", ".join(names) if isinstance(names, (list, tuple)) else str(names)
+        box = QMessageBox(self)
+        box.setWindowTitle("File already exists")
+        box.setIcon(QMessageBox.Question)
+        box.setText(f"File already exists:\n{nm}")
+        ow = box.addButton("Overwrite", QMessageBox.AcceptRole)
+        ap = box.addButton("Append (new file)", QMessageBox.ActionRole)
+        sk = box.addButton("Skip", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        choice = "overwrite" if clicked is ow else "append" if clicked is ap else "skip"
+        if self.worker:
+            self.worker.provide_file_choice(choice)
 
     def _done(self, r: dict):
         self.start_btn.setEnabled(True)

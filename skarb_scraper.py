@@ -470,6 +470,7 @@ async def run_scraper(
     log                        = print,
     progress                   = None,
     cancel_event               = None,
+    ask_file_conflict          = None,   # callback(names)->"overwrite"/"append"/"skip"
 ) -> dict:
 
     def _prog(pct, txt):
@@ -478,6 +479,27 @@ async def run_scraper(
 
     def _done():
         return bool(cancel_event and cancel_event.is_set())
+
+    # overwrite / append / skip — ask ONCE (on the first existing file) and reuse.
+    _conflict = {"choice": None}
+    def _resolve_conflict(path):
+        if not Path(path).exists():
+            return "overwrite"
+        if _conflict["choice"] is None:
+            if ask_file_conflict:
+                try:
+                    _conflict["choice"] = (ask_file_conflict([Path(path).name])
+                                           or "overwrite").lower()
+                except Exception:
+                    _conflict["choice"] = "overwrite"
+            else:
+                _conflict["choice"] = "overwrite"
+        return _conflict["choice"]
+    def _free_name(path):
+        p = Path(path); n = 2; cand = p
+        while cand.exists():
+            cand = p.with_name(f"{p.stem}_{n}{p.suffix}"); n += 1
+        return cand
 
     surnames      = [s.strip() for s in (surnames or []) if s.strip()]
     keywords      = [k.strip() for k in (keywords or []) if k.strip()]
@@ -580,12 +602,24 @@ async def run_scraper(
             _prog(92, "Сохранение файлов...")
             if want_docx and records:
                 p = output_folder / f"{q_prefix}_skarb.docx"
-                write_docx(p, records, query_info)
-                log(f"  Word: {p}")
+                dec = _resolve_conflict(p)
+                if dec == "skip":
+                    log(f"  Word пропущен (файл уже существует): {p.name}")
+                else:
+                    if dec == "append":
+                        p = _free_name(p)
+                    write_docx(p, records, query_info)
+                    log(f"  Word: {p}")
             if want_xlsx and records:
                 p = output_folder / f"{q_prefix}_skarb.xlsx"
-                write_xlsx(p, records, query_info)
-                log(f"  Excel: {p}")
+                dec = _resolve_conflict(p)
+                if dec == "skip":
+                    log(f"  Excel пропущен (файл уже существует): {p.name}")
+                else:
+                    if dec == "append":
+                        p = _free_name(p)
+                    write_xlsx(p, records, query_info)
+                    log(f"  Excel: {p}")
 
             _prog(100, f"Готово — {len(records)} записей.")
             summary.update({"ok": True, "n_records": len(records),

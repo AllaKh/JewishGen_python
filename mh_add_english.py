@@ -261,9 +261,15 @@ def main():
     def is_latin(s):           # already-English names (book titles, «BillionGraves»…)
         return not re.search(r'[а-яё]', s, re.I)
 
+    # manual English overrides (user-supplied exact titles for names the EN docx lacks)
+    ovr_path = _HERE / "config" / "mh_en_overrides.json"
+    OVR = json.loads(ovr_path.read_text("utf-8")) if ovr_path.exists() else {}
+
     assign, score_of = {}, {}
     for ru in set(ru_names):
-        if is_latin(ru):                          # already English → keep as-is (exact)
+        if ru in OVR:                             # user-supplied exact English — highest priority
+            assign[ru], score_of[ru] = OVR[ru], 1.0
+        elif is_latin(ru):                        # already English → keep as-is (exact)
             assign[ru], score_of[ru] = ru, 1.0
         elif ru in L1_EN:                         # the 14 top categories — exact
             assign[ru], score_of[ru] = L1_EN[ru], 1.0
