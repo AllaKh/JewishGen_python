@@ -1,0 +1,1040 @@
+[
+  {
+    "name": "?",
+    "children": [
+      {
+        "name": "Архивы",
+        "children": [
+          {
+            "idx": 154,
+            "id": "ivorg",
+            "label": "Великія описи",
+            "en": "Velikiya opisi"
+          },
+          {
+            "idx": 4,
+            "id": "gaao",
+            "label": "Астрахань (ГАAО)",
+            "en": "Astrakhan (GAAO)"
+          },
+          {
+            "idx": 31,
+            "id": "gavovin",
+            "label": "Винница (ГАВО)",
+            "en": "Vinnytsia (GAVO)"
+          },
+          {
+            "idx": 32,
+            "id": "gavovlg",
+            "label": "Волгоград (ГАВО)",
+            "en": "Volgograd (GAVO)"
+          },
+          {
+            "idx": 30,
+            "id": "gavo",
+            "label": "Волынь (ГАВО)",
+            "en": "Volhynia (GAVO)"
+          },
+          {
+            "idx": 153,
+            "id": "hsid1_niabgr/metrics",
+            "label": "Гродно (НИАБ): Метрики",
+            "en": "Grodno (NIAB): Метрики"
+          },
+          {
+            "idx": 162,
+            "id": "niabgr",
+            "label": "Гродно (НИАБ)",
+            "en": "Grodno (NIAB)"
+          },
+          {
+            "idx": 6,
+            "id": "gado",
+            "label": "Днепр (ГАДО)",
+            "en": "Dnipro (GADO)"
+          },
+          {
+            "idx": 33,
+            "id": "gazho",
+            "label": "Житомир (ГАЖО)",
+            "en": "Zhytomyr (GAZhO)"
+          },
+          {
+            "idx": 34,
+            "id": "gazo",
+            "label": "Запорожье (ГАЗО)",
+            "en": "Zaporizhzhia (GAZO)"
+          },
+          {
+            "idx": 12,
+            "id": "gaioiv",
+            "label": "Иваново (ГАИО)",
+            "en": "Ivanovo (GAIO)"
+          },
+          {
+            "idx": 11,
+            "id": "gaio",
+            "label": "Иркутск (ГАИО)",
+            "en": "Irkutsk (GAIO)"
+          },
+          {
+            "idx": 159,
+            "id": "nark",
+            "label": "Карелия (НАРК)",
+            "en": "Karelia (NARK)"
+          },
+          {
+            "idx": 7,
+            "id": "gagk",
+            "label": "Киев (ГАГК)",
+            "en": "Kyiv (GAGK)"
+          },
+          {
+            "idx": 14,
+            "id": "gako",
+            "label": "Киев (ГАКО)",
+            "en": "Kyiv (GAKO)"
+          },
+          {
+            "idx": 15,
+            "id": "gakokir",
+            "label": "Киров (ЦГАКО)",
+            "en": "Kirov (TsGAKO)"
+          },
+          {
+            "idx": 13,
+            "id": "gakk",
+            "label": "Краснодар (ГАКК)",
+            "en": "Krasnodar (GAKK)"
+          },
+          {
+            "idx": 151,
+            "id": "hsid1_lvia/metrics",
+            "label": "ЛГИА: Метрики",
+            "en": "LGIA: Metriki"
+          },
+          {
+            "idx": 155,
+            "id": "lvia",
+            "label": "ЛГИА",
+            "en": "LGIA"
+          },
+          {
+            "idx": 16,
+            "id": "galolp",
+            "label": "Липецк (ГАЛО)",
+            "en": "Lipetsk (GALO)"
+          },
+          {
+            "idx": 18,
+            "id": "gamn",
+            "label": "Минск (ГАМН)",
+            "en": "Minsk (GAMN)"
+          },
+          {
+            "idx": 157,
+            "id": "narb",
+            "label": "Минск (НАРБ)",
+            "en": "Minsk (NARB)"
+          },
+          {
+            "idx": 17,
+            "id": "gam",
+            "label": "Молдова (АНАРМ)",
+            "en": "Moldova (ANARM)"
+          },
+          {
+            "idx": 150,
+            "id": "hsid1_gam/metrics",
+            "label": "Молдова (АНАРМ): ",
+            "en": "Moldova (ANARM):"
+          },
+          {
+            "idx": 1,
+            "id": "cgamos",
+            "label": "Москва (ЦГА)",
+            "en": "Moscow (TsGA)"
+          },
+          {
+            "idx": 19,
+            "id": "gano",
+            "label": "Н. Новгород (ГАНО)",
+            "en": "N. Novgorod (GANO)"
+          },
+          {
+            "idx": 160,
+            "id": "nart",
+            "label": "НАРТ",
+            "en": "NART"
+          },
+          {
+            "idx": 152,
+            "id": "hsid1_niab/metrics",
+            "label": "НИАБ: Метрики",
+            "en": "NIAB: Metriki"
+          },
+          {
+            "idx": 161,
+            "id": "niab",
+            "label": "НИАБ",
+            "en": "NIAB"
+          },
+          {
+            "idx": 20,
+            "id": "ganonik",
+            "label": "Николаев (ГАНО)",
+            "en": "Mykolaiv (GANO)"
+          },
+          {
+            "idx": 25,
+            "id": "garon",
+            "label": "Новочеркасск (ГАРО)",
+            "en": "Novocherkassk (GARO)"
+          },
+          {
+            "idx": 21,
+            "id": "gaoo",
+            "label": "Одесса (ГАOО)",
+            "en": "Odesa (GAOO)"
+          },
+          {
+            "idx": 22,
+            "id": "gaooor",
+            "label": "Оренбург (ГАОО)",
+            "en": "Orenburg (GAOO)"
+          },
+          {
+            "idx": 23,
+            "id": "gapo",
+            "label": "Полтава (ГАПО)",
+            "en": "Poltava (GAPO)"
+          },
+          {
+            "idx": 163,
+            "id": "rgada",
+            "label": "РГАДА",
+            "en": "RGADA"
+          },
+          {
+            "idx": 156,
+            "id": "lvva",
+            "label": "Рига (ГИАЛ)",
+            "en": "Riga (GIAL)"
+          },
+          {
+            "idx": 24,
+            "id": "garo",
+            "label": "Ростов (ГАРО)",
+            "en": "Rostov (GARO)"
+          },
+          {
+            "idx": 27,
+            "id": "gaso",
+            "label": "Саратов (ГАСО)",
+            "en": "Saratov (GASO)"
+          },
+          {
+            "idx": 28,
+            "id": "gasosm",
+            "label": "Смоленск (ГАСО)",
+            "en": "Smolensk (GASO)"
+          },
+          {
+            "idx": 26,
+            "id": "garot",
+            "label": "Таганрог (ГАРО)",
+            "en": "Taganrog (GARO)"
+          },
+          {
+            "idx": 0,
+            "id": "canig",
+            "label": "Тбилиси (ЦАНИГ)",
+            "en": "Tbilisi (TsANIG)"
+          },
+          {
+            "idx": 3,
+            "id": "ciag",
+            "label": "Тбилиси (ЦИАГ)",
+            "en": "Tbilisi (TsIAG)"
+          },
+          {
+            "idx": 29,
+            "id": "gato",
+            "label": "Тула (ГАТО)",
+            "en": "Tula (GATO)"
+          },
+          {
+            "idx": 158,
+            "id": "narbb",
+            "label": "Уфа (НАРБ)",
+            "en": "Ufa (NARB)"
+          },
+          {
+            "idx": 8,
+            "id": "gaho",
+            "label": "Харьков (ГАХО)",
+            "en": "Kharkiv (GAKhO)"
+          },
+          {
+            "idx": 9,
+            "id": "gahohers",
+            "label": "Херсон (ГАХО)",
+            "en": "Kherson (GAKhO)"
+          },
+          {
+            "idx": 10,
+            "id": "gahohmel",
+            "label": "Хмельницкий (ГАХО)",
+            "en": "Khmelnytskyi (GAKhO)"
+          },
+          {
+            "idx": 2,
+            "id": "cgiak",
+            "label": "ЦГИАК",
+            "en": "TsGIAK"
+          },
+          {
+            "idx": 5,
+            "id": "gacho",
+            "label": "Чернигов (ГАЧО)",
+            "en": "Chernihiv (GAChO)"
+          }
+        ],
+        "en": "Archives"
+      },
+      {
+        "name": "Газеты",
+        "children": [
+          {
+            "idx": 145,
+            "id": "hcid1_7",
+            "label": "Известия",
+            "en": "Izvestiya"
+          },
+          {
+            "idx": 144,
+            "id": "hcid1_6",
+            "label": "Звезда",
+            "en": "Zvezda"
+          },
+          {
+            "idx": 36,
+            "id": "hcid1_10",
+            "label": "Кавказ",
+            "en": "Kavkaz"
+          },
+          {
+            "name": "Губернские ведомости",
+            "children": [
+              {
+                "idx": 127,
+                "id": "hcid1_4_13",
+                "label": "Астраханские",
+                "en": "Astrakhanskie"
+              },
+              {
+                "idx": 126,
+                "id": "hcid1_4_12",
+                "label": "Бессарабские областные",
+                "en": "Bessarabskie oblastnye"
+              },
+              {
+                "idx": 123,
+                "id": "hcid1_4_1",
+                "label": "Виленские",
+                "en": "Vilenskie"
+              },
+              {
+                "idx": 124,
+                "id": "hcid1_4_10",
+                "label": "Вологодские",
+                "en": "Vologodskie"
+              },
+              {
+                "idx": 136,
+                "id": "hcid1_4_6",
+                "label": "Воронежские",
+                "en": "Voronezhskie"
+              },
+              {
+                "idx": 139,
+                "id": "hcid1_4_9",
+                "label": "Гродненские",
+                "en": "Grodnenskie"
+              },
+              {
+                "idx": 129,
+                "id": "hcid1_4_16",
+                "label": "Дагестанские областные",
+                "en": "Dagestanskie oblastnye"
+              },
+              {
+                "idx": 128,
+                "id": "hcid1_4_14",
+                "label": "Донские областные",
+                "en": "Donskie oblastnye"
+              },
+              {
+                "idx": 133,
+                "id": "hcid1_4_3",
+                "label": "Иркутские",
+                "en": "Irkutskie"
+              },
+              {
+                "idx": 130,
+                "id": "hcid1_4_17",
+                "label": "Калужские",
+                "en": "Kaluzhskie"
+              },
+              {
+                "idx": 138,
+                "id": "hcid1_4_8",
+                "label": "Киевские",
+                "en": "Kievskie"
+              },
+              {
+                "idx": 125,
+                "id": "hcid1_4_11",
+                "label": "Минские",
+                "en": "Minskie"
+              },
+              {
+                "idx": 132,
+                "id": "hcid1_4_2",
+                "label": "Могилевские",
+                "en": "Mogilevskie"
+              },
+              {
+                "idx": 137,
+                "id": "hcid1_4_7",
+                "label": "Нижегородские",
+                "en": "Nizhegorodskie"
+              },
+              {
+                "idx": 134,
+                "id": "hcid1_4_4",
+                "label": "Олонецкие",
+                "en": "Olonetskie"
+              },
+              {
+                "idx": 135,
+                "id": "hcid1_4_5",
+                "label": "Томские",
+                "en": "Tomskie"
+              },
+              {
+                "idx": 131,
+                "id": "hcid1_4_18",
+                "label": "Тульские",
+                "en": "Tulskie"
+              }
+            ],
+            "en": "Provincial Gazettes"
+          },
+          {
+            "name": "Епархиальные ведомости / вестники",
+            "children": [
+              {
+                "idx": 37,
+                "id": "hcid1_2_1",
+                "label": "Архангельские",
+                "en": "Arkhangelskie"
+              },
+              {
+                "idx": 48,
+                "id": "hcid1_2_2",
+                "label": "Астраханские",
+                "en": "Astrakhanskie"
+              },
+              {
+                "idx": 59,
+                "id": "hcid1_2_3",
+                "label": "Благовещенские",
+                "en": "Blagoveshchenskie"
+              },
+              {
+                "idx": 99,
+                "id": "hcid1_2_66",
+                "label": "Варшавский ЕЛ",
+                "en": "Varshavskiy EL"
+              },
+              {
+                "idx": 111,
+                "id": "hcid1_2_77",
+                "label": "Вера и жизнь",
+                "en": "Vera i zhizn"
+              },
+              {
+                "idx": 101,
+                "id": "hcid1_2_68",
+                "label": "Вестник воен. дух.",
+                "en": "Vestnik voen. dukh."
+              },
+              {
+                "idx": 100,
+                "id": "hcid1_2_67",
+                "label": "Виленский С.-Дух. братства",
+                "en": "Vilenskiy S.-Dukh. bratstva"
+              },
+              {
+                "idx": 70,
+                "id": "hcid1_2_4",
+                "label": "Владивостокские",
+                "en": "Vladivostokskie"
+              },
+              {
+                "idx": 81,
+                "id": "hcid1_2_5",
+                "label": "Владикавказские",
+                "en": "Vladikavkazskie"
+              },
+              {
+                "idx": 92,
+                "id": "hcid1_2_6",
+                "label": "Владимирские",
+                "en": "Vladimirskie"
+              },
+              {
+                "idx": 103,
+                "id": "hcid1_2_7",
+                "label": "Вологодские",
+                "en": "Vologodskie"
+              },
+              {
+                "idx": 114,
+                "id": "hcid1_2_8",
+                "label": "Волынские",
+                "en": "Volynskie"
+              },
+              {
+                "idx": 122,
+                "id": "hcid1_2_9",
+                "label": "Воронежские",
+                "en": "Voronezhskie"
+              },
+              {
+                "idx": 38,
+                "id": "hcid1_2_10",
+                "label": "Вятские",
+                "en": "Vyatskie"
+              },
+              {
+                "idx": 39,
+                "id": "hcid1_2_11",
+                "label": "Гродненские",
+                "en": "Grodnenskie"
+              },
+              {
+                "idx": 109,
+                "id": "hcid1_2_75",
+                "label": "Донская христианская мысль",
+                "en": "Donskaya khristianskaya mysl"
+              },
+              {
+                "idx": 40,
+                "id": "hcid1_2_12",
+                "label": "Донские",
+                "en": "Donskie"
+              },
+              {
+                "idx": 41,
+                "id": "hcid1_2_13",
+                "label": "Екатеринбургские",
+                "en": "Ekaterinburgskie"
+              },
+              {
+                "idx": 104,
+                "id": "hcid1_2_70",
+                "label": "Екатеринбургской Ц. изв.",
+                "en": "Ekaterinburgskoy Ts. izv."
+              },
+              {
+                "idx": 42,
+                "id": "hcid1_2_14",
+                "label": "Екатеринославские",
+                "en": "Ekaterinoslavskie"
+              },
+              {
+                "idx": 43,
+                "id": "hcid1_2_15",
+                "label": "Енисейские",
+                "en": "Eniseyskie"
+              },
+              {
+                "idx": 107,
+                "id": "hcid1_2_73",
+                "label": "Енисейский ЦВ",
+                "en": "Eniseyskiy TsV"
+              },
+              {
+                "idx": 44,
+                "id": "hcid1_2_16",
+                "label": "Забайкальские",
+                "en": "Zabaykalskie"
+              },
+              {
+                "idx": 45,
+                "id": "hcid1_2_17",
+                "label": "Иркутские",
+                "en": "Irkutskie"
+              },
+              {
+                "idx": 46,
+                "id": "hcid1_2_18",
+                "label": "Кавказские",
+                "en": "Kavkazskie"
+              },
+              {
+                "idx": 95,
+                "id": "hcid1_2_62",
+                "label": "Казанской еп. изв.",
+                "en": "Kazanskoy ep. izv."
+              },
+              {
+                "idx": 47,
+                "id": "hcid1_2_19",
+                "label": "Калужские",
+                "en": "Kaluzhskie"
+              },
+              {
+                "idx": 105,
+                "id": "hcid1_2_71",
+                "label": "Калужский ЦВ",
+                "en": "Kaluzhskiy TsV"
+              },
+              {
+                "idx": 49,
+                "id": "hcid1_2_20",
+                "label": "Камчатские",
+                "en": "Kamchatskie"
+              },
+              {
+                "idx": 50,
+                "id": "hcid1_2_21",
+                "label": "Киевские",
+                "en": "Kievskie"
+              },
+              {
+                "idx": 51,
+                "id": "hcid1_2_22",
+                "label": "Кишиневские",
+                "en": "Kishinevskie"
+              },
+              {
+                "idx": 52,
+                "id": "hcid1_2_23",
+                "label": "Костромские",
+                "en": "Kostromskie"
+              },
+              {
+                "idx": 106,
+                "id": "hcid1_2_72",
+                "label": "Костромской ЦВ",
+                "en": "Kostromskoy TsV"
+              },
+              {
+                "idx": 53,
+                "id": "hcid1_2_24",
+                "label": "Курские",
+                "en": "Kurskie"
+              },
+              {
+                "idx": 54,
+                "id": "hcid1_2_25",
+                "label": "Литовские",
+                "en": "Litovskie"
+              },
+              {
+                "idx": 55,
+                "id": "hcid1_2_26",
+                "label": "Минские",
+                "en": "Minskie"
+              },
+              {
+                "idx": 56,
+                "id": "hcid1_2_27",
+                "label": "Могилевские",
+                "en": "Mogilevskie"
+              },
+              {
+                "idx": 57,
+                "id": "hcid1_2_28",
+                "label": "Московские",
+                "en": "Moskovskie"
+              },
+              {
+                "idx": 93,
+                "id": "hcid1_2_60",
+                "label": "Московские церковные",
+                "en": "Moskovskie tserkovnye"
+              },
+              {
+                "idx": 58,
+                "id": "hcid1_2_29",
+                "label": "Нижегородские",
+                "en": "Nizhegorodskie"
+              },
+              {
+                "idx": 108,
+                "id": "hcid1_2_74",
+                "label": "Нижегородский ЦВ",
+                "en": "Nizhegorodskiy TsV"
+              },
+              {
+                "idx": 60,
+                "id": "hcid1_2_30",
+                "label": "Новгородские",
+                "en": "Novgorodskie"
+              },
+              {
+                "idx": 61,
+                "id": "hcid1_2_31",
+                "label": "Олонецкие",
+                "en": "Olonetskie"
+              },
+              {
+                "idx": 62,
+                "id": "hcid1_2_32",
+                "label": "Омские",
+                "en": "Omskie"
+              },
+              {
+                "idx": 94,
+                "id": "hcid1_2_61",
+                "label": "Омской еп. изв.",
+                "en": "Omskoy ep. izv."
+              },
+              {
+                "idx": 63,
+                "id": "hcid1_2_33",
+                "label": "Оренбургские",
+                "en": "Orenburgskie"
+              },
+              {
+                "idx": 110,
+                "id": "hcid1_2_76",
+                "label": "Оренбургский ЦВ",
+                "en": "Orenburgskiy TsV"
+              },
+              {
+                "idx": 64,
+                "id": "hcid1_2_34",
+                "label": "Орловские",
+                "en": "Orlovskie"
+              },
+              {
+                "idx": 65,
+                "id": "hcid1_2_35",
+                "label": "Пензенские",
+                "en": "Penzenskie"
+              },
+              {
+                "idx": 66,
+                "id": "hcid1_2_36",
+                "label": "Пермские",
+                "en": "Permskie"
+              },
+              {
+                "idx": 112,
+                "id": "hcid1_2_78",
+                "label": "Петроградский ЦВ",
+                "en": "Petrogradskiy TsV"
+              },
+              {
+                "idx": 67,
+                "id": "hcid1_2_37",
+                "label": "Подольские",
+                "en": "Podolskie"
+              },
+              {
+                "idx": 68,
+                "id": "hcid1_2_38",
+                "label": "Полоцкие",
+                "en": "Polotskie"
+              },
+              {
+                "idx": 69,
+                "id": "hcid1_2_39",
+                "label": "Полтавские",
+                "en": "Poltavskie"
+              },
+              {
+                "idx": 71,
+                "id": "hcid1_2_40",
+                "label": "Псковские",
+                "en": "Pskovskie"
+              },
+              {
+                "idx": 72,
+                "id": "hcid1_2_41",
+                "label": "Рижские",
+                "en": "Rizhskie"
+              },
+              {
+                "idx": 73,
+                "id": "hcid1_2_42",
+                "label": "Рязанские",
+                "en": "Ryazanskie"
+              },
+              {
+                "idx": 97,
+                "id": "hcid1_2_64",
+                "label": "С.-Петербургской еп. изв.",
+                "en": "S.-Peterburgskoy ep. izv."
+              },
+              {
+                "idx": 74,
+                "id": "hcid1_2_43",
+                "label": "Самарские",
+                "en": "Samarskie"
+              },
+              {
+                "idx": 75,
+                "id": "hcid1_2_44",
+                "label": "Саратовские",
+                "en": "Saratovskie"
+              },
+              {
+                "idx": 113,
+                "id": "hcid1_2_79",
+                "label": "Саратовский ДВ",
+                "en": "Saratovskiy DV"
+              },
+              {
+                "idx": 76,
+                "id": "hcid1_2_45",
+                "label": "Симбирские",
+                "en": "Simbirskie"
+              },
+              {
+                "idx": 96,
+                "id": "hcid1_2_63",
+                "label": "Симбирской еп. изв.",
+                "en": "Simbirskoy ep. izv."
+              },
+              {
+                "idx": 77,
+                "id": "hcid1_2_46",
+                "label": "Смоленские",
+                "en": "Smolenskie"
+              },
+              {
+                "idx": 78,
+                "id": "hcid1_2_47",
+                "label": "Ставропольские",
+                "en": "Stavropolskie"
+              },
+              {
+                "idx": 79,
+                "id": "hcid1_2_48",
+                "label": "Таврические",
+                "en": "Tavricheskie"
+              },
+              {
+                "idx": 80,
+                "id": "hcid1_2_49",
+                "label": "Тамбовские",
+                "en": "Tambovskie"
+              },
+              {
+                "idx": 82,
+                "id": "hcid1_2_50",
+                "label": "Тверские",
+                "en": "Tverskie"
+              },
+              {
+                "idx": 83,
+                "id": "hcid1_2_51",
+                "label": "Тобольские",
+                "en": "Tobolskie"
+              },
+              {
+                "idx": 84,
+                "id": "hcid1_2_52",
+                "label": "Томские",
+                "en": "Tomskie"
+              },
+              {
+                "idx": 116,
+                "id": "hcid1_2_81",
+                "label": "Томский ЦВ",
+                "en": "Tomskiy TsV"
+              },
+              {
+                "idx": 85,
+                "id": "hcid1_2_53",
+                "label": "Тульские",
+                "en": "Tulskie"
+              },
+              {
+                "idx": 86,
+                "id": "hcid1_2_54",
+                "label": "Туркестанские",
+                "en": "Turkestanskie"
+              },
+              {
+                "idx": 117,
+                "id": "hcid1_2_82",
+                "label": "Туркестанский ЦВ",
+                "en": "Turkestanskiy TsV"
+              },
+              {
+                "idx": 115,
+                "id": "hcid1_2_80",
+                "label": "Утренняя заря",
+                "en": "Utrennyaya zarya"
+              },
+              {
+                "idx": 87,
+                "id": "hcid1_2_55",
+                "label": "Уфимские",
+                "en": "Ufimskie"
+              },
+              {
+                "idx": 102,
+                "id": "hcid1_2_69",
+                "label": "Финляндский сб.",
+                "en": "Finlyandskiy sb."
+              },
+              {
+                "idx": 88,
+                "id": "hcid1_2_56",
+                "label": "Харьковские",
+                "en": "Kharkovskie"
+              },
+              {
+                "idx": 89,
+                "id": "hcid1_2_57",
+                "label": "Херсонские",
+                "en": "Khersonskie"
+              },
+              {
+                "idx": 118,
+                "id": "hcid1_2_83",
+                "label": "Холмская ЦЖ",
+                "en": "Kholmskaya TsZh"
+              },
+              {
+                "idx": 98,
+                "id": "hcid1_2_65",
+                "label": "Холмско-Варшавский ЕВ",
+                "en": "Kholmsko-Varshavskiy EV"
+              },
+              {
+                "idx": 119,
+                "id": "hcid1_2_84",
+                "label": "Церковные",
+                "en": "Tserkovnye"
+              },
+              {
+                "idx": 120,
+                "id": "hcid1_2_85",
+                "label": "Черниговские изв.",
+                "en": "Chernigovskie izv."
+              },
+              {
+                "idx": 121,
+                "id": "hcid1_2_86",
+                "label": "Якутские",
+                "en": "Yakutskie"
+              },
+              {
+                "idx": 90,
+                "id": "hcid1_2_58",
+                "label": "Якутские",
+                "en": "Yakutskie"
+              },
+              {
+                "idx": 91,
+                "id": "hcid1_2_59",
+                "label": "Ярославские",
+                "en": "Yaroslavskie"
+              }
+            ],
+            "en": "Diocesan Gazettes"
+          }
+        ],
+        "en": "Newspapers"
+      },
+      {
+        "name": "Разное",
+        "children": [
+          {
+            "idx": 35,
+            "id": "hcid1_1",
+            "label": "Акты Виленской археографической комиссии",
+            "en": "Akty Vilenskoy arkheograficheskoy komissii"
+          },
+          {
+            "idx": 147,
+            "id": "hcid1_9_4",
+            "label": "Приказы по Терской области",
+            "en": "Prikazy po Terskoy oblasti"
+          },
+          {
+            "name": "Памятные книжки",
+            "children": [
+              {
+                "idx": 142,
+                "id": "hcid1_5_3",
+                "label": "Гродненской",
+                "en": "Grodnenskoy"
+              },
+              {
+                "idx": 143,
+                "id": "hcid1_5_4",
+                "label": "Калужской",
+                "en": "Kaluzhskoy"
+              },
+              {
+                "idx": 140,
+                "id": "hcid1_5_1",
+                "label": "Минской",
+                "en": "Minskoy"
+              },
+              {
+                "idx": 141,
+                "id": "hcid1_5_2",
+                "label": "Могилевской",
+                "en": "Mogilevskoy"
+              }
+            ],
+            "en": "Memorial Books"
+          },
+          {
+            "name": "Сенатские объявления",
+            "children": [
+              {
+                "idx": 148,
+                "id": "hsid1_11^1|11^1^1",
+                "label": "Сенатские объявления (КПС)",
+                "en": "Senatskie obyavleniya (KPS)"
+              },
+              {
+                "idx": 149,
+                "id": "hsid1_11^2|11^3",
+                "label": "Запрещения на имения",
+                "en": "Zapreshcheniya na imeniya"
+              }
+            ],
+            "en": "Senate Announcements"
+          },
+          {
+            "name": "Указатели",
+            "children": [
+              {
+                "idx": 146,
+                "id": "hcid1_9_1",
+                "label": "Спрогис",
+                "en": "Sprogis"
+              }
+            ],
+            "en": "Indexes"
+          }
+        ],
+        "en": "Miscellaneous"
+      }
+    ],
+    "en": "?"
+  }
+]

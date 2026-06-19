@@ -63,11 +63,11 @@
     "window_cls": "gui.yadvashem.YadVashemApp"
   },
   {
-    "key": "hryc",
-    "name": "hryc.by",
-    "subtitle": "Поиск в архивах, газетах и книгах",
-    "action": "open_url",
-    "url": "https://hryc.by/search"
+    "key": "hryclogo",
+    "name": "Archives, Newspapers & Books",
+    "subtitle": "Search in archives, gazettes and books — hryc.by",
+    "action": "open_window",
+    "window_cls": "gui.hryc.HrycApp"
   },
   {
     "key": "Skarblogo",
