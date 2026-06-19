@@ -505,28 +505,27 @@ class MyHeritageApp(QMainWindow):
         # Advanced panel — wrapped in a QScrollArea (like FamilySearch)
         self._adv = QGroupBox()
         af = QFormLayout(self._adv); af.setSpacing(8)
-        # Life-event DATES — each: Year + ▾(Match year exactly / This year / ±1..±20) +
-        # Place + ▾(Place must match). Mirrors the MyHeritage site (Birth, Marriage,
-        # Death, Military, Immigration, Any).
+        # Life-event DATES — each: Day + Month + Year + ▾(Match year exactly / This year /
+        # ±1..±20) + Place + ▾(Place must match). Residence is ALSO a date. Order per the
+        # site (Death/Burial before Marriage).
         self._dates = {}
-        for key, label in [("birth", "Birth"), ("marriage", "Marriage"),
-                           ("death", "Death"), ("military", "Military"),
-                           ("immigration", "Immigration"), ("any", "Any")]:
+        for key, label in [("birth", "Birth"), ("death", "Death/Burial"),
+                           ("marriage", "Marriage"), ("residence", "Residence"),
+                           ("military", "Military"), ("immigration", "Immigration"),
+                           ("any", "Any")]:
             w = _DateField(self._save); self._dates[key] = w
             af.addRow(f"{label}:", w)
-        # RELATIVES — each: First name + ▾(exact / spelling variations / initials /
-        # starts with) + Surname + ▾(exact). Father, Mother, Spouse, Child, Sibling.
+        # RELATIVES — First name + ▾(exact / spelling variations / initials / starts with)
+        # + Surname + ▾(exact). Order per the site: Father, Mother, Child, Spouse, Sibling.
         self._names = {}
         for key, label in [("father", "Father"), ("mother", "Mother"),
-                           ("spouse", "Spouse"), ("child", "Child"),
+                           ("child", "Child"), ("spouse", "Spouse"),
                            ("sibling", "Sibling")]:
             w = _NameField(self._save); self._names[key] = w
             af.addRow(f"{label}:", w)
-        self.f_res = QLineEdit(); self.f_res.setPlaceholderText("City / region")
         self.f_kw  = QLineEdit(); self.f_kw.setPlaceholderText("Any keywords")
         self.f_gen = QComboBox(); self.f_gen.addItems(GENDER_OPTIONS)
         self.f_ex  = QCheckBox("Match all terms exactly")
-        af.addRow("Residence:",   self.f_res)
         af.addRow("Keywords:",    self.f_kw)
         af.addRow("Gender:",      self.f_gen)
         af.addRow("",             self.f_ex)
@@ -707,10 +706,12 @@ class MyHeritageApp(QMainWindow):
         return out
 
     def _fit(self):
-        """Dynamic sizing: the window grows to the content but NEVER exceeds the screen —
-        the top-level scroll area takes over on a low-res screen, and the window stays
-        fully on-screen. Width also caps to the screen (no horizontal spill)."""
-        scr = QApplication.primaryScreen().availableGeometry()
+        """Dynamic sizing: grow to the content but NEVER exceed THIS monitor's work area —
+        the top-level scroll takes over on a low-res screen. Resize in place; only nudge
+        back on-screen if an edge spills — do NOT re-center (that made the window jump
+        between monitors every time Advanced/Category opened)."""
+        sw = self.screen() or QApplication.primaryScreen()
+        scr = sw.availableGeometry()
         max_w, max_h = scr.width() - 16, scr.height() - 48
         self.setMinimumWidth(min(860, max_w))
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
@@ -720,7 +721,12 @@ class MyHeritageApp(QMainWindow):
         h = min(hint, max_h)
         self.resize(w, h)
         self.setMaximumHeight(max_h)
-        self.move(scr.x() + max(0, (scr.width() - w) // 2), scr.y() + 8)
+        # clamp back on-screen ONLY if a corner spilled (no jumping otherwise)
+        nx, ny = self.x(), self.y()
+        nx = min(nx, scr.right() - w - 4);  nx = max(nx, scr.left() + 4)
+        ny = min(ny, scr.bottom() - h - 4); ny = max(ny, scr.top() + 8)
+        if (nx, ny) != (self.x(), self.y()):
+            self.move(nx, ny)
 
     def _record_type(self) -> str:
         for opt, rb in self._rt_buttons.items():
@@ -747,7 +753,7 @@ class MyHeritageApp(QMainWindow):
     # ── Field list (disabled while running) ───────────────────────────────── #
     def _all_fields(self):
         return [self.f_site, self.f_email, self.f_pass, self.f_imap_pass,
-                self.f_first, self.f_surname, self.f_res, self.f_kw, self.f_gen,
+                self.f_first, self.f_surname, self.f_kw, self.f_gen,
                 self.f_ex, self.f_folder, self.f_docx, self.f_xlsx]
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
@@ -766,7 +772,6 @@ class MyHeritageApp(QMainWindow):
             "surname_strict":  self._match_actions["surname_strict"].isChecked(),
             "dates":         {k: w.state() for k, w in self._dates.items()},
             "relatives":     {k: w.state() for k, w in self._names.items()},
-            "residence":     self.f_res.text(),
             "keywords":      self.f_kw.text(),
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
@@ -813,7 +818,6 @@ class MyHeritageApp(QMainWindow):
             w.set_state((d.get("dates") or {}).get(k))
         for k, w in self._names.items():
             w.set_state((d.get("relatives") or {}).get(k))
-        s(self.f_res,    "residence")
         s(self.f_kw,     "keywords");   s(self.f_gen, "gender")
         s(self.f_ex,     "exact_match")
         cats = set(d.get("categories") or [])
@@ -870,7 +874,8 @@ class MyHeritageApp(QMainWindow):
             "sibling": R["sibling"]["first"], "sibling_last": R["sibling"]["last"],
             "dates":         D,              # full structured detail (per-field match opts)
             "relatives":     R,
-            "residence":     self.f_res.text().strip(),
+            "residence":     D["residence"]["place"],   # residence is now a date+place
+            "residence_year": D["residence"]["year"],
             "keywords":      self.f_kw.text().strip(),
             "gender":        self.f_gen.currentText(),
             "exact_match":   self.f_ex.isChecked(),
