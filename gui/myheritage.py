@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QRadioButton, QButtonGroup, QFrame, QGridLayout,
     QToolButton, QMenu, QWidgetAction,
 )
-from PySide6.QtCore import QThread, Signal, Qt, QByteArray
+from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction, QIntValidator
 from gui._app_icon import app_icon, make_header, make_cancel_button
 
@@ -620,12 +620,14 @@ class MyHeritageApp(QMainWindow):
         self._adv.setVisible(on)
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
+        QTimer.singleShot(0, self._fit)            # re-fit after the layout settles
 
     # ── Category tree (Restrict search by category) ───────────────────────── #
     def _toggle_cat(self, on):
         self._cat_host.setVisible(on)
         self._cat_btn.setText(("▼" if on else "▶") + "   Narrow down by category")
         self._fit()
+        QTimer.singleShot(0, self._fit)            # re-fit after the layout settles
 
     def _cat_node(self, name, data, parent_layout, depth, path=()):
         """One category row: optional ▶ arrow (if it has children) + checkbox.
@@ -675,6 +677,9 @@ class MyHeritageApp(QMainWindow):
                         self._cat_node(cn, cd, _hb, _d + 1, _p)
                     built["done"] = True
                 _h.setVisible(on); self._fit()
+                # the collapse/expand isn't reflected in sizeHint until the layout
+                # settles → re-fit on the next tick so no empty gap is left behind
+                QTimer.singleShot(0, self._fit)
             arrow.toggled.connect(_toggle)
 
     def _category_filters(self) -> list:
@@ -715,8 +720,14 @@ class MyHeritageApp(QMainWindow):
         max_w, max_h = scr.width() - 16, scr.height() - 48
         self.setMinimumWidth(min(860, max_w))
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        # Recompute from the ACTUAL settled content: invalidate the content layout and
+        # shrink the inner widget to its real sizeHint, so a just-collapsed node doesn't
+        # leave the window oversized (setWidgetResizable would then stretch the inner
+        # widget and show an empty gap below the list).
+        cw = self._content_scroll.widget()
         self._outer.invalidate(); self._outer.activate()
-        hint = self._content_scroll.widget().sizeHint().height() + 4
+        cw.adjustSize()
+        hint = cw.sizeHint().height() + 4
         w = min(max(self.width(), self.minimumWidth()), max_w)
         h = min(hint, max_h)
         self.resize(w, h)
