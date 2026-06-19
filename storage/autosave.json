@@ -2,19 +2,17 @@
   "email": "akhnv@yandex.com",
   "password": "Rogin5496172",
   "country": "Ukraine",
-  "keywords": [
-    "Uman"
-  ],
+  "keywords": [],
   "rows": [
     {
       "data_type": "Surname",
-      "search_type": "is Exactly",
-      "text": "Kushnir"
+      "search_type": "Phonetically Like",
+      "text": "VYAZOVSKIY"
     },
     {
       "data_type": "Given Name",
       "search_type": "Phonetically Like",
-      "text": "Shai"
+      "text": "Avrum"
     }
   ],
   "output_folder": "I:/Python Projects/JewishGen_python/results",
