@@ -265,43 +265,56 @@ def main():
     ovr_path = _HERE / "config" / "mh_en_overrides.json"
     OVR = json.loads(ovr_path.read_text("utf-8")) if ovr_path.exists() else {}
 
-    assign, score_of = {}, {}
+    assign, score_of, taken = {}, {}, set()
+    fuzzy = []
     for ru in set(ru_names):
         if ru in OVR:                             # user-supplied exact English — highest priority
-            assign[ru], score_of[ru] = OVR[ru], 1.0
+            assign[ru], score_of[ru] = OVR[ru], 1.0; taken.add(OVR[ru])
         elif is_latin(ru):                        # already English → keep as-is (exact)
-            assign[ru], score_of[ru] = ru, 1.0
+            assign[ru], score_of[ru] = ru, 1.0; taken.add(ru)
         elif ru in L1_EN:                         # the 14 top categories — exact
-            assign[ru], score_of[ru] = L1_EN[ru], 1.0
+            assign[ru], score_of[ru] = L1_EN[ru], 1.0; taken.add(L1_EN[ru])
         else:
-            c = ranked(ru)
-            if c and c[0][0] >= 0.2:              # confident EN-docx match
-                assign[ru], score_of[ru] = EN[c[0][1]][0], c[0][0]
-            else:                                 # not findable in EN docx → translate
-                assign[ru], score_of[ru] = ru_to_en(ru), (c[0][0] if c else 0.0)
+            fuzzy.append(ru)
+    # UNIQUE greedy: confident names grab their EN first; each EN used once, so a wrong
+    # match can't reuse an EN that belongs to another node (the «Romania» reuse bug).
+    rk = {ru: ranked(ru) for ru in fuzzy}
+    for ru in sorted(fuzzy, key=lambda r: -(rk[r][0][0] if rk[r] else 0)):
+        picked, psc = None, 0.0
+        for sc, i in rk[ru]:
+            if sc < 0.2:
+                break
+            e = EN[i][0]
+            if e not in taken:
+                picked, psc = e, sc; taken.add(e); break
+        if picked is None:                        # nothing confident & free → translate
+            picked, psc = ru_to_en(ru), (rk[ru][0][0] if rk[ru] else 0.0)
+        assign[ru], score_of[ru] = picked, psc
 
     low = sorted(((score_of[ru], ru, assign[ru]) for ru in assign), key=lambda x: x[0])
     n_low = sum(1 for s, _, _ in low if s < 0.34)
 
-    def walk(t):
-        new = {}
+    def walk(t, parent_ru=None):
+        # sort each level ALPHABETICALLY by the English label (site sorts by match count;
+        # we have none, so alphabetical) and drop a child that repeats its parent's name
+        # (the «Belgium, Leuven…» under itself dup).
+        items = []
         for ru, v in t.items():
-            node = {"en": assign.get(ru, ru_to_en(ru))}
+            if ru == parent_ru:
+                continue
+            en = assign.get(ru, ru_to_en(ru))
+            node = {"en": en}
             if v.get("children"):
-                node["children"] = walk(v["children"])
-            new[ru] = node
-        return new
+                node["children"] = walk(v["children"], ru)
+            items.append((en.lower(), ru, node))
+        items.sort(key=lambda x: x[0])
+        return {ru: node for _e, ru, node in items}
 
     out = walk(tree)
     _JSON.write_text(json.dumps(out, ensure_ascii=False, indent=2), "utf-8")
-    print(f"nodes: {len(ru_names)} unique: {len(assign)} | low-confidence (<0.34): {n_low}")
-    print("--- lowest-confidence (verify these): ---")
-    for sc, ru, en in low[:30]:
-        print(f"  [{sc:.2f}] {ru[:38]}  →  {en[:38]}")
-
-
-if __name__ == "__main__":
-    main()
+    dups = len(ru_names) - len(set(assign.values()))
+    print(f"nodes: {len(ru_names)} | low-confidence (<0.34): {n_low} | "
+          f"EN labels reused: {sum(1 for e in set(assign.values()) if list(assign.values()).count(e) > 1)}")
 
 
 if __name__ == "__main__":
