@@ -247,9 +247,13 @@ def _menu_dropdown(label, widgets):
     return btn
 
 
+_MONTHS = ["—", "January", "February", "March", "April", "May", "June",
+           "July", "August", "September", "October", "November", "December"]
+
+
 class _DateField(QWidget):
-    """A life-event date+place row exactly like MyHeritage: Year + ▾ («Match year exactly»
-    checkbox + This year/±1/±2/±5/±10/±20 radios) + Place + ▾ («Place must match»)."""
+    """A life-event date+place row exactly like MyHeritage: Day + Month + Year + ▾ («Match
+    year exactly» + This year/±1/±2/±5/±10/±20 radios) + Place + ▾ («Place must match»)."""
     _SPANS = [("This year", "0"), ("+/- 1 year", "1"), ("+/- 2 years", "2"),
               ("+/- 5 years", "5"), ("+/- 10 years", "10"), ("+/- 20 years", "20")]
 
@@ -257,8 +261,12 @@ class _DateField(QWidget):
         super().__init__()
         self._on = on_change
         h = QHBoxLayout(self); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
+        self.day = QLineEdit(); self.day.setPlaceholderText("Day")
+        self.day.setFixedWidth(46); self.day.setMaxLength(2)
+        self.day.setValidator(QIntValidator(0, 31, self))
+        self.month = QComboBox(); self.month.addItems(_MONTHS); self.month.setFixedWidth(108)
         self.year = QLineEdit(); self.year.setPlaceholderText("Year")
-        self.year.setFixedWidth(62); self.year.setMaxLength(4)
+        self.year.setFixedWidth(56); self.year.setMaxLength(4)
         self.year.setValidator(QIntValidator(0, 2100, self))
         self.exact = QCheckBox("Match year exactly")
         self._grp = QButtonGroup(self); self._radios = {}
@@ -272,10 +280,12 @@ class _DateField(QWidget):
         self.place = QLineEdit(); self.place.setPlaceholderText("Place")
         self.place_match = QCheckBox("Place must match")
         pbtn = _menu_dropdown("place ▾", [self.place_match])
+        h.addWidget(self.day); h.addWidget(self.month)
         h.addWidget(self.year); h.addWidget(ybtn)
         h.addWidget(self.place, 1); h.addWidget(pbtn)
-        for w in (self.year, self.place):
+        for w in (self.day, self.year, self.place):
             w.textChanged.connect(self._chg)
+        self.month.currentIndexChanged.connect(self._chg)
         for w in [self.exact, self.place_match] + radios:
             w.toggled.connect(self._chg)
 
@@ -285,12 +295,16 @@ class _DateField(QWidget):
 
     def state(self):
         span = next((v for v, rb in self._radios.items() if rb.isChecked()), "5")
-        return {"year": self.year.text().strip(), "exact": self.exact.isChecked(),
+        return {"day": self.day.text().strip(),
+                "month": self.month.currentIndex(),    # 0 = «—» (unset)
+                "year": self.year.text().strip(), "exact": self.exact.isChecked(),
                 "span": span, "place": self.place.text().strip(),
                 "place_match": self.place_match.isChecked()}
 
     def set_state(self, d):
         d = d or {}
+        self.day.setText(str(d.get("day", "") or ""))
+        self.month.setCurrentIndex(int(d.get("month", 0) or 0))
         self.year.setText(str(d.get("year", "") or ""))
         self.exact.setChecked(bool(d.get("exact")))
         self.place.setText(d.get("place", "") or "")
@@ -298,6 +312,7 @@ class _DateField(QWidget):
         (self._radios.get(str(d.get("span", "5"))) or self._radios["5"]).setChecked(True)
 
     def clear(self):
+        self.day.clear(); self.month.setCurrentIndex(0)
         self.year.clear(); self.place.clear()
         self.exact.setChecked(False); self.place_match.setChecked(False)
         self._radios["5"].setChecked(True)
@@ -368,6 +383,10 @@ class MyHeritageApp(QMainWindow):
         self.setWindowIcon(app_icon())
         self._build_ui()
         self._load()
+        from PySide6.QtCore import QTimer
+        self._fit()
+        for _ms in (0, 150, 400):          # re-fit after the layout is live (post-show)
+            QTimer.singleShot(_ms, self._fit)
 
     def _match_btn(self, label, options):
         """Per-field dropdown («match ▾»). Each menu item is a REAL QCheckBox (a
@@ -397,7 +416,16 @@ class MyHeritageApp(QMainWindow):
 
     def _build_ui(self):
         self._match_actions = {}
-        root = QWidget(); self.setCentralWidget(root)
+        # Top-level vertical scroll — the whole window scrolls on a low-res screen, so
+        # nothing is ever cut off (user: «динамическая гуйка + прокрутка на низкой»).
+        outer_root = QWidget(); self.setCentralWidget(outer_root)
+        _ol = QVBoxLayout(outer_root); _ol.setContentsMargins(0, 0, 0, 0); _ol.setSpacing(0)
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _ol.addWidget(self._content_scroll)
+        root = QWidget(); self._content_scroll.setWidget(root)
         self._outer = QVBoxLayout(root)
         self._outer.setContentsMargins(18, 12, 18, 12)
         self._outer.setSpacing(8)
@@ -450,13 +478,13 @@ class MyHeritageApp(QMainWindow):
         _LBLW = 170
         # Each field has its own «match ▾» dropdown (with visible checkbox squares).
         nm_btn = self._match_btn("match ▾", [
-            ("name_strict",     "Strict — exact name", False),
-            ("name_variants",   "Spelling variants",   True),
-            ("name_initials",   "Initial matching",    True),
-            ("name_startswith", "Starts with letters", False),
+            ("name_strict",     "Match name exactly",          False),
+            ("name_variants",   "Spelling variations",         True),
+            ("name_initials",   "Match initials",              True),
+            ("name_startswith", "Starts with specific letters", False),
         ])
         sn_btn = self._match_btn("match ▾", [
-            ("surname_strict",  "Strict — exact surname", False),
+            ("surname_strict",  "Match name exactly", False),
         ])
         r1 = QHBoxLayout(); r1.setSpacing(8)
         _l1 = QLabel("First name / Patronymic:"); _l1.setFixedWidth(_LBLW)
@@ -502,17 +530,9 @@ class MyHeritageApp(QMainWindow):
         af.addRow("Keywords:",    self.f_kw)
         af.addRow("Gender:",      self.f_gen)
         af.addRow("",             self.f_ex)
-        clr = QPushButton("Clear all filters"); clr.setFixedWidth(150)
-        clr.clicked.connect(self._clear_filters)
-        af.addRow("",             clr)
 
-        self._adv_scroll = QScrollArea()
-        self._adv_scroll.setWidget(self._adv)
-        self._adv_scroll.setWidgetResizable(True)
-        self._adv_scroll.setFrameShape(QFrame.NoFrame)
-        self._adv_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._adv_scroll.setVisible(False)
-        self._outer.addWidget(self._adv_scroll)
+        self._adv.setVisible(False)              # plain panel; top-level scroll handles overflow
+        self._outer.addWidget(self._adv)
 
         # ── Refine by record type (radio buttons) ────────────────────────── #
         fg = QGroupBox("Refine by record type")
@@ -526,6 +546,9 @@ class MyHeritageApp(QMainWindow):
             fl.addWidget(rb)
         self._rt_buttons[RECORD_TYPE_OPTIONS[0]].setChecked(True)
         fl.addStretch()
+        clr = QPushButton("Clear all filters"); clr.setFixedWidth(140)
+        clr.clicked.connect(self._clear_filters)
+        fl.addWidget(clr)                          # clears category + record-type filters
         self._outer.addWidget(fg)
 
         # ── Restrict search by category — collapsible tree (arrow opens it) ── #
@@ -543,12 +566,8 @@ class MyHeritageApp(QMainWindow):
         for name, data in (CATEGORIES or {}).items():
             self._cat_node(name, data, chl, 0)
         chl.addStretch()
-        self._cat_scroll = QScrollArea()
-        self._cat_scroll.setWidget(self._cat_host)
-        self._cat_scroll.setWidgetResizable(True)
-        self._cat_scroll.setFrameShape(QFrame.NoFrame)
-        self._cat_scroll.setVisible(False)
-        self._outer.addWidget(self._cat_scroll)
+        self._cat_host.setVisible(False)         # plain panel; top-level scroll handles overflow
+        self._outer.addWidget(self._cat_host)
 
         # ── Output ───────────────────────────────────────────────────────── #
         og = QGroupBox("Output")
@@ -599,19 +618,13 @@ class MyHeritageApp(QMainWindow):
 
     # ── Advanced toggle ───────────────────────────────────────────────────── #
     def _toggle_adv(self, on):
-        self._adv_scroll.setVisible(on)
-        if on:
-            screen_h = QApplication.primaryScreen().availableGeometry().height()
-            self._adv_scroll.setMaximumHeight(int(screen_h * 0.55))
+        self._adv.setVisible(on)
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
 
     # ── Category tree (Restrict search by category) ───────────────────────── #
     def _toggle_cat(self, on):
-        self._cat_scroll.setVisible(on)
-        if on:
-            screen_h = QApplication.primaryScreen().availableGeometry().height()
-            self._cat_scroll.setMaximumHeight(int(screen_h * 0.45))
+        self._cat_host.setVisible(on)
         self._cat_btn.setText(("▼" if on else "▶") + "   Narrow down by category")
         self._fit()
 
@@ -641,7 +654,8 @@ class MyHeritageApp(QMainWindow):
         # scraper clicks the facet by the site-language (Russian) text, and save/load keys
         # on it. `data["en"]` is the matched-or-translated English from mh_add_english.py.
         en = (data.get("en") or "").strip()
-        cb = QCheckBox(f"{en} / {name}" if en and en != name else name)
+        lbl = f"{en} / {name}" if en and en != name else name
+        cb = QCheckBox(lbl.replace("&", "&&"))   # && — Qt eats a single & as a mnemonic
         cb.stateChanged.connect(self._save)
         self._cat_checks.append((cb, name))
         self._cat_paths[cb] = my_path
@@ -693,17 +707,20 @@ class MyHeritageApp(QMainWindow):
         return out
 
     def _fit(self):
-        # Unlock height, force the layout to RECOMPUTE synchronously, then lock to
-        # the fresh size. Without invalidate()/activate() the sizeHint right after
-        # collapsing the Advanced panel is still the old (taller) value, so the
-        # window keeps an empty «подвал» whose extra height inflates the groups.
-        self.setMinimumHeight(0)
-        self.setMaximumHeight(16777215)
-        self._outer.invalidate()
-        self._outer.activate()
-        h = self.sizeHint().height()
-        self.resize(self.width(), h)
-        self.setFixedHeight(h)
+        """Dynamic sizing: the window grows to the content but NEVER exceeds the screen —
+        the top-level scroll area takes over on a low-res screen, and the window stays
+        fully on-screen. Width also caps to the screen (no horizontal spill)."""
+        scr = QApplication.primaryScreen().availableGeometry()
+        max_w, max_h = scr.width() - 16, scr.height() - 48
+        self.setMinimumWidth(min(860, max_w))
+        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        self._outer.invalidate(); self._outer.activate()
+        hint = self._content_scroll.widget().sizeHint().height() + 4
+        w = min(max(self.width(), self.minimumWidth()), max_w)
+        h = min(hint, max_h)
+        self.resize(w, h)
+        self.setMaximumHeight(max_h)
+        self.move(scr.x() + max(0, (scr.width() - w) // 2), scr.y() + 8)
 
     def _record_type(self) -> str:
         for opt, rb in self._rt_buttons.items():
@@ -712,13 +729,11 @@ class MyHeritageApp(QMainWindow):
         return RECORD_TYPE_OPTIONS[0]
 
     def _clear_filters(self):
-        """«Clear all filters» — reset every advanced date/relative/field."""
-        for w in self._dates.values():
-            w.clear()
-        for w in self._names.values():
-            w.clear()
-        self.f_res.clear(); self.f_kw.clear()
-        self.f_gen.setCurrentIndex(0); self.f_ex.setChecked(False)
+        """«Clear all filters» — reset the FILTERS (category tree + record type), NOT the
+        advanced search (that's a separate section)."""
+        for cb, _name in self._cat_checks:
+            cb.setChecked(False)
+        self._rt_buttons[RECORD_TYPE_OPTIONS[0]].setChecked(True)
         self._save()
 
     def _birth_year_params(self) -> dict:
@@ -809,10 +824,8 @@ class MyHeritageApp(QMainWindow):
             self._rt_buttons[rt].setChecked(True)
         s(self.f_folder, "output_folder")
         s(self.f_docx,   "fmt_docx");  s(self.f_xlsx, "fmt_xlsx")
-        if d.get("adv_open"):
-            self._adv_btn.setChecked(True)
-        if d.get("cat_open"):
-            self._cat_btn.setChecked(True)
+        # NB: do NOT restore adv_open/cat_open — always START COLLAPSED so the window
+        # opens compact and never spills off-screen (user requirement).
 
     # ── Helpers ───────────────────────────────────────────────────────────── #
     def _browse(self):
