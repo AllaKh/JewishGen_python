@@ -2409,75 +2409,102 @@ async def _collect_one_page(page):
     }""")
 
 
+# Visible-element test shared by the per-page + pagination helpers. MyHeritage renders
+# DUPLICATE controls (mobile + desktop) with the SAME data-automations; Playwright's
+# .first kept grabbing a HIDDEN twin, so the click was a silent no-op — that is why the
+# page stayed at 20 and never advanced. We always act on the VISIBLE one.
+_VIS_JS = ("const V = e => { if (!e) return false; const r = e.getClientRects();"
+           " if (!r.length) return false; const s = getComputedStyle(e);"
+           " return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };")
+
+
 async def _set_results_per_page(page, log, want="50"):
-    """Open the results-per-page selector (the span that shows the current «20»:
-    `<span class="selector_header" data-automations="selector_header">20</span>`) and
-    pick `want` (50) so fewer page turns are needed. MH renders the option list lazily,
-    so we wait ~2s after opening it and ~2s after picking before the results reload."""
+    """Set «Results per page» to `want` (50) on the VISIBLE selector
+    (`data-automations="selector_header"`). Real click + JS fallback, ~2s waits for the
+    lazily-drawn option list, and verbose logging so a live run shows what happened."""
     try:
-        hdr = page.locator('[data-automations="selector_header"]').first
-        if not await hdr.count():                      # older markup fallback
-            hdr = page.locator('[data-automations="selector_header_container"]').first
-        if not await hdr.count():
+        info = await page.evaluate(_VIS_JS + r"""
+            const hs = [...document.querySelectorAll(
+                '[data-automations="selector_header"], [data-automations="selector_header_container"]')];
+            const h = hs.find(V) || hs[0];
+            return h ? {found:true, total:hs.length, visible:hs.filter(V).length,
+                       cur:(h.textContent||'').trim()}
+                     : {found:false, total:hs.length};
+        """)
+        log(f"  per-page selector: {info}")
+        if not info.get("found"):
             log("  !! селектор «результатов на странице» не найден")
             return
-        cur = (await hdr.text_content() or "").strip()
-        if cur == want:
+        if info.get("cur") == want:
             log(f"  → Результатов на странице уже {want}")
             return
-        await hdr.click(timeout=4000)
-        await asyncio.sleep(2)                          # long option list draws ~2s
-        # click the leaf element whose exact text is `want` (50)
-        picked = await page.evaluate(r"""(w) => {
-            const cands = document.querySelectorAll(
-                '[data-automations*="selector"] *, [class*="selector"] *, '
-                + '[role="option"], li, span, a, div');
-            for (const e of cands) {
-                if (e.children.length === 0 && (e.textContent || '').trim() === w) {
-                    try { e.click(); } catch (_) {}
-                    return true;
-                }
-            }
-            return false;
-        }""", want)
-        if not picked:
-            opt = page.get_by_text(re.compile(rf"^\s*{want}\s*$")).last
-            if await opt.count():
-                await opt.click(timeout=4000)
+        # open the dropdown on the VISIBLE header
+        try:
+            await page.locator(
+                '[data-automations="selector_header"]:visible').first.click(timeout=4000)
+        except Exception:
+            try:
+                await page.locator(
+                    '[data-automations="selector_header_container"]:visible'
+                ).first.click(timeout=4000)
+            except Exception:
+                await page.evaluate(_VIS_JS + """
+                    const h = [...document.querySelectorAll(
+                        '[data-automations="selector_header"], [data-automations="selector_header_container"]')].find(V);
+                    if (h) h.click();""")
+        await asyncio.sleep(2)                          # option list draws ~2s
+        # click the VISIBLE «50» option (leaf with exact text)
+        res = await page.evaluate(_VIS_JS + r"""
+            const w = %r;
+            const cands = [...document.querySelectorAll(
+                'li, span, a, div, button, [role="option"], [data-automations]')];
+            const hit = cands.filter(e => e.children.length === 0
+                        && (e.textContent || '').trim() === w && V(e));
+            if (hit.length) { hit[hit.length-1].click(); return {clicked:true, n:hit.length}; }
+            return {clicked:false};
+        """ % want)
+        log(f"  per-page option «{want}»: {res}")
         await asyncio.sleep(2)                          # results reload with `want`/page
-        now = (await hdr.text_content() or "").strip()
-        log(f"  → Результатов на странице: {now or want}")
+        now = await page.evaluate(
+            """() => { const h = document.querySelector(
+                   '[data-automations="selector_header"]'); return h ? (h.textContent||'').trim() : ''; }""")
+        log(f"  → Результатов на странице теперь: {now}")
     except Exception as e:
         log(f"  → per-page: {e}")
 
 
 async def _goto_next_results(page, log):
-    """Click the exact pagination Next icon (a[data-automations='next_icon']).
-    Returns True only if the result set actually changed."""
+    """Advance to the next results page via the VISIBLE next_icon
+    (`data-automations="next_icon"`). Real click on the visible twin + JS fallback +
+    mid-wait retry; returns True only when the first record link actually changes."""
     try:
-        nxt = page.locator('a[data-automations="next_icon"]').first
-        if not await nxt.count():
-            log("  → «Далее»: кнопка next_icon отсутствует — последняя страница")
-            return False
-        cls = (await nxt.get_attribute("class") or "").lower()
-        aria = (await nxt.get_attribute("aria-disabled") or "").lower()
-        if "disabled" in cls or aria == "true":
-            log("  → «Далее»: кнопка неактивна — последняя страница")
-            return False
-        # capture current first-record url to detect the change
         before = await page.evaluate(
             """() => { const a = document.querySelector('a[href*=\"showRecord\"]');
                        return a ? a.href : ''; }""")
-        await nxt.scroll_into_view_if_needed(timeout=3000)
+        info = await page.evaluate(_VIS_JS + r"""
+            const all = [...document.querySelectorAll('[data-automations="next_icon"]')];
+            const v = all.find(V) || all[0];
+            if (!v) return {found:false, total:all.length};
+            const cls = ((v.className || '') + '').toLowerCase();
+            const dis = /disabled/.test(cls) || v.getAttribute('aria-disabled') === 'true';
+            return {found:true, total:all.length, visible:all.filter(V).length, disabled:dis};
+        """)
+        log(f"  next_icon: {info}")
+        if not info.get("found"):
+            log("  → «Далее»: next_icon нет — последняя страница")
+            return False
+        if info.get("disabled"):
+            log("  → «Далее»: кнопка неактивна — последняя страница")
+            return False
         try:
-            await nxt.click(timeout=5000)
+            await page.locator(
+                '[data-automations="next_icon"]:visible').first.click(timeout=5000)
         except Exception:
-            # overlay / hidden duplicate → click it directly in the DOM instead
-            await page.evaluate(
-                """() => { const a = document.querySelector(
-                       'a[data-automations=\"next_icon\"]'); if (a) a.click(); }""")
-        # wait until the first record link changes (AJAX page swap)
-        for k in range(15):
+            await page.evaluate(_VIS_JS + """
+                const a = [...document.querySelectorAll('[data-automations="next_icon"]')].find(V)
+                          || document.querySelector('[data-automations="next_icon"]');
+                if (a) a.click();""")
+        for k in range(15):                             # wait for the AJAX page swap
             await asyncio.sleep(1)
             after = await page.evaluate(
                 """() => { const a = document.querySelector('a[href*=\"showRecord\"]');
@@ -2485,10 +2512,10 @@ async def _goto_next_results(page, log):
             if after and after != before:
                 log("  → Перешёл на следующую страницу")
                 return True
-            if k == 6:                      # halfway: retry the click via the DOM
-                await page.evaluate(
-                    """() => { const a = document.querySelector(
-                           'a[data-automations=\"next_icon\"]'); if (a) a.click(); }""")
+            if k == 6:                                  # halfway: retry the click
+                await page.evaluate(_VIS_JS + """
+                    const a = [...document.querySelectorAll('[data-automations="next_icon"]')].find(V);
+                    if (a) a.click();""")
         log("  → «Далее»: страница не сменилась")
         return False
     except Exception as e:

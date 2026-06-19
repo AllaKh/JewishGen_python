@@ -4,11 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python 14 June">
+    <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python 19 June">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config/ancestry_locations.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/ancestry_locations.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage/autosave.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/autosave.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage/profiles.json" beforeDir="false" afterPath="$PROJECT_DIR$/storage/profiles.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,7 +146,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781402204445</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="JewishGen_python 19 June">
+      <option name="closed" value="true" />
+      <created>1781831709044</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1781831709044</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -159,6 +165,7 @@
     <MESSAGE value="JewishGen_python 10 June" />
     <MESSAGE value="JewishGen_python 13 June" />
     <MESSAGE value="JewishGen_python 14 June" />
-    <option name="LAST_COMMIT_MESSAGE" value="JewishGen_python 14 June" />
+    <MESSAGE value="JewishGen_python 19 June" />
+    <option name="LAST_COMMIT_MESSAGE" value="JewishGen_python 19 June" />
   </component>
 </project>
