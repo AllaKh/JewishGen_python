@@ -76,7 +76,9 @@ GEO = {
  'колорадо':'Colorado','айдахо':'Idaho','вашингтон':'Washington',
  'орегон':'Oregon','гавайи':'Hawaii','коннектикут':'Connecticut',
  'массачусетс':'Massachusetts','пенсильвания':'Pennsylvania','джерси':'Jersey',
- 'род':'Rhode','айленд':'Island','гэмпшир':'Hampshire','дакота':'Dakota',
+ 'род':'Rhode','айленд':'Island','род-айленд':'Rhode Island','юта':'Utah',
+ 'нью-йорк':'New York','нью-джерси':'New Jersey','нью-гэмпшир':'New Hampshire',
+ 'гэмпшир':'Hampshire','дакота':'Dakota',
  'йоркшир':'Yorkshire','ланкашир':'Lancashire','чешир':'Cheshire',
  'дербишир':'Derbyshire','эссекс':'Essex','дорсет':'Dorset','норфолк':'Norfolk',
  'кент':'Kent','корнуолл':'Cornwall','бристоль':'Bristol','дублин':'Dublin',
@@ -103,7 +105,9 @@ L1_EN = {
 TERMS = [
  ('бракосочетани','marriage'),('расторжени','divorce'),('утверждени','probate'),('рождени','birth'),
  ('рожден','birth'),('крещени','baptism'),('брак','marriage'),('развод','divorce'),
- ('смерт','death'),('погребени','burial'),('захорони','burial'),('захорон','burial'),
+ ('смерти','deaths'),('смертност','mortality'),('смерт','death'),
+ ('погребени','burial'),('захоронени','burials'),('захорони','burial'),('захорон','burial'),
+ ('окружн','county'),('призывник','conscripts'),('иммигрирующ','immigrating'),('немц','Germans'),
  ('похорон','funeral'),('некролог','obituary'),('кладбищ','cemetery'),
  ('церков','church'),('синагог','synagogue'),('метрическ','parish register'),
  ('переписн','census'),('перепис','census'),('избирател','voter'),
@@ -189,11 +193,14 @@ def ru_to_en(ru: str) -> str:
     s = ' ' + ru.lower() + ' '
     for stem, en in TERMS:                    # longest-ish stems first roughly
         s = re.sub(stem + r'[а-яё]*', ' ' + en + ' ', s)
+    PREP = {"и": "&", "а": "&", "в": "in", "во": "in", "от": "from", "для": "for",
+            "по": "by", "о": "", "об": "", "на": "", "с": "", "со": "", "у": ""}
     out_words = []
     for w in re.findall(r"[а-яёa-z0-9'’/.-]+", s):
         lw = w.lower()
-        if lw in ("и", "а"):
-            out_words.append("&")
+        if lw in PREP:
+            if PREP[lw]:
+                out_words.append(PREP[lw])
         elif _geo(lw):
             out_words.append(_geo(lw))
         elif re.fullmatch(r"[a-z0-9'’/.-]+", lw) or re.fullmatch(r'\d{4}([–-]\d{4})?', w):

@@ -50,6 +50,9 @@
           "Записи о рождении в Калифорнии": {
             "en": "California Births"
           },
+          "Регистрационные книги рождений округов Калифорнии, 1800-1994 годы": {
+            "en": "California, County Birth Registers"
+          },
           "Канада, провинция Манитоба, каталог записей регистраций новорожденных 1880-1919": {
             "en": "Canada, Manitoba, Birth Index, 1880-1919"
           },
@@ -180,7 +183,7 @@
             "en": "Minnesota, Death Index, 1904-2001"
           },
           "Миссури, реестр рождаемости, 1920-2015": {
-            "en": "Missouri records rozhdaemosti 1920-2015"
+            "en": "Missouri Births"
           },
           "Рождения в Небраске": {
             "en": "Nebraska Births"
@@ -224,29 +227,26 @@
           "Рождения в Северной Каролине": {
             "en": "North Carolina Births"
           },
-          "Северная Каролина, округ Уэйк: Рождения": {
+          "Северная Каролина, записи о рождениях округа Джонстон": {
             "en": "North Carolina, Johnston County Births"
           },
           "Северная Каролина, Каталог рождений Округа Мекленбург, 1913-2019 годы": {
             "en": "North Carolina, Mecklenburg County Birth Index, 1913-2019"
           },
-          "Северная Каролина, записи о рождениях округа Джонстон": {
+          "Северная Каролина, округ Уэйк: Рождения": {
             "en": "North Carolina, Wake County Births"
           },
           "Норвегия, записи о крещении, 1634-1927": {
             "en": "Norway, Baptisms, 1634-1927"
           },
           "Огайо, реестр рождаемости, 1959–1998": {
-            "en": "Ohio, Birth Index, 1959–1998"
+            "en": "Ohio Births"
           },
           "Онтарио, записи о рождении, 1869-1912": {
             "en": "Ontario Births, 1869-1912"
           },
           "Опава, Чехия, рождения и крещения, 1800-1920": {
             "en": "Opava, Moravian-Silesian Region, Czechia Births and Baptisms 1800-1920"
-          },
-          "Регистрационные книги рождений округов Калифорнии, 1800-1994 годы": {
-            "en": "Registration book birth county California 1800-1994 gody"
           },
           "Рождения на Род-Айленде, 1834-1922": {
             "en": "Rhode Island Births, 1834-1922"
@@ -316,6 +316,9 @@
           "Австрия, Верхняя Австрия, записи католической церкви, 1581-1910": {
             "en": "Austria, Upper Austria, Catholic Church Records, 1581-1910"
           },
+          "Указатель записей Католической Церкви Вены, Австрия, 1585 - 1918 годы": {
+            "en": "Austria, Vienna, Catholic Church Records"
+          },
           "Австро-Венгрия, римско-католический реестр, 1612-1966": {
             "en": "Austria-Hungary, Roman Catholic Indexes, 1612-1966"
           },
@@ -347,7 +350,7 @@
             "en": "England, Warwickshire Parish Registers, 1538-1900"
           },
           "Финляндия, Карелия, Доконфирмационные списки": {
-            "en": "Finland, Karelia, Pre Confirmation Rolls"
+            "en": "Finland, Karelia Migrant Registers"
           },
           "Франция, Сборник записей актов гражданского состояния, 1585-1928": {
             "en": "France, Compilation of Vital Records, 1585-1928"
@@ -369,9 +372,6 @@
           },
           "Венгрия, записи католической церкви, 1636-1895": {
             "en": "Hungary Catholic Church Records, 1636-1895"
-          },
-          "Указатель записей Католической Церкви Вены, Австрия, 1585 - 1918 годы": {
-            "en": "Index records catholic cerkvi veny Austria 1585 - 1918 gody"
           },
           "Остров Мэн, записи метрических книг, 1598-1950": {
             "en": "Isle of Man, Parish Registers, 1598-1950"
@@ -487,7 +487,7 @@
             "en": "Brazil, Rio de Janeiro, Civil Registration, 1829-2012"
           },
           "Чили, реестр актов гражданского состояния, 1885-1903": {
-            "en": "Chile, Civil Registration Records, 1885–1903"
+            "en": "Chile, Civil Registration"
           },
           "Сальвадор, реестр актов гражданского состояния, 1815-1910": {
             "en": "El Salvador, Civil Registration, 1815-1910"
@@ -531,31 +531,34 @@
         "en": "Death, Burial, Cemetery & Obituaries",
         "children": {
           "Алабама, записи о смерти, 1908-1974": {
-            "en": "Alabama records o death 1908-1974"
+            "en": "Alabama records deaths 1908-1974"
           },
           "Арканзас, Данные о смертях, 1935-1961": {
-            "en": "Arkansas dannye o death 1935-1961"
+            "en": "Arkansas dannye death 1935-1961"
+          },
+          "Некрологи Австралии, 1860-2019": {
+            "en": "Australia Death Notices, 1860-2019"
           },
           "Австралия, Каталог некрологов с OldNews.com": {
-            "en": "Australia katalog obituary s oldnews.com"
+            "en": "Australia Obituary Index from OldNews.com"
           },
           "Австралия, реестр смертности в Новом Южном Уэльсе, 1787-1986": {
-            "en": "Australia records death v novom yuzhnom Wales 1787-1986"
-          },
-          "Австралия, Западная Австралия, Смерти": {
-            "en": "Australia West Australia death"
+            "en": "Australia, New South Wales Death Index, 1787-1986"
           },
           "Австралия, Квинсленд, Смерти": {
-            "en": "Australia, Queensland Teacher Announcements"
+            "en": "Australia, Queensland Deaths"
           },
           "Австралия, надписи на кладбищах": {
             "en": "Australia, Roll of Honour"
           },
           "Австралия, Виктория, Индекс смертей, 1836-1985": {
-            "en": "Australia, South Australia Passenger Lists, 1836 - 1961"
+            "en": "Australia, Victoria Death Index, 1836-1985"
+          },
+          "Австралия, Западная Австралия, Смерти": {
+            "en": "Australia, Western Australia Deaths"
           },
           "Бельгия, Реестры актов гражданского состояния о смерти, 1800-1950": {
-            "en": "Belgium records certificate civil status o death 1800-1950"
+            "en": "Belgium, Civil Death Registers, 1800-1950"
           },
           "BillionGraves": {
             "en": "BillionGraves"
@@ -563,128 +566,113 @@
           "Соединенные Штаты, Массачусетс, Индекс смертей, 1840-1910": {
             "en": "British Militia Attestations Index, 1886 - 1910"
           },
-          "Захоронения Юты": {
-            "en": "Burial yuty"
+          "Реестр записей регистрации смерти, штат Калифорния, 1940 - 1997 годов": {
+            "en": "California Deaths, 1940 - 1997"
           },
           "Калифорния, окружные свидетельства о смерти, 1873-1994 годы": {
-            "en": "California, County Death Records, 1850–1952"
-          },
-          "Канада, Британская Колумбия: Смерти": {
-            "en": "Canada britanskaya Colombia death"
-          },
-          "Канада, Захоронения, 1800-2019 годы": {
-            "en": "Canada burial 1800-2019 gody"
+            "en": "California, County Death Registers, 1873-1994"
           },
           "Канадский индекс некрологов от OldNews.com": {
-            "en": "Canada index obituary ot oldnews.com"
+            "en": "Canada Obituary Index from OldNews.com"
+          },
+          "Канада, Британская Колумбия: Смерти": {
+            "en": "Canada, British Columbia Deaths"
+          },
+          "Канада, Захоронения, 1800-2019 годы": {
+            "en": "Canada, Burials, 1800-2019"
           },
           "Канада, Надгробные камни и мемориалы": {
-            "en": "Canada nadgrobnye kamni & memorialy"
+            "en": "Canada, Gravestones and Memorials"
           },
           "Канада, Квебек, гражданские записи о смерти, 1926-1997": {
-            "en": "Canada Quebec civil records o death 1926-1997"
+            "en": "Canada, Quebec Civil Deaths, 1926-1997"
           },
           "Канадские некрологи, 1997-2017": {
-            "en": "Canada, Obituary Collection, 1997–2017"
+            "en": "Canadian Obituaries, 1997-2017"
           },
           "Англия, Чешир, транскрипция Бишопа (захоронения), 1569-1933": {
             "en": "Cheshire, England, Bishop’s Transcripts, 1569–1933"
           },
           "Колорадо, Денвер, Некрологи": {
-            "en": "Colorado denver obituary"
+            "en": "Colorado, Denver Obituaries"
           },
           "Чехия, Опава, Смерти, 1800-1950": {
-            "en": "Czechia opava death 1800-1950"
-          },
-          "Смерти в Миссисипи, 1912-1943": {
-            "en": "Dau's Blue Book for Detroit, 1912"
+            "en": "Czechia, Moravian-Silesian Region, Opava Deaths, 1800-1950"
           },
           "Смерти в Джорджии": {
-            "en": "Death v Georgia"
-          },
-          "Смерти в Мичигане": {
-            "en": "Death v Michigan"
-          },
-          "Смерти в Нью-Йорке, 1866-1948": {
-            "en": "Death v nyu-iorke 1866-1948"
-          },
-          "Смерти в Огайо": {
-            "en": "Death v Ohio"
+            "en": "Deaths in Georgia"
           },
           "Смерти в Род-Айленде, 1850-1946": {
-            "en": "Death v rod-ailende 1850-1946"
-          },
-          "Смерти в Техасе": {
-            "en": "Death v Texas"
-          },
-          "Англия и Уэльс, нонконформистские записи о смерти и захоронениях, 1665-1837": {
-            "en": "England & Wales nonkonformistskie records o death & burial 1665-1837"
-          },
-          "Англия и Уэльс, реестр записей о смерти, 1837-2005": {
-            "en": "England & Wales records records o death 1837-2005"
+            "en": "Deaths in Rhode Island 1850-1946"
           },
           "Реестр записей регистрации смерти Англии и Уэльса, GRO каталоги, 1969 - 2007 годов": {
-            "en": "England & Wales, GRO Death Index, 1969–2007"
+            "en": "England & Wales Deaths, GRO Indexes, 1969 - 2007"
+          },
+          "Англия и Уэльс, нонконформистские записи о смерти и захоронениях, 1665-1837": {
+            "en": "England & Wales nonkonformistskie records deaths & burials 1665-1837"
+          },
+          "Англия и Уэльс, реестр записей о смерти, 1837-2005": {
+            "en": "England & Wales, Death Index, 1837-2005"
           },
           "Англия, Чешир, приходские смерти и захоронения": {
-            "en": "England Cheshire parish death & burial"
+            "en": "England Cheshire parish deaths & burials"
+          },
+          "Англия, записи о смерти и погребении, 1538-1991": {
+            "en": "England Deaths and Burials, 1538-1991"
           },
           "Англия, Эссекс, приходские захоронения": {
-            "en": "England Essex parish burial"
+            "en": "England Essex parish burials"
           },
           "Англия, Ланкашир, Манчестер, погребения": {
             "en": "England Lancashire manchester burial"
           },
-          "Англия, записи о смерти и погребении, 1538-1991": {
-            "en": "England records o death & burial 1538-1991"
-          },
           "Англия, сообщения о похоронах и некрологи": {
-            "en": "England, Burial and Obituary Notices"
+            "en": "England, Funeral Notices and Obituaries"
+          },
+          "Флорида, окружные смерти": {
+            "en": "Florida County Deaths"
           },
           "Штат Вермонт, смерти": {
             "en": "Florida, State Employees"
           },
+          "Франция, Смерти": {
+            "en": "France Deaths"
+          },
           "Франция, церковные захоронения и гражданские смерти": {
-            "en": "France church burial & civil death"
+            "en": "France, Church Burials and Civil Deaths"
           },
           "Франция, ежедневные реестры захоронений парижских кладбищ": {
-            "en": "France ezhednevnye records burial parizhskih cemetery"
+            "en": "France, Daily Burial Registers of Parisian Cemeteries"
           },
           "Франция, указатель некрологов и похоронных извещений": {
-            "en": "France index obituary & funeral izveschenii"
-          },
-          "Франция, Смерти": {
-            "en": "France, World War II Prisoners of War"
+            "en": "France, Index of Obituaries and Funeral Notices"
           },
           "Смерти в Джорджии, 1917-1928": {
             "en": "Georgia Deaths, 1919–1998"
           },
+          "Германия, о смерти и погребении, 1582-1958": {
+            "en": "Germany Deaths and Burials, 1582-1958"
+          },
           "Германия, Гессен, Смерти": {
-            "en": "Germany Hesse death"
+            "en": "Germany, Hesse, Deaths"
           },
           "Германия, Северный Рейн-Вестфалия, Смерти 1874-1938": {
-            "en": "Germany severnyi rein-vestfaliya death 1874-1938"
-          },
-          "Германия, о смерти и погребении, 1582-1958": {
-            "en": "Germany, Select Deaths and Burials, 1582–1958"
+            "en": "Germany, North Rhine-Westphalia, Deaths 1874-1938"
           },
           "Исторические кладбища Род-Айленда": {
-            "en": "History cemetery rod-ailenda"
+            "en": "History of Barrington, Rhode Island"
           },
           "Теннесси, округ Гамильтон, Некрологи": {
             "en": "History of Davidson County, Tennessee"
           },
+          "Айдахо, Смерти и мертворождения": {
+            "en": "Idaho, Deaths and Stillbirths"
+          },
           "Иллинойс, акты о смерти и мертворождениях, 1916-1948 годы": {
-            "en": "Illinois, Deaths and Stillbirths, 1916–1947"
+            "en": "Illinois, Deaths and Stillbirths, 1916-1948"
           },
           "Индекс смертей Небраски": {
             "en": "Index death Nebraska"
-          },
-          "Индекс смертей штата Нью-Йорк, 1880-2017": {
-            "en": "Index death state nyu-iork 1880-2017"
-          },
-          "Индекс некрологов Соединенных Штатов из онлайн-источников": {
-            "en": "Index obituary United state iz onlain-istochnikov"
           },
           "Индия, записи о смерти и погребении, 1719-1948": {
             "en": "India, Select Deaths and Burials, 1719–1948"
@@ -696,139 +684,151 @@
             "en": "Interment.net"
           },
           "Ирландия, записи о смерти, 1864-1958": {
-            "en": "Ireland records o death 1864-1958"
+            "en": "Ireland records deaths 1864-1958"
           },
           "Луизиана, реестр смертей, 1819-1969": {
             "en": "Louisiana records death 1819-1969"
           },
           "Мэриленд, Смерти": {
-            "en": "Maryland death"
+            "en": "Maryland Deaths"
+          },
+          "Смерти в Мичигане": {
+            "en": "Michigan Deaths"
           },
           "Миннесота, записи о смерти": {
-            "en": "Minnesota records o death"
+            "en": "Minnesota Deaths"
           },
-          "Айдахо, Смерти и мертворождения": {
-            "en": "Missouri Births"
+          "Смерти в Миссисипи, 1912-1943": {
+            "en": "Mississippi Deaths, 1912-1943"
+          },
+          "Реестр записей регистрации смерти, штат Миссури, 1910 - 1960 годов": {
+            "en": "Missouri Death Certificates, 1910 - 1960"
           },
           "Миссури, смерти, 1961-1970": {
-            "en": "Missouri death 1961-1970"
+            "en": "Missouri deaths 1961-1970"
           },
           "Миссури, реестр смертности, 1968-2015": {
-            "en": "Missouri Death Index, 1968–2015"
+            "en": "Missouri, Deaths"
+          },
+          "Миссури, Сент-Луис, Уведомления о смерти": {
+            "en": "Missouri, St. Louis Death Notices"
           },
           "Нидерланды, Церковные захоронения, 1601-1811": {
-            "en": "Netherlands church burial 1601-1811"
+            "en": "Netherlands, Church Burials, 1601-1811"
           },
           "Нидерланды, гражданские смерти, 1811-1965": {
-            "en": "Netherlands civil death 1811-1965"
-          },
-          "Индекс смертей Нью-Джерси, 1920-1929, 1949-2017": {
-            "en": "New Jersey, Death Index, 1920–1929, 1949–2017"
+            "en": "Netherlands, Civil Deaths, 1811-1965"
           },
           "Нидерланды, Южная Голландия, Гражданские смерти, 1900–1942": {
-            "en": "New South Wales PO Directory 1900 (Wise)"
+            "en": "Netherlands, South Holland, Civil Deaths, 1900-1942"
+          },
+          "Индекс смертей Нью-Джерси, 1920-1929, 1949-2017": {
+            "en": "New Jersey Death Index, 1920-1929, 1949-2017"
           },
           "Индекс смертей города Нью-Йорка, 1862–1948 годы": {
-            "en": "New York City Death Index, 1862–1948"
+            "en": "New York City Death Index, 1862-1948"
+          },
+          "Смерти в Нью-Йорке, 1866-1948": {
+            "en": "New York City Deaths, 1866-1948"
+          },
+          "Индекс смертей штата Нью-Йорк, 1880-2017": {
+            "en": "New York State Deaths, 1880-2017"
+          },
+          "Новая Зеландия, Индекс записей о смерти, 1840-2021": {
+            "en": "New Zealand, Death Index, 1840-2021"
+          },
+          "Новая Зеландия, каталог захоронений, 1840-2008": {
+            "en": "New Zealand, Index of Burials, 1840-2008"
+          },
+          "Tributes.com": {
+            "en": "Newspaper and Funeral Home Obituaries"
           },
           "Южная Каролина, записи о смерти, 1915-1943": {
             "en": "Newton Genealogy (1915)"
           },
           "Северная Каролина, записи о смерти, 1906-1930": {
-            "en": "North Carolina records o death 1906-1930"
+            "en": "North Carolina, Deaths, 1906-1930"
           },
           "Северная Каролина, записи о смерти, 1931-1994": {
-            "en": "North Carolina records o death 1931-1994"
+            "en": "North Carolina, Deaths, 1931-1994"
           },
-          "Новая Зеландия, Индекс записей о смерти, 1840-2021": {
-            "en": "Novaya Zealand index records o death 1840-2021"
-          },
-          "Новая Зеландия, каталог захоронений, 1840-2008": {
-            "en": "Novaya Zealand katalog burial 1840-2008"
-          },
-          "Некрологи Австралии, 1860-2019": {
-            "en": "Obituary Austria 1860-2019"
+          "Смерти в Огайо": {
+            "en": "Ohio Deaths"
           },
           "Некрологи Огайо": {
-            "en": "Ohio Births"
-          },
-          "Реестр захоронений, приход Лейчестершир": {
-            "en": "Records burial parish leichestershir"
+            "en": "Ohio Obituaries"
           },
           "Реестр смертности в Пенсильвании, 1906-1964": {
-            "en": "Records death v pension 1906-1964"
+            "en": "Pennsylvania Death Index, 1906-1964"
+          },
+          "Реестр захоронений, приход Лейчестершир": {
+            "en": "Records burials parish leichestershir"
           },
           "Записи о смертях в Западной Вирджинии": {
-            "en": "Records o death v zapadnoi Virginia"
-          },
-          "Реестр записей регистрации смерти, штат Калифорния, 1940 - 1997 годов": {
-            "en": "Records records registration death state California 1940 - 1997 godov"
+            "en": "Records death in zapadnoi Virginia"
           },
           "Реестр записей регистрации смерти, штат Кентукки, 1900 - 1999 годов": {
-            "en": "Records records registration death state Kentucky 1900 - 1999 godov"
-          },
-          "Реестр записей регистрации смерти, штат Миссури, 1910 - 1960 годов": {
-            "en": "Records records registration death state Missouri 1910 - 1960 godov"
+            "en": "Records records registration deaths state Kentucky 1900 - 1999 godov"
           },
           "Записи регистрации смерти, штат Коннектикут, 1949-2012": {
-            "en": "Records registration death state Connecticut 1949-2012"
-          },
-          "Индекс некрологов Соединенных Штатов с OldNews.com": {
-            "en": "Russians Immigrating to the United States"
+            "en": "Records registration deaths state Connecticut 1949-2012"
           },
           "Шотландия, Надгробные камни и мемориалы": {
             "en": "Scotland nadgrobnye kamni & memorialy"
           },
           "Южная Каролина, округ Гринвилл, некрологи и извещения о смерти": {
-            "en": "South Carolina county grinvill obituary & izvescheniya o death"
+            "en": "South Carolina county grinvill obituary & izvescheniya deaths"
           },
           "Южная Каролина, Некрологи": {
             "en": "South Carolina obituary"
           },
-          "Миссури, Сент-Луис, Уведомления о смерти": {
-            "en": "St. Louis, Missouri Death Notices"
-          },
           "Свидетельства о смерти Аризоны": {
-            "en": "Svidetelstva o death Arizona"
+            "en": "Svidetelstva deaths Arizona"
           },
           "Реестр записей регистрации смерти, штат Теннесси, 1908 - 1933 годов": {
             "en": "Tennessee Death Records, 1908–1933"
           },
-          "Флорида, окружные смерти": {
-            "en": "The Florida Gazetteer"
-          },
-          "Tributes.com": {
-            "en": "Tributes.com"
+          "Смерти в Техасе": {
+            "en": "Texas Deaths"
           },
           "Каталог Social Security Death (SSDI)": {
             "en": "U.S. Social Security Death Index (SSDI)"
           },
           "Смерти в Соединенном Королевстве, 1980-2024": {
-            "en": "United Kingdom Deaths, 1980–2024"
+            "en": "United Kingdom Deaths, 1980-2024"
           },
           "Соединенное Королевство, Выборочный указатель захоронений и кремаций, 1840-2014": {
-            "en": "United Kingdom vyborochnyi index burial & kremacii 1840-2014"
-          },
-          "Соединенные Штаты и Канада, Каталог некрологов, 1900–2019 годы": {
-            "en": "United state & Canada katalog obituary 1900 2019 gody"
-          },
-          "Соединенные Штаты, Заявления на пособия для умерших ветеранов": {
-            "en": "United state applications na benefits dlya deceased veteran"
-          },
-          "Соединенные Штаты, захоронения ветеранов": {
-            "en": "United state burial veteran"
+            "en": "United Kingdom, Select Burial and Cremation Index, 1840-2014"
           },
           "Соединенные Штаты, Калифорния Смерти, 1905-1939": {
-            "en": "United state California death 1905-1939"
+            "en": "United state California deaths 1905-1939"
+          },
+          "Соединенные Штаты и Канада, Каталог некрологов, 1900–2019 годы": {
+            "en": "United States and Canada, Index of Obituaries, 1900-2019"
+          },
+          "Индекс некрологов Соединенных Штатов с OldNews.com": {
+            "en": "United States Obituary Index from OldNews.com"
+          },
+          "Индекс некрологов Соединенных Штатов из онлайн-источников": {
+            "en": "United States Obituary Index from Online Sources"
+          },
+          "Соединенные Штаты, Заявления на пособия для умерших ветеранов": {
+            "en": "United States, Deceased Veteran Benefit Claims"
+          },
+          "Соединенные Штаты, захоронения ветеранов": {
+            "en": "United States, Veterans Burials"
+          },
+          "Захоронения Юты": {
+            "en": "Utah Burials"
           },
           "Уэльс, приходские записи о смертях и захоронениях": {
-            "en": "Wales parish records o death & burial"
+            "en": "Wales parish records death & burials"
           },
           "Вашингтон, записи о смерти, 1907-1960": {
-            "en": "Washington Death Records, 1907–1960"
+            "en": "Washington, Death Certificates, 1907-1960"
           },
           "Смерти в Висконсине": {
-            "en": "Wisconsin Divorces"
+            "en": "Wisconsin Deaths"
           }
         }
       },
@@ -875,7 +875,7 @@
             "en": "Canada, New Brunswick Marriages"
           },
           "Канада, супружеские пары Квебека": {
-            "en": "Canada, People of Quebec"
+            "en": "Canada, Quebec Couples"
           },
           "Канада, Квебек: Браки": {
             "en": "Canada, Quebec Marriages"
@@ -894,9 +894,6 @@
           },
           "Чехия, Моравско-Силезский регион, Браки Опавы, 1800-1945": {
             "en": "Czechia, Moravian-Silesian Region, Opava Marriages, 1800-1945"
-          },
-          "Разводы в Уисконсине": {
-            "en": "Divorce v uiskonsine"
           },
           "Англия и Уэльс, реестр записей о бракосочетании, 1837-2005": {
             "en": "England & Wales, Marriage Index, 1837-2005"
@@ -955,8 +952,11 @@
           "Реестр записей регистрации бракосочетания, штат Иллинойс, 1763 - 1900 годов": {
             "en": "Illinois Marriages, 1763 - 1900"
           },
-          "Индиана, записи о бракосочетании": {
+          "Браки в Индиане": {
             "en": "Indiana Marriages"
+          },
+          "Индиана, записи о бракосочетании": {
+            "en": "Indiana, Marriages"
           },
           "Индиана, записи о браках": {
             "en": "Indiana, Marriages"
@@ -981,15 +981,6 @@
           },
           "Реестр записей регистрации бракосочетания, штат Мэн, 1892 - 1966 годов": {
             "en": "Maine Marriages, 1892 - 1966"
-          },
-          "Браки Нью-Гэмпшира": {
-            "en": "Marriage nyu-gempshira"
-          },
-          "Браки в Индиане": {
-            "en": "Marriage v India"
-          },
-          "Браки в Пенсильвании": {
-            "en": "Marriage v pension"
           },
           "Мэриленд, записи о браках": {
             "en": "Maryland Marriages"
@@ -1027,6 +1018,9 @@
           "Невада, записи о бракосочетании": {
             "en": "Nevada, Marriages"
           },
+          "Браки Нью-Гэмпшира": {
+            "en": "New Hampshire Marriages"
+          },
           "Разрешения на вступление в брак Нью-Джерси, 1915-2017": {
             "en": "New Jersey Marriage Licenses, 1915-2017"
           },
@@ -1063,6 +1057,9 @@
           "Огайо, браки округа Франклин": {
             "en": "Ohio, Franklin County Marriages"
           },
+          "Браки в Пенсильвании": {
+            "en": "Pennsylvania Marriages"
+          },
           "Записи о браках Квебека, 1926-1997": {
             "en": "Quebec Marriage Returns, 1926-1997"
           },
@@ -1090,10 +1087,10 @@
           "Браки и разводы в Техасе": {
             "en": "Texas Marriages and Divorces"
           },
-          "Техас, окружные свидетельства о браке": {
+          "Техас, окружной реестр бракосочетаний": {
             "en": "Texas, County Marriage Index"
           },
-          "Техас, окружной реестр бракосочетаний": {
+          "Техас, окружные свидетельства о браке": {
             "en": "Texas, County Marriage Licenses"
           },
           "Соединенные Штаты, браки из газет на OldNews.com": {
@@ -1122,6 +1119,9 @@
           },
           "Западные Соединенные Штаты, Индекс браков, 1838-2016": {
             "en": "Western United States, Marriage Index, 1838-2016"
+          },
+          "Разводы в Висконсине": {
+            "en": "Wisconsin Divorces"
           },
           "Висконсин, Браки": {
             "en": "Wisconsin Marriages"
@@ -1189,7 +1189,7 @@
             "en": "Canada, Montreal Jewish Vital Records"
           },
           "Канада, жители Квебека": {
-            "en": "Canada, Quebec Couples"
+            "en": "Canada, People of Quebec"
           },
           "Canterburie Cathedrall Register": {
             "en": "Canterburie Cathedrall Register"
@@ -1448,7 +1448,10 @@
         "en": "Australia, Queensland Licensed Victuallers, 1900-1914"
       },
       "Авторы научных статей": {
-        "en": "Avtory nauchnyh statei"
+        "en": "Authors of Scholarly Articles"
+      },
+      "Выбор изданных источников": {
+        "en": "Compilation of Published Sources"
       },
       "Deutsches Geschlechterbuch, Volume 20, 1912": {
         "en": "Deutsches Geschlechterbuch, Volume 20, 1912"
@@ -1505,16 +1508,13 @@
         "en": "Pinkas HaNitzolim, Volume I, Register of Jewish Survivors from JewishGen"
       },
       "Пинкас Ха-Ницолим, Том I, Регистр еврейских выживших из JewishGen": {
-        "en": "Pinkas HaNitzolim, Volume II, Register of Jewish Survivors from JewishGen"
+        "en": "Pinkas HaNitzolim, Volume I, Register of Jewish Survivors from JewishGen"
       },
       "Шотландия, Ренфрушир, упоминания в газетах Инверклайда, 1794-1918": {
         "en": "Scotland, Renfrewshire, Inverclyde Newspaper Mentions, 1794-1918"
       },
       "Scottish Notes And Queries, Series 2, Volume 1, July 1899 - June 1900": {
         "en": "Scottish Notes And Queries, Series 2, Volume 1, July 1899 - June 1900"
-      },
-      "Выбор изданных источников": {
-        "en": "Selection of Published Sources"
       },
       "Шарит а-Платах, выжившие в Холокосте": {
         "en": "Sharit haPlatah, Holocaust Survivors from JewishGen"
@@ -1536,6 +1536,44 @@
   "Перепись и списки избирателей": {
     "en": "Census & Voter Lists",
     "children": {
+      "Списки избирателей Австралии": {
+        "en": "Australian Electoral Rolls",
+        "children": {
+          "Списки избирателей Австралии, 1893-1949": {
+            "en": "Australia Electoral Rolls, 1893-1949"
+          },
+          "Queensland State Electoral Roll 1900": {
+            "en": "Queensland State Electoral Roll 1900"
+          },
+          "Избирательные списки Квинсленда 1922 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1922"
+          },
+          "Избирательные списки Квинсленда 1903 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1934"
+          },
+          "Избирательные списки Квинсленда 1934 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1934"
+          },
+          "Избирательные списки Квинсленда 1913 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1941"
+          },
+          "Избирательные списки Квинсленда 1941 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1941"
+          },
+          "Избирательные списки Квинсленда 1949 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1949"
+          },
+          "Избирательные списки Квинсленда 1906 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1959"
+          },
+          "Избирательные списки Квинсленда 1959 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1959"
+          },
+          "Тасмания, Австралия, Избирательные списки 1916 года": {
+            "en": "Tasmania, Australia, Electoral Rolls 1916"
+          }
+        }
+      },
       "Перепись Канады": {
         "en": "Canadian Census",
         "children": {
@@ -1544,9 +1582,6 @@
           },
           "Канада, нижняя Канада, перепись населения, 1842": {
             "en": "1842 Canada, Lower Canada Census"
-          },
-          "Перепись населения Канады 1851 года": {
-            "en": "1851 Canada Census"
           },
           "Перепись 1861 года в Канаде": {
             "en": "1861 Canada Census"
@@ -1572,6 +1607,9 @@
           "Перепись населения Канады 1916 года по Альберте, Саскачевану и Манитобе": {
             "en": "1916 Canada Census of Alberta, Saskatchewan, and Manitoba"
           },
+          "Перепись населения Канады 1851 года": {
+            "en": "1921 Canada Census"
+          },
           "Перепись населения Канады 1921 года": {
             "en": "1921 Canada Census"
           },
@@ -1583,185 +1621,6 @@
           },
           "Канада, Новая Шотландия: переписи населения, оценка имущества и подушные налоги, 1770-1841": {
             "en": "Canada, Nova Scotia Census, Property Assessments and Poll Taxes, 1770-1841"
-          }
-        }
-      },
-      "Перепись США": {
-        "en": "Census United States",
-        "children": {
-          "Федеральная перепись США 1790 года": {
-            "en": "1790 United States Federal Census"
-          },
-          "Федеральная перепись США 1800 года": {
-            "en": "1800 United States Federal Census"
-          },
-          "Федеральная перепись США 1810 года": {
-            "en": "1810 United States Federal Census"
-          },
-          "Федеральная перепись США 1820 года": {
-            "en": "1820 United States Federal Census"
-          },
-          "Федеральная перепись США 1830 года": {
-            "en": "1830 United States Federal Census"
-          },
-          "Федеральная перепись США 1840 года": {
-            "en": "1840 United States Federal Census"
-          },
-          "Федеральная перепись США 1850 года": {
-            "en": "1850 United States Federal Census"
-          },
-          "Федеральная перепись населения США 1850 года (плюс список рабов)": {
-            "en": "1850 United States Federal Census (Mortality Schedule)"
-          },
-          "Перепись населения США 1850 года (диаграмма смертности)": {
-            "en": "1850 United States Federal Census (Slave Schedule)"
-          },
-          "Калифорния, государственная перепись, 1852": {
-            "en": "1852 California State Census"
-          },
-          "Алабама, государственная перепись, 1855": {
-            "en": "1855 Alabama State Census"
-          },
-          "Перепись населения штата Массачусетс 1855 года": {
-            "en": "1855 Massachusetts State Census"
-          },
-          "Миннесота, территориальная перепись, 1857": {
-            "en": "1857 Minnesota Territorial Census"
-          },
-          "Федеральная перепись США 1860 года": {
-            "en": "1860 United States Federal Census"
-          },
-          "Перепись населения штата Массачусетс 1865 года": {
-            "en": "1865 Massachusetts State Census"
-          },
-          "Миннесота, государственная перепись, 1865": {
-            "en": "1865 Minnesota State Census"
-          },
-          "Алабама, государственная перепись, 1866": {
-            "en": "1866 Alabama State Census"
-          },
-          "Федеральная перепись США 1870 года": {
-            "en": "1870 United States Federal Census"
-          },
-          "Миннесота, государственная перепись, 1875": {
-            "en": "1875 Minnesota State Census"
-          },
-          "Федеральная перепись США 1880 года": {
-            "en": "1880 United States Federal Census"
-          },
-          "Колорадо, государственная перепись, 1885": {
-            "en": "1885 Colorado State Census"
-          },
-          "Перепись населения Территории Дакота 1885 года": {
-            "en": "1885 Dakota Territory Census"
-          },
-          "Флорида, государственная перепись, 1885": {
-            "en": "1885 Florida State Census"
-          },
-          "Миннесота, государственная перепись, 1885": {
-            "en": "1885 Minnesota State Census"
-          },
-          "Перепись населения штата Нью-Джерси 1885 года": {
-            "en": "1885 New Jersey State Census"
-          },
-          "Полицейская перепись населения Нью-Йорка 1890 года": {
-            "en": "1890 New York City Police Census"
-          },
-          "Территориальная перепись населения Оклахомы 1890 года": {
-            "en": "1890 Oklahoma Territorial Census"
-          },
-          "Федеральная перепись США 1890 года": {
-            "en": "1890 United States Federal Census"
-          },
-          "Перепись населения штата Канзас 1895 года": {
-            "en": "1895 Kansas State Census"
-          },
-          "Миннесота, государственная перепись, 1895": {
-            "en": "1895 Minnesota State Census"
-          },
-          "Федеральная перепись США 1900 года": {
-            "en": "1900 United States Federal Census"
-          },
-          "Перепись населения штата Айова 1905 года": {
-            "en": "1905 Iowa State Census"
-          },
-          "Перепись населения штата Канзас 1905 года": {
-            "en": "1905 Kansas State Census"
-          },
-          "Миннесота, государственная перепись, 1905": {
-            "en": "1905 Minnesota State Census"
-          },
-          "Перепись населения штата Нью-Джерси 1905 года": {
-            "en": "1905 New Jersey State Census"
-          },
-          "Южная Дакота, государственная перепись, 1905": {
-            "en": "1905 South Dakota State Census"
-          },
-          "Федеральная перепись США 1910 года": {
-            "en": "1910 United States Federal Census"
-          },
-          "Перепись населения штата Канзас 1915 года": {
-            "en": "1915 Kansas State Census"
-          },
-          "Перепись населения штата Нью-Джерси 1915 года": {
-            "en": "1915 New Jersey State Census"
-          },
-          "Южная Дакота, государственная перепись, 1915": {
-            "en": "1915 South Dakota State Census"
-          },
-          "Федеральная перепись США 1920 года": {
-            "en": "1920 United States Federal Census"
-          },
-          "Перепись населения штата Канзас 1925 года": {
-            "en": "1925 Kansas State Census"
-          },
-          "Южная Дакота, государственная перепись, 1925": {
-            "en": "1925 South Dakota State Census"
-          },
-          "США, перепись моряков торгового флота, 1930": {
-            "en": "1930 United States Census of Merchant Seamen"
-          },
-          "Федеральная перепись США 1930 года": {
-            "en": "1930 United States Federal Census"
-          },
-          "Флорида, государственная перепись, 1935": {
-            "en": "1935 Florida State Census"
-          },
-          "Южная Дакота, государственная перепись, 1935": {
-            "en": "1935 South Dakota State Census"
-          },
-          "Федеральная перепись США 1940 года": {
-            "en": "1940 United States Federal Census"
-          },
-          "Флорида, государственная перепись, 1945": {
-            "en": "1945 Florida State Census"
-          },
-          "Южная Дакота, государственная перепись, 1945": {
-            "en": "1945 South Dakota State Census"
-          },
-          "Федеральная перепись США 1950 года": {
-            "en": "1950 United States Federal Census"
-          },
-          "Graves County, Kentucky Census of 1850": {
-            "en": "Graves County, Kentucky Census of 1850"
-          },
-          "Heads of Families at the First Census of the United States Taken in the Year 1790: North Carolina": {
-            "en": "Heads of Families at the First Census of the United States Taken in the Year 1790: North Carolina"
-          },
-          "Айдахо, Реконструированная перепись населения, 1890": {
-            "en": "Idaho, Reconstructed Census, 1890"
-          },
-          "Оклахома, Перепись населения по оказанию помощи безработным, 1933": {
-            "en": "Oklahoma, Unemployed Relief Census, 1933"
-          },
-          "Орегон, ранние жители Орегона": {
-            "en": "Oregon, Early Oregonians"
-          },
-          "Пенсильвания, округ Честер, Семилетняя перепись населения": {
-            "en": "Pennsylvania, Chester County Septennial Census"
-          },
-          "Stewart County, Tennessee, 1860 Census": {
-            "en": "Stewart County, Tennessee, 1860 Census"
           }
         }
       },
@@ -1812,41 +1671,134 @@
           }
         }
       },
-      "Списки избирателей Австралии": {
-        "en": "New York City Voter Lists, 1924",
+      "Перепись населения северных народов": {
+        "en": "Nordic Census",
         "children": {
-          "Списки избирателей Австралии, 1893-1949": {
-            "en": "Australia Electoral Rolls, 1893-1949"
+          "Перепись населения Дании 1787 года": {
+            "en": "1787 Denmark Census"
           },
-          "Queensland State Electoral Roll 1900": {
-            "en": "Queensland State Electoral Roll 1900"
+          "Перепись населения Дании 1801 года": {
+            "en": "1801 Denmark Census"
           },
-          "Избирательные списки Квинсленда 1903 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1903"
+          "Материалы переписи 1801 года в Норвегии": {
+            "en": "1801 Norway Census"
           },
-          "Избирательные списки Квинсленда 1906 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1906"
+          "Перепись населения Дании 1834 года": {
+            "en": "1834 Denmark Census"
           },
-          "Избирательные списки Квинсленда 1913 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1913"
+          "Перепись населения Дании 1835 года (герцогства Шлезвиг и Гольштейн)": {
+            "en": "1835 Denmark Census (Duchies of Schleswig and Holstein)"
           },
-          "Избирательные списки Квинсленда 1922 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1922"
+          "Перепись населения Дании 1840 года": {
+            "en": "1840 Denmark Census"
           },
-          "Избирательные списки Квинсленда 1934 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1934"
+          "Перепись населения Дании 1845 года": {
+            "en": "1845 Denmark Census"
           },
-          "Избирательные списки Квинсленда 1941 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1941"
+          "Перепись населения Дании 1850 года": {
+            "en": "1850 Denmark Census"
           },
-          "Избирательные списки Квинсленда 1949 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1949"
+          "Перепись населения Дании 1855 года": {
+            "en": "1855 Denmark Census"
           },
-          "Избирательные списки Квинсленда 1959 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1959"
+          "Перепись населения Дании 1860 года": {
+            "en": "1860 Denmark Census"
           },
-          "Тасмания, Австралия, Избирательные списки 1916 года": {
-            "en": "Tasmania, Australia, Electoral Rolls 1916"
+          "Материалы переписи 1865 года в Норвегии": {
+            "en": "1865 Norway Census"
+          },
+          "Перепись в Дании 1870 года": {
+            "en": "1870 Denmark Census"
+          },
+          "Перепись населения в Норвегии 1870 года": {
+            "en": "1870 Norway Census"
+          },
+          "Норвегия, перепись населения, 1875": {
+            "en": "1875 Norway Census"
+          },
+          "Перепись в Дании 1880 года": {
+            "en": "1880 Denmark Census"
+          },
+          "Перепись населения Дании 1890 года": {
+            "en": "1890 Denmark Census"
+          },
+          "Материалы Норвежской переписи 1891 года900 Sweden Census": {
+            "en": "1891 Norway Census"
+          },
+          "Перепись населения Норвегии 1900 года": {
+            "en": "1900 Norway Census"
+          },
+          "Перепись населения Дании 1901 года": {
+            "en": "1901 Denmark Census"
+          },
+          "Перепись в Дании 1906 года": {
+            "en": "1906 Denmark Census"
+          },
+          "Перепись населения Норвегии 1910 года": {
+            "en": "1910 Norway Census"
+          },
+          "Перепись населения Швеции 1910 года": {
+            "en": "1910 Sweden Census"
+          },
+          "Перепись населения Дании 1911 года": {
+            "en": "1911 Denmark Census"
+          },
+          "Датская перепись 1916 года": {
+            "en": "1916 Denmark Census"
+          },
+          "Перепись населения Дании 1921 года": {
+            "en": "1921 Denmark Census"
+          },
+          "Перепись населения Дании 1925 года": {
+            "en": "1925 Denmark Census"
+          },
+          "Перепись населения Дании 1930 года": {
+            "en": "1930 Denmark Census"
+          },
+          "Перепись населения Дании 1940 года": {
+            "en": "1940 Denmark Census"
+          },
+          "Перепись населения Швеции 1880 года": {
+            "en": "1940 Sweden Census"
+          },
+          "Перепись населения Швеции 1890 года": {
+            "en": "1940 Sweden Census"
+          },
+          "Перепись населения Швеции 1930 года": {
+            "en": "1940 Sweden Census"
+          },
+          "Перепись населения Швеции 1940 года": {
+            "en": "1940 Sweden Census"
+          },
+          "Дания, Копенгагенские полицейские регистрации, 1890-1923": {
+            "en": "Denmark, Copenhagen Police Registrations, 1890-1923"
+          },
+          "Финляндская церковная перепись населения и доконфирмационные книги, 1657-1915 годы": {
+            "en": "Finland Church Census and Pre-Confirmation Books, 1657-1915"
+          },
+          "Финляндия, Карелия: Причастные книги": {
+            "en": "Finland, Karelia Communion Books"
+          },
+          "Исландские переписи 1703-1920 годы": {
+            "en": "Iceland Census 1703-1920"
+          },
+          "Норвегия, Перепись населения моряков и матросов 1875 года": {
+            "en": "Norway, 1875 Sailors and Seamen Census"
+          },
+          "Норвегия, перепись населения Осло, 1901": {
+            "en": "Norway, Oslo Census, 1901"
+          },
+          "Экзаменационные реестры хозяйств Швеции 1820-1947 годов": {
+            "en": "Sweden Household Examination Books"
+          },
+          "Швеция, Стокгольм, реестр переписи мужского населения, 1909": {
+            "en": "Sweden, Stockholm Census Register of Males, 1909"
+          },
+          "Швеция, Стокгольм, Реестры переписей населения, 1800-1884": {
+            "en": "Sweden, Stockholm Census Registers, 1800-1884"
+          },
+          "Швеция, городская перепись населения Стокгольма, 1855": {
+            "en": "Sweden, Stockholm City Census, 1855"
           }
         }
       },
@@ -1861,6 +1813,9 @@
           },
           "Германия, Мекленбург-Шверин, перепись населения, 1867": {
             "en": "1867 Germany, Mecklenburg-Schwerin Census"
+          },
+          "Аргентина, национальная перепись, 1969": {
+            "en": "1869 Argentina National Census"
           },
           "Перепись населения Венгрии 1869 года от JewishGen": {
             "en": "1869 Hungary Census from JewishGen"
@@ -1889,9 +1844,6 @@
           "Алабама, книги регистрации избирателей, 1857-1868": {
             "en": "Alabama, Voter Registration Books, 1857-1868"
           },
-          "Аргентина, национальная перепись, 1969": {
-            "en": "Argentina, National Census, 1969"
-          },
           "Армения, список избирателей, 2019": {
             "en": "Armenia, Voters List 2019"
           },
@@ -1916,7 +1868,7 @@
           "Чили, избирательные списки, 2013": {
             "en": "Chile, Electoral Rolls, 2013"
           },
-          "Коста Рика, списки избирателей, 2011 - 2014": {
+          "Кост-Рика, списки избирателей, 2011 - 2014": {
             "en": "Costa Rica, Electoral Rolls, 2011 - 2014"
           },
           "Перепись населения немецких меньшинств, 1939": {
@@ -1979,6 +1931,9 @@
           "Реестр переписи населения города Тилбург, Нидерланды, 1800-1923 годов": {
             "en": "Netherlands, Tilburg Population Registers, 1800-1923"
           },
+          "Списки избирателей Нью-Йорка, 1924": {
+            "en": "New York City Voter Lists, 1924"
+          },
           "Новая Зеландия, Избирательные списки, 1881-1935": {
             "en": "New Zealand, Electoral Rolls, 1881-1935"
           },
@@ -2020,9 +1975,6 @@
           },
           "Списки избирателей Венесуэлы, 2006 - 2007 годов": {
             "en": "Venezuela Voter Lists, 2006 - 2007"
-          },
-          "Списки избирателей Нью-Йорка, 1924": {
-            "en": "Western Australia PO Directory 1924"
           }
         }
       },
@@ -2074,11 +2026,11 @@
           "Перепись населения Шотландии 1891 года": {
             "en": "1891 Scotland Census"
           },
+          "Перепись населения Ирландии 1901 года": {
+            "en": "1901 Denmark Census"
+          },
           "Перепись населения Англии и Уэльса 1901 года": {
             "en": "1901 England & Wales Census"
-          },
-          "Перепись населения Ирландии 1901 года": {
-            "en": "1901 Ireland Census"
           },
           "Перепись населения Шотландии 1901 года": {
             "en": "1901 Scotland Census"
@@ -2106,134 +2058,182 @@
           }
         }
       },
-      "Перепись населения северных народов": {
+      "Перепись США": {
         "en": "U.S. Census",
         "children": {
-          "Перепись населения Дании 1787 года": {
-            "en": "1787 Denmark Census"
+          "Федеральная перепись США 1790 года": {
+            "en": "1790 United States Federal Census"
           },
-          "Перепись населения Дании 1801 года": {
-            "en": "1801 Denmark Census"
+          "Федеральная перепись США 1800 года": {
+            "en": "1800 United States Federal Census"
           },
-          "Материалы переписи 1801 года в Норвегии": {
-            "en": "1801 Norway Census"
+          "Федеральная перепись США 1810 года": {
+            "en": "1810 United States Federal Census"
           },
-          "Перепись населения Дании 1834 года": {
-            "en": "1834 Denmark Census"
+          "Федеральная перепись США 1820 года": {
+            "en": "1820 United States Federal Census"
           },
-          "Перепись населения Дании 1835 года (герцогства Шлезвиг и Гольштейн)": {
-            "en": "1835 Denmark Census (Duchies of Schleswig and Holstein)"
+          "Федеральная перепись США 1830 года": {
+            "en": "1830 United States Federal Census"
           },
-          "Перепись населения Дании 1840 года": {
-            "en": "1840 Denmark Census"
+          "Федеральная перепись США 1840 года": {
+            "en": "1840 United States Federal Census"
           },
-          "Перепись населения Дании 1845 года": {
-            "en": "1845 Denmark Census"
+          "Федеральная перепись США 1850 года": {
+            "en": "1850 United States Federal Census"
           },
-          "Перепись населения Дании 1850 года": {
-            "en": "1850 Denmark Census"
+          "Перепись населения США 1850 года (диаграмма смертности)": {
+            "en": "1850 United States Federal Census (Mortality Schedule)"
           },
-          "Перепись населения Дании 1855 года": {
-            "en": "1855 Denmark Census"
+          "Федеральная перепись населения США 1850 года (плюс список рабов)": {
+            "en": "1850 United States Federal Census (Slave Schedule)"
           },
-          "Перепись населения Дании 1860 года": {
-            "en": "1860 Denmark Census"
+          "Калифорния, государственная перепись, 1852": {
+            "en": "1852 California State Census"
           },
-          "Материалы переписи 1865 года в Норвегии": {
-            "en": "1865 Norway Census"
+          "Алабама, государственная перепись, 1855": {
+            "en": "1855 Alabama State Census"
           },
-          "Перепись в Дании 1870 года": {
-            "en": "1870 Denmark Census"
+          "Миннесота, территориальная перепись, 1857": {
+            "en": "1857 Minnesota Territorial Census"
           },
-          "Перепись населения в Норвегии 1870 года": {
-            "en": "1870 Norway Census"
+          "Федеральная перепись США 1860 года": {
+            "en": "1860 United States Federal Census"
           },
-          "Норвегия, перепись населения, 1875": {
-            "en": "1875 Norway Census"
+          "Перепись населения штата Массачусетс 1855 года": {
+            "en": "1865 Massachusetts State Census"
           },
-          "Перепись в Дании 1880 года": {
-            "en": "1880 Denmark Census"
+          "Перепись населения штата Массачусетс 1865 года": {
+            "en": "1865 Massachusetts State Census"
           },
-          "Перепись населения Швеции 1880 года": {
-            "en": "1880 Sweden Census"
+          "Миннесота, государственная перепись, 1865": {
+            "en": "1865 Minnesota State Census"
           },
-          "Перепись населения Дании 1890 года": {
-            "en": "1890 Denmark Census"
+          "Алабама, государственная перепись, 1866": {
+            "en": "1866 Alabama State Census"
           },
-          "Перепись населения Швеции 1890 года": {
-            "en": "1890 Sweden Census"
+          "Федеральная перепись США 1870 года": {
+            "en": "1870 United States Federal Census"
           },
-          "Материалы Норвежской переписи 1891 года900 Sweden Census": {
-            "en": "1891 Norway Census"
+          "Миннесота, государственная перепись, 1875": {
+            "en": "1875 Minnesota State Census"
           },
-          "Перепись населения Норвегии 1900 года": {
-            "en": "1900 Norway Census"
+          "Федеральная перепись США 1880 года": {
+            "en": "1880 United States Federal Census"
           },
-          "Перепись населения Дании 1901 года": {
-            "en": "1901 Denmark Census"
+          "Колорадо, государственная перепись, 1885": {
+            "en": "1885 Colorado State Census"
           },
-          "Перепись в Дании 1906 года": {
-            "en": "1906 Denmark Census"
+          "Перепись населения Территории Дакота 1885 года": {
+            "en": "1885 Dakota Territory Census"
           },
-          "Перепись населения Норвегии 1910 года": {
-            "en": "1910 Norway Census"
+          "Миннесота, государственная перепись, 1885": {
+            "en": "1885 Minnesota State Census"
           },
-          "Перепись населения Швеции 1910 года": {
-            "en": "1910 Sweden Census"
+          "Перепись населения штата Нью-Джерси 1885 года": {
+            "en": "1885 New Jersey State Census"
           },
-          "Перепись населения Дании 1911 года": {
-            "en": "1911 Denmark Census"
+          "Полицейская перепись населения Нью-Йорка 1890 года": {
+            "en": "1890 New York City Police Census"
           },
-          "Датская перепись 1916 года": {
-            "en": "1916 Denmark Census"
+          "Территориальная перепись населения Оклахомы 1890 года": {
+            "en": "1890 Oklahoma Territorial Census"
           },
-          "Перепись населения Дании 1921 года": {
-            "en": "1921 Denmark Census"
+          "Перепись населения штата Канзас 1895 года": {
+            "en": "1895 Kansas State Census"
           },
-          "Перепись населения Дании 1925 года": {
-            "en": "1925 Denmark Census"
+          "Миннесота, государственная перепись, 1895": {
+            "en": "1895 Minnesota State Census"
           },
-          "Перепись населения Дании 1930 года": {
-            "en": "1930 Denmark Census"
+          "Федеральная перепись США 1900 года": {
+            "en": "1900 United States Federal Census"
           },
-          "Перепись населения Швеции 1930 года": {
-            "en": "1930 Sweden Census"
+          "Перепись населения штата Айова 1905 года": {
+            "en": "1905 Iowa State Census"
           },
-          "Перепись населения Дании 1940 года": {
-            "en": "1940 Denmark Census"
+          "Перепись населения штата Канзас 1905 года": {
+            "en": "1905 Kansas State Census"
           },
-          "Перепись населения Швеции 1940 года": {
-            "en": "1940 Sweden Census"
+          "Миннесота, государственная перепись, 1905": {
+            "en": "1905 Minnesota State Census"
           },
-          "Дания, Копенгагенские полицейские регистрации, 1890-1923": {
-            "en": "Denmark, Copenhagen Police Registrations, 1890-1923"
+          "Перепись населения штата Нью-Джерси 1905 года": {
+            "en": "1905 New Jersey State Census"
           },
-          "Финляндская церковная перепись населения и доконфирмационные книги, 1657-1915 годы": {
-            "en": "Finland Church Census and Pre-Confirmation Books, 1657-1915"
+          "Южная Дакота, государственная перепись, 1905": {
+            "en": "1905 South Dakota State Census"
           },
-          "Финляндия, Карелия: Причастные книги": {
-            "en": "Finland, Karelia Communion Books"
+          "Федеральная перепись США 1910 года": {
+            "en": "1910 United States Federal Census"
           },
-          "Исландские переписи 1703-1920 годы": {
-            "en": "Iceland Census 1703-1920"
+          "Перепись населения штата Канзас 1915 года": {
+            "en": "1915 Kansas State Census"
           },
-          "Норвегия, Перепись населения моряков и матросов 1875 года": {
-            "en": "Norway, 1875 Sailors and Seamen Census"
+          "Перепись населения штата Нью-Джерси 1915 года": {
+            "en": "1915 New Jersey State Census"
           },
-          "Норвегия, перепись населения Осло, 1901": {
-            "en": "Norway, Oslo Census, 1901"
+          "Южная Дакота, государственная перепись, 1915": {
+            "en": "1915 South Dakota State Census"
           },
-          "Экзаменационные реестры хозяйств Швеции 1820-1947 годов": {
-            "en": "Sweden, Household Examination Books, 1820–1947"
+          "Федеральная перепись США 1920 года": {
+            "en": "1920 United States Federal Census"
           },
-          "Швеция, Стокгольм, реестр переписи мужского населения, 1909": {
-            "en": "Sweden, Stockholm Census Register of Males, 1909"
+          "Перепись населения штата Канзас 1925 года": {
+            "en": "1925 Kansas State Census"
           },
-          "Швеция, Стокгольм, Реестры переписей населения, 1800-1884": {
-            "en": "Sweden, Stockholm Census Registers, 1800-1884"
+          "Южная Дакота, государственная перепись, 1925": {
+            "en": "1925 South Dakota State Census"
           },
-          "Швеция, городская перепись населения Стокгольма, 1855": {
-            "en": "Sweden, Stockholm City Census, 1855"
+          "США, перепись моряков торгового флота, 1930": {
+            "en": "1930 United States Census of Merchant Seamen"
+          },
+          "Федеральная перепись США 1930 года": {
+            "en": "1930 United States Federal Census"
+          },
+          "Флорида, государственная перепись, 1935": {
+            "en": "1935 Florida State Census"
+          },
+          "Южная Дакота, государственная перепись, 1935": {
+            "en": "1935 South Dakota State Census"
+          },
+          "Федеральная перепись США 1940 года": {
+            "en": "1940 United States Federal Census"
+          },
+          "Флорида, государственная перепись, 1885": {
+            "en": "1945 Florida State Census"
+          },
+          "Флорида, государственная перепись, 1945": {
+            "en": "1945 Florida State Census"
+          },
+          "Южная Дакота, государственная перепись, 1945": {
+            "en": "1945 South Dakota State Census"
+          },
+          "Федеральная перепись США 1890 года": {
+            "en": "1950 United States Federal Census"
+          },
+          "Федеральная перепись США 1950 года": {
+            "en": "1950 United States Federal Census"
+          },
+          "Graves County, Kentucky Census of 1850": {
+            "en": "Graves County, Kentucky Census of 1850"
+          },
+          "Heads of Families at the First Census of the United States Taken in the Year 1790: North Carolina": {
+            "en": "Heads of Families at the First Census of the United States Taken in the Year 1790: North Carolina"
+          },
+          "Айдахо, Реконструированная перепись населения, 1890": {
+            "en": "Idaho, Reconstructed Census, 1890"
+          },
+          "Оклахома, Перепись населения по оказанию помощи безработным, 1933": {
+            "en": "Oklahoma, Unemployed Relief Census, 1933"
+          },
+          "Орегон, ранние жители Орегона": {
+            "en": "Oregon, Early Oregonians"
+          },
+          "Пенсильвания, округ Честер, Семилетняя перепись населения": {
+            "en": "Pennsylvania, Chester County Septennial Census"
+          },
+          "Stewart County, Tennessee, 1860 Census": {
+            "en": "Stewart County, Tennessee, 1860 Census"
           }
         }
       }
@@ -2302,17 +2302,17 @@
           "Каталог Генри и Коухлана Корка и Мюнстера, Ирландия, 1867 год": {
             "en": "Henry & Coughlan's General Directory of Cork & Munster, Ireland 1867"
           },
+          "Каталог знаменитых шахматистов": {
+            "en": "Index of Leading Chess Players"
+          },
           "Изобретатели исторических патентов": {
-            "en": "History of Spartanburg County"
+            "en": "Inventors of historical patents"
           },
           "Ирландия, Северная Ирландия, телефонные справочники": {
             "en": "Ireland, Northern Ireland, Telephone Directories"
           },
           "Италия, телефонные справочники": {
             "en": "Italy, Telephone Directories"
-          },
-          "Каталог знаменитых шахматистов": {
-            "en": "Katalog famous shahmatistov"
           },
           "Люксембург, телефонные справочники": {
             "en": "Luxembourg, Telephone Directories"
@@ -2369,10 +2369,10 @@
       "Geni World Family Tree": {
         "en": "Geni World Family Tree"
       },
-      "Семейные деревья MyHeritage": {
+      "Семейные сайты MyHeritage": {
         "en": "MyHeritage Family Sites"
       },
-      "Семейные сайты MyHeritage": {
+      "Семейные деревья MyHeritage": {
         "en": "MyHeritage Family Trees"
       },
       "Участники MyHeritage": {
@@ -2419,9 +2419,6 @@
           "Court And City Register, For England, Scotland, Ireland, And the Colonies, 1781": {
             "en": "Court And City Register, For England, Scotland, Ireland, And the Colonies, 1781"
           },
-          "Судебные дела в Индиане": {
-            "en": "Court dela v India"
-          },
           "Digested Summary of Private Claims, Volume 3": {
             "en": "Digested Summary of Private Claims, Volume 3"
           },
@@ -2431,14 +2428,17 @@
           "Early Parishes and Hundreds, Baltimore County, Md., Including Tax Lists, Years 1692, 1694, 1695": {
             "en": "Early Parishes and Hundreds, Baltimore County, Md., Including Tax Lists, Years 1692, 1694, 1695"
           },
+          "Англия и Уэльс, Реестр рецидивистов столичной полиции": {
+            "en": "England and Wales, Metropolitan Police Register of Habitual Criminals"
+          },
           "Англия, Мидлсекс и Вестминстер: Мировые сессии": {
             "en": "England, Middlesex and Westminster Sessions of the Peace"
           },
-          "Англия и Уэльс, Реестр рецидивистов столичной полиции": {
-            "en": "Imperial Gazetteer of England And Wales, Volume"
-          },
           "Indexes to Irish Wills": {
             "en": "Indexes to Irish Wills"
+          },
+          "Судебные дела в Индиане": {
+            "en": "Indiana Court Cases"
           },
           "Индиана, Заключения": {
             "en": "Indiana, Incarcerations"
@@ -2512,11 +2512,11 @@
           "Швеция, Стокгольм, районный суд, реестры наследства умерших": {
             "en": "Sweden, Stockholm, District Court Deceased Estate Registers"
           },
-          "США, Каталог судебных дел, 1833-2018 годы": {
-            "en": "U.S. Court Records Index, 1833–2018"
-          },
           "Соединенное Королевство, Уведомления об имуществе умерших": {
             "en": "United Kingdom, Deceased Estates Notices"
+          },
+          "США, Каталог судебных дел, 1833-2018 годы": {
+            "en": "United States, Index of Court Cases, 1833-2018"
           },
           "Virginia Tax Payers, 1782-1787": {
             "en": "Virginia Tax Payers, 1782-1787"
@@ -2536,13 +2536,13 @@
         "en": "Government Records",
         "children": {
           "Австралия, Государственные награды и отличия": {
-            "en": "Australia go court nagrady & otlichiya"
-          },
-          "Австралия, Квинсленд: объявления для учителей": {
-            "en": "Australia Queensland obyavleniya dlya uchitelei"
+            "en": "Australia, Government Honours and Awards"
           },
           "Австралия, Новый Южный Уэльс, Документы колониального секретаря, 1788-1825": {
             "en": "Australia, New South Wales Colonial Secretary's Papers, 1788-1825"
+          },
+          "Австралия, Квинсленд: объявления для учителей": {
+            "en": "Australia, Queensland Teacher Announcements"
           },
           "Австралия, Южная Австралия, поступления в Королевскую больницу Аделаиды": {
             "en": "Australia, South Australia, Royal Adelaide Hospital Admissions"
@@ -2554,7 +2554,7 @@
             "en": "British Soldiers Died in the Great War, 1914 - 1919"
           },
           "Канада, Государственные отличия и награды": {
-            "en": "Canada go court otlichiya & nagrady"
+            "en": "Canada, Government Honours and Awards"
           },
           "Канада, Иммиграционный индекс «Домашних детей», 1869-1932": {
             "en": "Canada, Home Children Immigration Index, 1869-1932"
@@ -2613,11 +2613,8 @@
           "Hobart Town Gazette 1870": {
             "en": "Hobart Town Gazette 1870"
           },
-          "Флорида, Государственные служащие": {
-            "en": "Indiana Court Cases"
-          },
           "Италия, Почетные звания и награды": {
-            "en": "Italy, Military Honours and Awards"
+            "en": "Italy, Honours and Awards"
           },
           "Подписки частных лиц Лейдена, Нидерланды, 1642 - 1811 годов": {
             "en": "Netherlands, Leiden Property Ownership Records, 1642-1811"
@@ -2774,6 +2771,9 @@
           },
           "Техас, окружные налоговые чеки, 1846-1910": {
             "en": "Texas, County Tax Rolls, 1846-1910"
+          },
+          "Флорида, Государственные служащие": {
+            "en": "The Florida Gazetteer"
           },
           "Victorian Government Gazette 1851": {
             "en": "Victorian Government Gazette 1851"
@@ -2994,7 +2994,7 @@
             "en": "Arizona, Biographical Database"
           },
           "Биографические сведения о замечательных людях": {
-            "en": "Biography svedeniya o notable lyudyah"
+            "en": "Biographical Summaries of Notable People"
           },
           "Биографии Индианы": {
             "en": "Indiana Biographies"
@@ -3031,9 +3031,6 @@
           },
           "Франция, Натурализация": {
             "en": "France, Naturalizations"
-          },
-          "РRecords гражданства США, Северная Калифорния": {
-            "en": "Germans Immigrating to the United States"
           },
           "Иллинойс, Северный округ (Восточное отделение), Индекс натурализации": {
             "en": "Illinois, Northern District (Eastern Division), Naturalization Index"
@@ -3081,13 +3078,16 @@
             "en": "United States Passport Applications, 1795-1925"
           },
           "Соединенные Штаты, Файлы по делам иностранцев": {
-            "en": "United States, Alien Immigration Case Files"
+            "en": "United States, Alien Case Files"
           },
           "Индекс записей натурализации США, Северное Иллинойс": {
             "en": "US Naturalization Record Index, Northern Illinois"
           },
           "Записи о натурализации США, Новая Англия, 1791-1906 гг": {
             "en": "US Naturalization Records, New England, 1791-1906"
+          },
+          "РRecords гражданства США, Северная Калифорния": {
+            "en": "US Naturalization Records, Northern California"
           },
           "Западная Вирджиния, записи о натурализации, 1814-1991": {
             "en": "West Virginia Naturalization Records, 1814-1991"
@@ -3131,7 +3131,10 @@
             "en": "Emigrants from Hamburg to Australasia, 1850 - 1879"
           },
           "Финляндия, Миграционные реестры Карелии": {
-            "en": "Finland, Karelia Migrant Registers"
+            "en": "Finland, Karelia, Pre Confirmation Rolls"
+          },
+          "Иммигрирующие в США немцы": {
+            "en": "Germans Immigrating to the United States"
           },
           "Германия, Бременские эмиграционные списки, 1920-1939": {
             "en": "Germany, Bremen Emigration Lists, 1920-1939"
@@ -3148,19 +3151,13 @@
           "Греция, беженцы из Малой Азии, 1914-1923": {
             "en": "Greece, Asia Minor Refugees, 1914-1923"
           },
-          "Иммигрирующие в США немцы": {
-            "en": "Immigriruyuschie v United States nemcy"
-          },
-          "Иммигрирующие в США русские": {
-            "en": "Immigriruyuschie v United States russkie"
-          },
           "Индекс карточек еврейских перемещенных людей и беженцев, 1943-1959": {
             "en": "Index of Jewish Displaced Person and Refugee Cards, 1943-1959"
           },
           "Израиль, иммиграционные списки": {
             "en": "Israel, Immigration Lists"
           },
-          "Соединенные Штаты, иммиграционные файлы иностранцев": {
+          "Иммигрирующие в США итальянцы": {
             "en": "Italians Immigrating to the United States"
           },
           "Американцы японского происхождения, переселенные во время Второй мировой войны 1942-1946": {
@@ -3187,14 +3184,17 @@
           "Индекс ранних пионеров Квинсленда, 1824 - 1859 года": {
             "en": "Queensland Early Pioneers Index, 1824 - 1859"
           },
+          "Иммигрирующие в США русские": {
+            "en": "Russians Immigrating to the United States"
+          },
           "Испания, миграция в Америку, 1880-1930 гг.": {
             "en": "Spain, Migration to the Americas, 1880-1930"
           },
           "Швеция, Гётеборг, Списки пассажиров 1869 - 1951": {
             "en": "Sweden, Gothenburg, Passenger Lists 1869 - 1951"
           },
-          "Иммигрирующие в США итальянцы": {
-            "en": "United States, Alien Case Files"
+          "Соединенные Штаты, иммиграционные файлы иностранцев": {
+            "en": "United States, Alien Immigration Case Files"
           },
           "Соединенные Штаты, регистрация иностранцев Flexoline 1940-1954": {
             "en": "United States, Flexoline Alien Registrations 1940-1954"
@@ -3232,9 +3232,6 @@
           },
           "Франция, Натурализация": {
             "en": "France, Naturalizations"
-          },
-          "РRecords гражданства США, Северная Калифорния": {
-            "en": "Germans Immigrating to the United States"
           },
           "Иллинойс, Северный округ (Восточное отделение), Индекс натурализации": {
             "en": "Illinois, Northern District (Eastern Division), Naturalization Index"
@@ -3282,13 +3279,16 @@
             "en": "United States Passport Applications, 1795-1925"
           },
           "Соединенные Штаты, Файлы по делам иностранцев": {
-            "en": "United States, Alien Immigration Case Files"
+            "en": "United States, Alien Case Files"
           },
           "Индекс записей натурализации США, Северное Иллинойс": {
             "en": "US Naturalization Record Index, Northern Illinois"
           },
           "Записи о натурализации США, Новая Англия, 1791-1906 гг": {
             "en": "US Naturalization Records, New England, 1791-1906"
+          },
+          "РRecords гражданства США, Северная Калифорния": {
+            "en": "US Naturalization Records, Northern California"
           },
           "Западная Вирджиния, записи о натурализации, 1814-1991": {
             "en": "West Virginia Naturalization Records, 1814-1991"
@@ -3301,7 +3301,7 @@
     "en": "Maps",
     "children": {
       "Исторические карты США": {
-        "en": "The Flickinger Family History, Including the Flickinger Families in the United States of America"
+        "en": "Historic U.S. Maps"
       }
     }
   },
@@ -3311,8 +3311,11 @@
       "Призыв, наем, служба": {
         "en": "Draft, Enlistment & Service",
         "children": {
+          "Выписки из реестра Воздушных Сил": {
+            "en": "Air Force Register Extracts"
+          },
           "Арканзас, записи об увольнении с военной службы Первой мировой войны": {
-            "en": "Arkansas records ob uvolnenii s military service pervoi mirovoi voiny"
+            "en": "Arkansas records uvolnenii military service pervoi mirovoi voiny"
           },
           "Арканзас, записи о второй регистрации призывных повесток, 1948-1959": {
             "en": "Arkansas, Second Registration Draft Cards, 1948-1959"
@@ -3332,7 +3335,7 @@
           "Австралия, списки на посадку Первой мировой войны": {
             "en": "Australia, WWI Embarkation Lists"
           },
-          "Британские военные списки награжденных, 1939-1945 годов": {
+          "Австралийский номинальный список Второй мировой войны, 1939-1945": {
             "en": "Australian World War II Nominal Roll, 1939-1945"
           },
           "Австро-Венгрия, Списки раненых в Первой мировой войне, 1914-1918": {
@@ -3347,8 +3350,11 @@
           "Военнопленные британской армии во время сражений с Германией, 1939-1945 годов": {
             "en": "British Army Prisoners of War Held in German Camps, 1939 - 1945"
           },
-          "Военнопленные армии британской империи и других сухопутных войск, 1939 - 1945 годов": {
+          "Британские военные списки награжденных, 1939-1945 годов": {
             "en": "British Army Roll of Honour, 1939-1945"
+          },
+          "Военнопленные армии британской империи и других сухопутных войск, 1939 - 1945 годов": {
+            "en": "British Empire Armies and Other Land Forces - Prisoners of War, 1939 - 1945"
           },
           "Военнопленные морского и воздушного флота британской империи, 1939-1945 годов": {
             "en": "British Empire Naval and Air Forces - Prisoners of War, 1939 - 1945"
@@ -3362,14 +3368,14 @@
           "Пленные британские офицеры Первой мировой войны, 1914-1918 годов": {
             "en": "British Officers Taken as Prisoners of War, 1914 - 1918"
           },
-          "Британские кавалеры серебряных жетонов, 1914-1918 годов": {
-            "en": "British Red Cross Society Volunteers, 1914-1918"
-          },
           "Добровольцы Британского Красного Креста, 1914–1918": {
             "en": "British Red Cross Volunteers, 1914-1918"
           },
           "Погибшие британского военного королевского флота и королевского флота, 1914 - 1919 годов": {
             "en": "British Royal Navy and Royal Marine Casualties, 1914 - 1919"
+          },
+          "Британские кавалеры серебряных жетонов, 1914-1918 годов": {
+            "en": "British Silver War Badge Recipients, 1914 - 1918"
           },
           "Канада, Военные награды, 1916-1961": {
             "en": "Canada Military Awards, 1916-1961"
@@ -3396,16 +3402,16 @@
             "en": "Finland WWII Casualty Records"
           },
           "Бывшая Российская империя, жертвы Первой мировой войны": {
-            "en": "Former Russian Empire WWI Casualties"
-          },
-          "Франция, Военнопленные времен Второй мировой войны": {
-            "en": "France, Calvados, Military Registration Cards"
+            "en": "Former Russian Empire, World War I Casualties"
           },
           "Франция, Каталог погибших в войнах, 1914-1961 Годы": {
             "en": "France, Military Death Index, 1914-1961"
           },
           "Франция, военные новобранцы и призывники Норда": {
             "en": "France, Military Enlistees and Conscripts of Nord"
+          },
+          "Франция, Военнопленные времен Второй мировой войны": {
+            "en": "France, World War II Prisoners of War"
           },
           "Джорджия, регистрационные карточки второй мировой войны, 1940-1942": {
             "en": "Georgia, World War II Draft Registration Cards, 1940-1942"
@@ -3461,9 +3467,6 @@
           "Новая Зеландия, списки личного состава Экспедиционного корпуса Армии": {
             "en": "New Zealand Expeditionary Force Personnel Lists"
           },
-          "Реестр запасного корпуса Второй мировой войны": {
-            "en": "Reserve Corps WWII Service Registers"
-          },
           "Шотландия, Национальный военный мемориал": {
             "en": "Scotland, National War Memorial"
           },
@@ -3477,7 +3480,7 @@
             "en": "Spain, Republican Armed Forces Appointments, 1936-1939"
           },
           "Швеция, Регистрации в домах моряков и мореходов": {
-            "en": "Sweden, Sailors and Seamen Registers"
+            "en": "Sweden, Sailors and Seamen’s House Enrollments"
           },
           "Ветераны первой мировой войны штата Теннесси": {
             "en": "Tennessee WWI Veterans"
@@ -3498,7 +3501,7 @@
             "en": "UK, Royal Navy Reserve Service Records, 1908–1958"
           },
           "Украина, жертвы Второй мировой войны": {
-            "en": "Ukraine WWII Casualties Database"
+            "en": "Ukraine, World War II Casualties"
           },
           "Погибшие британские солдаты в Первой мировой войне 1914-1919 годов": {
             "en": "United Kingdom & Commonwealth, British Jewry Book of Honour, 1914-1919"
@@ -3515,11 +3518,11 @@
           "Соединенное Королевство, персонал Королевских ВВС": {
             "en": "United Kingdom, Convict Transportation Registers"
           },
-          "Обьединённое Королевство, Каталог списков служебных наград и медалей, 1914-1918": {
+          "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1939-1945 годы": {
             "en": "United Kingdom, Index of Merchant Seamen’s Campaign Medals, 1914-1918"
           },
-          "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1939-1945 годы": {
-            "en": "United Kingdom, Index of Merchant Seamen’s Campaign Medals, 1939-1945"
+          "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1914-1918 годы": {
+            "en": "United Kingdom, Index of Merchant Seamen’s Campaign Medals, 1914-1918"
           },
           "Соединенное Королевство, моряки торгового флота": {
             "en": "United Kingdom, Merchant Navy Seamen"
@@ -3539,7 +3542,7 @@
           "Великобритания, Индекс Королевского военно-морского добровольческого резерва, 1903-1922": {
             "en": "United Kingdom, Royal Navy Volunteer Reserve Index, 1903-1922"
           },
-          "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1914-1918 годы": {
+          "Обьединённое Королевство, Каталог списков служебных наград и медалей, 1914-1918": {
             "en": "United Kingdom, Service Medal and Award Rolls Index, 1914-1918"
           },
           "Великобритания, Военные мемориалы, 1914-1949 годы": {
@@ -3578,14 +3581,11 @@
           "Несчастные случаи во Вьетнаме, 1956 - 1998 годов": {
             "en": "Vietnam Casualties, 1956 - 1998"
           },
-          "Выписки из реестра Воздушных Сил": {
-            "en": "Vypiski iz records vozdushnyh sil"
-          },
           "Кавалеры медалей при Ватерлоо, 1815 года": {
             "en": "Waterloo Medal Recipients, 1815"
           },
-          "Австралийский номинальный список Второй мировой войны, 1939-1945": {
-            "en": "Western Australia PO Directory 1939"
+          "Реестр запасного корпуса Второй мировой войны": {
+            "en": "World War II Reserve Corps Records"
           }
         }
       },
@@ -3593,7 +3593,7 @@
         "en": "France kalvados map voinskogo ucheta"
       },
       "Франция, Сона и Луара, Военный призыв": {
-        "en": "France, Military Conscripts of Seine"
+        "en": "France, Calvados, Military Registration Cards"
       },
       "Франция, Рона, Карточки воинского учёта": {
         "en": "France, Rhône, Military Registration Cards"
@@ -3619,8 +3619,11 @@
           "Американские заморские военные захоронения, 1917-1974": {
             "en": "American Overseas Military Burials, 1917-1974"
           },
+          "США, Арлингтонское национальное кладбище, 1864-2021": {
+            "en": "Arlington National Cemetery"
+          },
           "Канада, Файлы персонала Первой мировой войны": {
-            "en": "Canada, First World War Personnel Files"
+            "en": "Canada, World War I Personnel Files"
           },
           "Catalogue of the Principal Officers of Vermont, 1778 - 1851": {
             "en": "Catalogue of the Principal Officers of Vermont, 1778 - 1851"
@@ -3638,7 +3641,7 @@
             "en": "Finland, War Victims, 1914-1922"
           },
           "Франция, призывники Сены": {
-            "en": "France draft seny"
+            "en": "France, Military Conscripts of Seine"
           },
           "Grant and his Campaigns: A Military History": {
             "en": "Grant and his Campaigns: A Military History"
@@ -3865,9 +3868,6 @@
           "The Union Regiments of Kentucky": {
             "en": "The Union Regiments of Kentucky"
           },
-          "США, Арлингтонское национальное кладбище, 1864-2021": {
-            "en": "U.S. Arlington National Cemetery, 1864–2021"
-          },
           "Соединенные Штаты, Испано-американская война, Солдаты, служившие в добровольческих организациях": {
             "en": "U.S. Spanish-American War Soldiers, Volunteer Organizations"
           },
@@ -3913,7 +3913,7 @@
             "en": "Tennessee Confederate Pension Applications"
           },
           "Virginia Pension Abstracts of the Revolutionary War, War of 1812 And Indian Wars, Volume": {
-            "en": "Virginia Pension Abstracts of the Revolutionary War, War of 1812 And Indian Wars, Volume"
+            "en": "Virginia Pension Abstracts of the Revolutionary War, War of 1812 And Indian Wars, Volume 32"
           }
         }
       }
@@ -3922,74 +3922,83 @@
   "Газеты": {
     "en": "Newspapers",
     "children": {
-      "Газеты Kansas, 1869-2009 годы": {
-        "en": "1869 Argentina National Census"
-      },
-      "Газеты Florida, 1901-2009 годы": {
-        "en": "1901 France Census"
-      },
       "Aberdeen Journal: Notes And Queries, Volume 3, 1910": {
         "en": "Aberdeen Journal: Notes And Queries, Volume 3, 1910"
       },
-      "Газеты Texas, 1848-2009 годы": {
-        "en": "American Genealogy (1848)"
+      "Газеты Alabama, 1870-2009 годы": {
+        "en": "Alabama Newspapers, 1870-2009"
       },
       "Газеты Аргентины с OldNews.com": {
+        "en": "Argentina Newspapers from OldNews.com"
+      },
+      "Аргентина, имена и истории в газетах с OldNews.com": {
         "en": "Argentina, Names & Stories in Newspapers from OldNews.com"
       },
-      "Австралия, Имена и истории в газетах с OldNews.com": {
-        "en": "Australia Marriage Announcements in Newspapers from OldNews.com"
-      },
-      "Газеты Австрии с OldNews.com": {
-        "en": "Australia, Names & Stories in Newspapers from OldNews.com"
+      "Газеты Arizona, 1866-2009 годы": {
+        "en": "Arizona Newspapers, 1866-2009"
       },
       "Австралийские вестники с OldNews.com": {
-        "en": "Austria vestniki s oldnews.com"
+        "en": "Australia Gazettes from OldNews.com"
+      },
+      "Австралийские газеты": {
+        "en": "Australia Newspapers"
+      },
+      "Австралия, Имена и истории в газетах с OldNews.com": {
+        "en": "Australia, Names & Stories in Newspapers from OldNews.com"
+      },
+      "Газеты Австрии с OldNews.com": {
+        "en": "Austria Newspapers from OldNews.com"
       },
       "Балтийские газеты с сайта OldNews.com": {
-        "en": "Baltiiskie newspaper s saita oldnews.com"
+        "en": "Baltic Newspapers from OldNews.com"
       },
       "Бразильские газеты с OldNews.com": {
-        "en": "Brazilskie newspaper s oldnews.com"
+        "en": "Brazil Newspapers from OldNews.com"
       },
       "Газеты California, 1847-2009 годы": {
-        "en": "California Newspapers, 1847–2009"
-      },
-      "Канада, газеты на французском 1807-2007": {
-        "en": "Canada French-language Newspapers, 1807–2007"
-      },
-      "Канада, имена и истории во французских газетах на OldNews.com": {
-        "en": "Canada imena & history vo francuzskih newspaper na oldnews.com"
-      },
-      "Канадские газеты, 1752-2007 годы": {
-        "en": "Canada Newspapers, 1752–2007"
-      },
-      "Канада, Имена и истории в газетах с OldNews.com": {
-        "en": "Canada, Names & Stories in French Newspapers from OldNews.com"
+        "en": "California Newspapers, 1847-2009"
       },
       "Газеты Канады с OldNews.com": {
+        "en": "Canada Newspapers from OldNews.com"
+      },
+      "Канадские газеты, 1752-2007 годы": {
+        "en": "Canada Newspapers, 1752-2007"
+      },
+      "Канада, газеты на французском 1807-2007": {
+        "en": "Canada, French Newspapers 1807-2007"
+      },
+      "Канада, имена и истории во французских газетах на OldNews.com": {
+        "en": "Canada, Names & Stories in French Newspapers from OldNews.com"
+      },
+      "Канада, Имена и истории в газетах с OldNews.com": {
         "en": "Canada, Names & Stories in Newspapers from OldNews.com"
       },
       "Хроника Америки: Исторические американские газеты, 1836-1922": {
-        "en": "Chronicling America: Historic American Newspapers, 1836–1922"
+        "en": "Chronicling America: Historic American Newspapers, 1791-1963"
       },
       "Газеты штата Коннектикут, 1791-2009": {
-        "en": "Connecticut Newspapers, 1791–2009"
+        "en": "Connecticut Newspapers, 1791-2009"
       },
-      "Газеты Нидерландов, 1659–1899": {
-        "en": "Dutch Newspapers, 1659–1899"
+      "Газеты Чехии с сайта OldNews.com": {
+        "en": "Czechia Newspapers from OldNews.com"
       },
-      "Франция, Имена и Истории в Газетах": {
-        "en": "Family Histories"
+      "Газеты штата Делавэр, 1880-2009": {
+        "en": "Delaware Newspapers, 1880-2009"
+      },
+      "Газеты Florida, 1901-2009 годы": {
+        "en": "Florida Newspapers, 1901-2009"
       },
       "Газеты и периодические издания Франции": {
+        "en": "France Newspapers and Periodicals"
+      },
+      "Французские газеты с OldNews.com": {
+        "en": "France Newspapers from OldNews.com"
+      },
+      "Франция, Имена и Истории в Газетах": {
         "en": "France, Names & Stories in Newspapers"
       },
       "Франция, Имена и истории в газетах с OldNews.com": {
         "en": "France, Names & Stories in Newspapers from OldNews.com"
-      },
-      "Французские газеты с OldNews.com": {
-        "en": "Francuzskie newspaper s oldnews.com"
       },
       "Friend: a Religious And Literary Journal, Volume 37, September 1863": {
         "en": "Friend: a Religious And Literary Journal, Volume 37, September 1863"
@@ -4003,35 +4012,62 @@
       "Friend: a Religious And Literary Journal, Volume 66, July 1892": {
         "en": "Friend: a Religious And Literary Journal, Volume 66, July 1892"
       },
+      "Газеты Georgia, 1881-2009 годы": {
+        "en": "Georgia Newspapers, 1881-2009"
+      },
+      "Газеты Германии с OldNews.com": {
+        "en": "Germany Newspapers from OldNews.com"
+      },
       "Granite Monthly, A New Hampshire Magazine, Volume 49": {
         "en": "Granite Monthly, A New Hampshire Magazine, Volume 49"
       },
-      "Великобритания, Имена и истории в газетах на OldNews.com": {
-        "en": "Great Britain imena & history v newspaper na oldnews.com"
+      "Газеты Idaho, 1894-2009 годы": {
+        "en": "Idaho Newspapers, 1894-2009"
+      },
+      "Газеты Illinois, 1840-2009 годы": {
+        "en": "Illinois Newspapers, 1840-2009"
       },
       "Газеты штата Индиана, 1847-2009": {
-        "en": "Indiana Newspapers, 1847–2009"
+        "en": "Indiana Newspapers, 1847-2009"
       },
       "Газеты Iowa, 1837-2009 годы": {
-        "en": "Iowa Newspapers, 1837–2009"
+        "en": "Iowa Newspapers, 1837-2009"
       },
       "Газеты Ирландии на OldNews.com": {
+        "en": "Ireland Newspapers from OldNews.com"
+      },
+      "Ирландия, Имена и истории в газетах с OldNews.com": {
         "en": "Ireland, Names & Stories in Newspapers from OldNews.com"
       },
-      "Испанские газеты от OldNews.com": {
-        "en": "Ispanskie newspaper ot oldnews.com"
+      "Газеты Италии с OldNews.com": {
+        "en": "Italy Newspapers from OldNews.com"
       },
-      "Jewish Chronicle": {
-        "en": "Jewish Chronicle"
+      "Газеты Kansas, 1869-2009 годы": {
+        "en": "Kansas Newspapers, 1869-2009"
+      },
+      "Газеты штата Кентукки, 1848-2009 годы": {
+        "en": "Kentucky Newspapers, 1848-2009"
+      },
+      "Газеты штата Мэн, 1861-2008 годы": {
+        "en": "Maine Newspapers, 1861-2008"
+      },
+      "Газеты штата Мэриленд, 1790-2009": {
+        "en": "Maryland Newspapers, 1790-2009"
       },
       "Газеты Массачусетса, 1704-1974": {
-        "en": "Massachusetts Newspapers, 1704–1974"
+        "en": "Massachusetts Newspapers, 1704-1974"
       },
       "Газеты Michigan, 1817-2009 годы": {
-        "en": "Michigan Newspapers, 1817–2009"
+        "en": "Michigan Newspapers, 1817-2009"
       },
       "Газеты Minnesota, 1902-2009 годы": {
-        "en": "Minnesota Newspapers, 1902–2009"
+        "en": "Minnesota Newspapers, 1902-2009"
+      },
+      "Газеты Missouri, 1845-2009 годы": {
+        "en": "Missouri Newspapers, 1845-2009"
+      },
+      "Газеты Montana, 1890-2009 годы": {
+        "en": "Montana Newspapers, 1890-2009"
       },
       "Nailer Tom's Diary: The Journal of Thomas B. Hazard of Kingstown, Rhode Island, 1778 - 1840": {
         "en": "Nailer Tom's Diary: The Journal of Thomas B. Hazard of Kingstown, Rhode Island, 1778 - 1840"
@@ -4072,155 +4108,119 @@
       "Имена и истории в газетах с OldNews.com (Техас, Аризона, Нью-Мексико, Невада, Юта, Небраска)": {
         "en": "Names & Stories in Newspapers from OldNews.com (Texas, Arizona, New Mexico, Nevada, Utah, Nebraska)"
       },
-      "Нидерланды, Имена и истории в газетах от OldNews.com": {
-        "en": "Netherlands imena & history v newspaper ot oldnews.com"
-      },
       "Газеты Нидерландов с OldNews.com": {
+        "en": "Netherlands Newspapers from OldNews.com"
+      },
+      "Газеты Нидерландов, 1659–1899": {
+        "en": "Netherlands Newspapers, 1659-1899"
+      },
+      "Нидерланды, Имена и истории в газетах от OldNews.com": {
         "en": "Netherlands, Names & Stories in Newspapers from OldNews.com"
       },
       "Газеты штата Нью-Гэмпшир, 1869-2008 годы": {
-        "en": "New Hampshire Newspapers, 1869–2008"
-      },
-      "Газеты Нью-Йорка, 1806-2007": {
-        "en": "New York Newspapers, 1806–2007"
-      },
-      "Газеты Новой Зеландии на OldNews.com": {
-        "en": "New Zealand, Names & Stories in Newspapers from OldNews.com"
-      },
-      "Газеты Alabama, 1870-2009 годы": {
-        "en": "Newspaper alabama 1870-2009 gody"
-      },
-      "Газеты Arizona, 1866-2009 годы": {
-        "en": "Newspaper arizona 1866-2009 gody"
-      },
-      "Газеты Чехии с сайта OldNews.com": {
-        "en": "Newspaper Czechia s saita oldnews.com"
-      },
-      "Газеты Georgia, 1881-2009 годы": {
-        "en": "Newspaper georgia 1881-2009 gody"
-      },
-      "Газеты Германии с OldNews.com": {
-        "en": "Newspaper Germany s oldnews.com"
-      },
-      "Газеты Idaho, 1894-2009 годы": {
-        "en": "Newspaper idaho 1894-2009 gody"
-      },
-      "Газеты Illinois, 1840-2009 годы": {
-        "en": "Newspaper illinois 1840-2009 gody"
-      },
-      "Газеты Италии с OldNews.com": {
-        "en": "Newspaper Italy s oldnews.com"
-      },
-      "Газеты Missouri, 1845-2009 годы": {
-        "en": "Newspaper missouri 1845-2009 gody"
-      },
-      "Газеты Montana, 1890-2009 годы": {
-        "en": "Newspaper montana 1890-2009 gody"
-      },
-      "Австралийские газеты": {
-        "en": "Newspaper Name Index, USA, Canada, and Australia"
-      },
-      "Газеты Объединенного Королевства с OldNews.com": {
-        "en": "Newspaper obedinennogo Kingdom s oldnews.com"
-      },
-      "Газеты Польши от OldNews.com": {
-        "en": "Newspaper Poland ot oldnews.com"
-      },
-      "Газеты Словакии с OldNews.com": {
-        "en": "Newspaper Slovakia s oldnews.com"
-      },
-      "Газеты South Carolina, 1787-2009 годы": {
-        "en": "Newspaper south carolina 1787-2009 gody"
-      },
-      "Газеты штата Делавэр, 1880-2009": {
-        "en": "Newspaper state delaver 1880-2009"
-      },
-      "Газеты штата Кентукки, 1848-2009 годы": {
-        "en": "Newspaper state Kentucky 1848-2009 gody"
-      },
-      "Газеты штата Мэн, 1861-2008 годы": {
-        "en": "Newspaper state Maine 1861-2008 gody"
-      },
-      "Газеты штата Мэриленд, 1790-2009": {
-        "en": "Newspaper state Maryland 1790-2009"
+        "en": "New Hampshire Newspapers, 1869-2008"
       },
       "Газеты штата Нью-Джерси, 1859-1946": {
-        "en": "Newspaper state nyu-dzhersi 1859-1946"
+        "en": "New Jersey Newspapers, 1859-1946"
       },
-      "Газеты Tennessee, 1870-2009 годы": {
-        "en": "Newspaper tennessee 1870-2009 gody"
+      "Газеты Нью-Йорка, 1806-2007": {
+        "en": "New York Newspapers, 1806-2007"
       },
-      "Газеты Utah, 1850-2003 годы": {
-        "en": "Newspaper utah 1850-2003 gody"
-      },
-      "Газеты Washington, 1855-2009 годы": {
-        "en": "Newspaper washington 1855-2009 gody"
-      },
-      "Газеты Западной Вирджинии, 1930–2009": {
-        "en": "Newspaper zapadnoi Virginia 1930 2009"
-      },
-      "Газеты North Carolina, 1852-2009 годы": {
-        "en": "North Carolina Newspapers, 1852–2009"
-      },
-      "Норвежские газеты на OldNews.com": {
-        "en": "Norvezhskie newspaper na oldnews.com"
+      "Газеты Новой Зеландии на OldNews.com": {
+        "en": "New Zealand Newspapers from OldNews.com"
       },
       "Новая Зеландия, имена и истории в газетах от OldNews.com": {
-        "en": "Novaya Zealand imena & history v newspaper ot oldnews.com"
+        "en": "New Zealand, Names & Stories in Newspapers from OldNews.com"
+      },
+      "Реестр названий газет, США и Канада": {
+        "en": "Newspaper Name Index, USA, Canada, and Australia"
+      },
+      "Скандинавские газеты от OldNews.com": {
+        "en": "Nordic Newspapers from OldNews.com"
+      },
+      "Газеты North Carolina, 1852-2009 годы": {
+        "en": "North Carolina Newspapers, 1852-2009"
+      },
+      "Норвежские газеты на OldNews.com": {
+        "en": "Norway Newspapers from OldNews.com"
       },
       "Газеты Огайо, 1793-2009": {
-        "en": "Ohio Newspapers, 1793–2009"
+        "en": "Ohio Newspapers, 1793-2009"
       },
       "Газеты Oklahoma, 1927-2009 годы": {
-        "en": "Oklahoma Newspapers, 1927–2009"
+        "en": "Oklahoma Newspapers, 1927-2009"
       },
       "Газеты Oregon, 1867-2009 годы": {
-        "en": "Oregon Newspapers, 1867–2009"
+        "en": "Oregon Newspapers, 1867-2009"
       },
       "Our Home: a Monthly Magazine of Original Articles, Volume 1, 1873": {
         "en": "Our Home: a Monthly Magazine of Original Articles, Volume 1, 1873"
       },
       "Газеты Пенсильвании, 1795-2009": {
-        "en": "Pennsylvania Newspapers, 1795–2009"
+        "en": "Pennsylvania Newspapers, 1795-2009"
+      },
+      "Газеты Польши от OldNews.com": {
+        "en": "Poland Newspapers from OldNews.com"
       },
       "Сербские газеты с сайта OldNews.com": {
-        "en": "Serbskie newspaper s saita oldnews.com"
+        "en": "Serbia Newspapers from OldNews.com"
       },
-      "Швейцарские газеты на OldNews.com": {
-        "en": "Shveicarskie newspaper na oldnews.com"
+      "Газеты Словакии с OldNews.com": {
+        "en": "Slovakia Newspapers from OldNews.com"
       },
-      "Скандинавские газеты от OldNews.com": {
-        "en": "Skandinavskie newspaper ot oldnews.com"
+      "Газеты South Carolina, 1787-2009 годы": {
+        "en": "South Carolina Newspapers, 1787-2009"
+      },
+      "Испанские газеты от OldNews.com": {
+        "en": "Spain Newspapers from OldNews.com"
       },
       "Испания, Имена и истории в газетах от OldNews.com": {
-        "en": "Spain imena & history v newspaper ot oldnews.com"
-      },
-      "Ирландия, Имена и истории в газетах с OldNews.com": {
         "en": "Spain, Names & Stories in Newspapers from OldNews.com"
       },
-      "Швейцария, имена и истории во французских газетах на OldNews.com": {
-        "en": "Switzerland imena & history vo francuzskih newspaper na oldnews.com"
+      "Швейцарские газеты на OldNews.com": {
+        "en": "Switzerland Newspapers from OldNews.com"
       },
-      "Аргентина, имена и истории в газетах с OldNews.com": {
+      "Швейцария, имена и истории во французских газетах на OldNews.com": {
         "en": "Switzerland, Names & Stories in French Newspapers from OldNews.com"
       },
-      "Газеты Virginia, 1792-2008 годы": {
-        "en": "Tenth Legion Tithables, Rockingham County, Virginia, 1792"
+      "Газеты Tennessee, 1870-2009 годы": {
+        "en": "Tennessee Newspapers, 1870-2009"
       },
-      "Газеты США на сайте OldNews.com": {
+      "Газеты Texas, 1848-2009 годы": {
+        "en": "Texas Newspapers, 1848-2009"
+      },
+      "Jewish Chronicle": {
+        "en": "The Jewish Chronicle"
+      },
+      "Газеты Объединенного Королевства с OldNews.com": {
+        "en": "United Kingdom Newspapers from OldNews.com"
+      },
+      "Великобритания, Имена и истории в газетах на OldNews.com": {
         "en": "United Kingdom, Names & Stories in Newspapers from OldNews.com"
       },
-      "Реестр названий газет, США и Канада": {
-        "en": "United States, Border Crossings from Canada, 1895-1956"
-      },
-      "Уругвай, имена и истории в газетах с OldNews.com": {
-        "en": "Uruguay imena & history v newspaper s oldnews.com"
+      "Газеты США на сайте OldNews.com": {
+        "en": "United States Newspapers from OldNews.com"
       },
       "Газеты Уругвая с OldNews.com": {
+        "en": "Uruguay Newspapers from OldNews.com"
+      },
+      "Уругвай, имена и истории в газетах с OldNews.com": {
         "en": "Uruguay, Names & Stories in Newspapers from OldNews.com"
       },
+      "Газеты Utah, 1850-2003 годы": {
+        "en": "Utah Newspapers, 1850-2003"
+      },
+      "Газеты Virginia, 1792-2008 годы": {
+        "en": "Virginia Newspapers, 1792-2008"
+      },
+      "Газеты Washington, 1855-2009 годы": {
+        "en": "Washington Newspapers, 1855-2009"
+      },
+      "Газеты Западной Вирджинии, 1930–2009": {
+        "en": "West Virginia Newspapers, 1930-2009"
+      },
       "Газеты Wisconsin, 1884-2009 годы": {
-        "en": "Wisconsin Newspapers, 1884–2009"
+        "en": "Wisconsin Newspapers, 1884-2009"
       }
     }
   },
@@ -4256,8 +4256,7 @@
     "en": "Schools & Universities",
     "children": {
       "Бельгия, регистрация в Левенском университете": {
-        "en": "Belgium, Leuven University Matriculations",
-        "children": {}
+        "en": "Belgium, Leuven University Matriculations"
       },
       "Школы": {
         "en": "Schools",
