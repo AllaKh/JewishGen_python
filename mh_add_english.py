@@ -156,6 +156,17 @@ def _stem(w):
 def _deacc(s):
     return ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
 def _years(s): return frozenset(re.findall(r'\b(1[5-9]\d\d|20\d\d)\b', s))
+def _year_ok(ry, ey):
+    """True if the RU year-set is compatible with the EN candidate's year-set: either no
+    years on a side, an exact shared year, or an RU year that falls inside the EN's
+    [min,max] span (so «1850» still matches a «1837-2005» range title). This blocks the
+    census/electoral bug where «Перепись Швеции 1880» grabbed «1940 Sweden Census»."""
+    if not ry or not ey:
+        return True
+    if ry & ey:
+        return True
+    lo, hi = min(ey), max(ey)
+    return any(lo <= y <= hi for y in ry)
 def _ten(s):
     """Comparable token set: deaccented, lowercased, stemmed. Keeps small numbers like a
     «Part 5» (so part 5 ≠ part 4) but NOT 4-digit years (those go in the year-set)."""
@@ -258,6 +269,8 @@ def ru_to_en(ru: str) -> str:
     # «county Allen» → «Allen County», «parish Leicestershire» → «Leicestershire Parish»
     res = re.sub(r'\b(county|parish)\s+([A-Z][\w’-]+)', r'\2 ' + r'\1', res)
     res = re.sub(r'\b(county|parish)\b', lambda m: m.group(1).capitalize(), res)
+    # «Census Sweden 1880» → «1880 Sweden Census» (so the right year leads, like the site)
+    res = re.sub(r'^Census\s+([A-Z][\w’ -]*?)\s+(\d{4})$', r'\2 \1 Census', res)
     return res[:1].upper() + res[1:] if res else ru
 
 def _tokens_ru_as_en(ru: str) -> set:
@@ -323,7 +336,11 @@ def main():
     assign, score_of, taken = {}, {}, set()
     fuzzy = []
     for ru in set(ru_names):
-        if ru in OVR:                             # user-supplied exact English — highest priority
+        # year guard: a few summary-table blocks (census / electoral rolls) zipped
+        # RU↔EN one row off, pairing «…1880» with «1940 … Census». Reject an override
+        # whose year clashes with the RU year → it falls through to fuzzy/dict, which
+        # rebuilds the correct year. (The file is left intact — nothing deleted.)
+        if ru in OVR and _year_ok(_years(ru), _years(OVR[ru])):  # exact English, top priority
             assign[ru], score_of[ru] = OVR[ru], 1.0; taken.add(OVR[ru])
         elif is_latin(ru):                        # already English → keep as-is (exact)
             assign[ru], score_of[ru] = ru, 1.0; taken.add(ru)
@@ -335,11 +352,14 @@ def main():
     # match can't reuse an EN that belongs to another node (the «Romania» reuse bug).
     rk = {ru: ranked(ru) for ru in fuzzy}
     for ru in sorted(fuzzy, key=lambda r: -(rk[r][0][0] if rk[r] else 0)):
+        ry = _years(ru)
         picked, psc = None, 0.0
         for sc, i in rk[ru]:
             if sc < 0.2:
                 break
-            e = EN[i][0]
+            e, _et, ey = EN[i]
+            if not _year_ok(ry, ey):          # never assign a different-year title
+                continue
             if e not in taken:
                 picked, psc = e, sc; taken.add(e); break
         if picked is None:                        # nothing confident & free → translate

@@ -350,7 +350,7 @@
             "en": "England, Warwickshire Parish Registers, 1538-1900"
           },
           "Финляндия, Карелия, Доконфирмационные списки": {
-            "en": "Finland, Karelia, Pre Confirmation Rolls"
+            "en": "Finland, Karelia Migrant Registers"
           },
           "Франция, Сборник записей актов гражданского состояния, 1585-1928": {
             "en": "France, Compilation of Vital Records, 1585-1928"
@@ -542,14 +542,14 @@
           "Австралия, Каталог некрологов с OldNews.com": {
             "en": "Australia Obituary Index from OldNews.com"
           },
-          "Австралия, надписи на кладбищах": {
-            "en": "Australia, Nadpisi cemetery"
-          },
           "Австралия, реестр смертности в Новом Южном Уэльсе, 1787-1986": {
             "en": "Australia, New South Wales Death Index, 1787-1986"
           },
           "Австралия, Квинсленд, Смерти": {
             "en": "Australia, Queensland Deaths"
+          },
+          "Австралия, надписи на кладбищах": {
+            "en": "Australia, Roll of Honour"
           },
           "Австралия, Виктория, Индекс смертей, 1836-1985": {
             "en": "Australia, Victoria Death Index, 1836-1985"
@@ -955,10 +955,10 @@
           "Браки в Индиане": {
             "en": "Indiana Marriages"
           },
-          "Индиана, записи о бракосочетании": {
-            "en": "Indiana, Marriages"
-          },
           "Индиана, записи о браках": {
+            "en": "Indiana, Marriage Records"
+          },
+          "Индиана, записи о бракосочетании": {
             "en": "Indiana, Marriages"
           },
           "Айова, записи о бракосочетании, 1809-1992": {
@@ -1504,11 +1504,11 @@
       "Notes And Queries, Third Series, Volume 11, January - June 1867": {
         "en": "Notes And Queries, Third Series, Volume 11, January - June 1867"
       },
-      "Пинкас Ха-Ницолим, Том II, Регистр еврейских выживших из JewishGen": {
-        "en": "Pinkas HaNitzolim, Volume I, Register of Jewish Survivors from JewishGen"
-      },
       "Пинкас Ха-Ницолим, Том I, Регистр еврейских выживших из JewishGen": {
         "en": "Pinkas HaNitzolim, Volume I, Register of Jewish Survivors from JewishGen"
+      },
+      "Пинкас Ха-Ницолим, Том II, Регистр еврейских выживших из JewishGen": {
+        "en": "Pinkas HaNitzolim, Volume II, Register of Jewish Survivors from JewishGen"
       },
       "Шотландия, Ренфрушир, упоминания в газетах Инверклайда, 1794-1918": {
         "en": "Scotland, Renfrewshire, Inverclyde Newspaper Mentions, 1794-1918"
@@ -1545,26 +1545,26 @@
           "Queensland State Electoral Roll 1900": {
             "en": "Queensland State Electoral Roll 1900"
           },
+          "Избирательные списки Квинсленда 1903 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1903"
+          },
+          "Избирательные списки Квинсленда 1906 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1906"
+          },
+          "Избирательные списки Квинсленда 1913 года, Австралия": {
+            "en": "Queensland, Australia, Electoral Rolls 1913"
+          },
           "Избирательные списки Квинсленда 1922 года, Австралия": {
             "en": "Queensland, Australia, Electoral Rolls 1922"
           },
-          "Избирательные списки Квинсленда 1903 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1934"
-          },
           "Избирательные списки Квинсленда 1934 года, Австралия": {
             "en": "Queensland, Australia, Electoral Rolls 1934"
-          },
-          "Избирательные списки Квинсленда 1913 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1941"
           },
           "Избирательные списки Квинсленда 1941 года, Австралия": {
             "en": "Queensland, Australia, Electoral Rolls 1941"
           },
           "Избирательные списки Квинсленда 1949 года, Австралия": {
             "en": "Queensland, Australia, Electoral Rolls 1949"
-          },
-          "Избирательные списки Квинсленда 1906 года, Австралия": {
-            "en": "Queensland, Australia, Electoral Rolls 1959"
           },
           "Избирательные списки Квинсленда 1959 года, Австралия": {
             "en": "Queensland, Australia, Electoral Rolls 1959"
@@ -1582,6 +1582,9 @@
           },
           "Канада, нижняя Канада, перепись населения, 1842": {
             "en": "1842 Canada, Lower Canada Census"
+          },
+          "Перепись населения Канады 1851 года": {
+            "en": "1851 Canada Census"
           },
           "Перепись 1861 года в Канаде": {
             "en": "1861 Canada Census"
@@ -1606,9 +1609,6 @@
           },
           "Перепись населения Канады 1916 года по Альберте, Саскачевану и Манитобе": {
             "en": "1916 Canada Census of Alberta, Saskatchewan, and Manitoba"
-          },
-          "Перепись населения Канады 1851 года": {
-            "en": "1921 Canada Census"
           },
           "Перепись населения Канады 1921 года": {
             "en": "1921 Canada Census"
@@ -1719,8 +1719,14 @@
           "Перепись в Дании 1880 года": {
             "en": "1880 Denmark Census"
           },
+          "Перепись населения Швеции 1880 года": {
+            "en": "1880 Sweden Census"
+          },
           "Перепись населения Дании 1890 года": {
             "en": "1890 Denmark Census"
+          },
+          "Перепись населения Швеции 1890 года": {
+            "en": "1890 Sweden Census"
           },
           "Материалы Норвежской переписи 1891 года900 Sweden Census": {
             "en": "1891 Norway Census"
@@ -1755,17 +1761,11 @@
           "Перепись населения Дании 1930 года": {
             "en": "1930 Denmark Census"
           },
+          "Перепись населения Швеции 1930 года": {
+            "en": "1930 Sweden Census"
+          },
           "Перепись населения Дании 1940 года": {
             "en": "1940 Denmark Census"
-          },
-          "Перепись населения Швеции 1880 года": {
-            "en": "1940 Sweden Census"
-          },
-          "Перепись населения Швеции 1890 года": {
-            "en": "1940 Sweden Census"
-          },
-          "Перепись населения Швеции 1930 года": {
-            "en": "1940 Sweden Census"
           },
           "Перепись населения Швеции 1940 года": {
             "en": "1940 Sweden Census"
@@ -1814,9 +1814,6 @@
           "Германия, Мекленбург-Шверин, перепись населения, 1867": {
             "en": "1867 Germany, Mecklenburg-Schwerin Census"
           },
-          "Аргентина, национальная перепись, 1969": {
-            "en": "1869 Argentina National Census"
-          },
           "Перепись населения Венгрии 1869 года от JewishGen": {
             "en": "1869 Hungary Census from JewishGen"
           },
@@ -1843,6 +1840,9 @@
           },
           "Алабама, книги регистрации избирателей, 1857-1868": {
             "en": "Alabama, Voter Registration Books, 1857-1868"
+          },
+          "Аргентина, национальная перепись, 1969": {
+            "en": "Argentina, national census, 1969"
           },
           "Армения, список избирателей, 2019": {
             "en": "Armenia, Voters List 2019"
@@ -2026,11 +2026,11 @@
           "Перепись населения Шотландии 1891 года": {
             "en": "1891 Scotland Census"
           },
-          "Перепись населения Ирландии 1901 года": {
-            "en": "1901 Denmark Census"
-          },
           "Перепись населения Англии и Уэльса 1901 года": {
             "en": "1901 England & Wales Census"
+          },
+          "Перепись населения Ирландии 1901 года": {
+            "en": "1901 Ireland Census"
           },
           "Перепись населения Шотландии 1901 года": {
             "en": "1901 Scotland Census"
@@ -2094,14 +2094,14 @@
           "Алабама, государственная перепись, 1855": {
             "en": "1855 Alabama State Census"
           },
+          "Перепись населения штата Массачусетс 1855 года": {
+            "en": "1855 Massachusetts State Census"
+          },
           "Миннесота, территориальная перепись, 1857": {
             "en": "1857 Minnesota Territorial Census"
           },
           "Федеральная перепись США 1860 года": {
             "en": "1860 United States Federal Census"
-          },
-          "Перепись населения штата Массачусетс 1855 года": {
-            "en": "1865 Massachusetts State Census"
           },
           "Перепись населения штата Массачусетс 1865 года": {
             "en": "1865 Massachusetts State Census"
@@ -2127,6 +2127,9 @@
           "Перепись населения Территории Дакота 1885 года": {
             "en": "1885 Dakota Territory Census"
           },
+          "Флорида, государственная перепись, 1885": {
+            "en": "1885 Florida State Census"
+          },
           "Миннесота, государственная перепись, 1885": {
             "en": "1885 Minnesota State Census"
           },
@@ -2138,6 +2141,9 @@
           },
           "Территориальная перепись населения Оклахомы 1890 года": {
             "en": "1890 Oklahoma Territorial Census"
+          },
+          "Федеральная перепись США 1890 года": {
+            "en": "1890 United States Federal Census"
           },
           "Перепись населения штата Канзас 1895 года": {
             "en": "1895 Kansas State Census"
@@ -2199,17 +2205,11 @@
           "Федеральная перепись США 1940 года": {
             "en": "1940 United States Federal Census"
           },
-          "Флорида, государственная перепись, 1885": {
-            "en": "1945 Florida State Census"
-          },
           "Флорида, государственная перепись, 1945": {
             "en": "1945 Florida State Census"
           },
           "Южная Дакота, государственная перепись, 1945": {
             "en": "1945 South Dakota State Census"
-          },
-          "Федеральная перепись США 1890 года": {
-            "en": "1950 United States Federal Census"
           },
           "Федеральная перепись США 1950 года": {
             "en": "1950 United States Federal Census"
@@ -3131,7 +3131,7 @@
             "en": "Emigrants from Hamburg to Australasia, 1850 - 1879"
           },
           "Финляндия, Миграционные реестры Карелии": {
-            "en": "Finland, Karelia Migrant Registers"
+            "en": "Finland, Karelia, Pre Confirmation Rolls"
           },
           "Иммигрирующие в США немцы": {
             "en": "Germans Immigrating to the United States"
@@ -3157,7 +3157,7 @@
           "Израиль, иммиграционные списки": {
             "en": "Israel, Immigration Lists"
           },
-          "Иммигрирующие в США русские": {
+          "Иммигрирующие в США итальянцы": {
             "en": "Italians Immigrating to the United States"
           },
           "Американцы японского происхождения, переселенные во время Второй мировой войны 1942-1946": {
@@ -3184,7 +3184,7 @@
           "Индекс ранних пионеров Квинсленда, 1824 - 1859 года": {
             "en": "Queensland Early Pioneers Index, 1824 - 1859"
           },
-          "Иммигрирующие в США итальянцы": {
+          "Иммигрирующие в США русские": {
             "en": "Russians Immigrating to the United States"
           },
           "Испания, миграция в Америку, 1880-1930 гг.": {
@@ -3323,14 +3323,14 @@
           "Австралия, Именной список Первой мировой войны, 1914-1918": {
             "en": "Australia, First World War Nominal Roll, 1914-1918"
           },
+          "Австралия, Мемориальный список": {
+            "en": "Australia, Memorialnyi Spisok"
+          },
           "Австралия, Рекомендации и награды за воинские почести": {
             "en": "Australia, Military Honours and Awards Recommendations"
           },
           "Австралия, Квинсленд, Портреты солдат Первой мировой войны 1914-1918": {
             "en": "Australia, Queensland, World War I Soldier Portraits 1914-1918"
-          },
-          "Австралия, Мемориальный список": {
-            "en": "Australia, Roll of Honour"
           },
           "Австралия, списки на посадку Первой мировой войны": {
             "en": "Australia, WWI Embarkation Lists"
@@ -3518,11 +3518,11 @@
           "Соединенное Королевство, персонал Королевских ВВС": {
             "en": "United Kingdom, Convict Transportation Registers"
           },
-          "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1939-1945 годы": {
-            "en": "United Kingdom, Index of Merchant Seamen’s Campaign Medals, 1914-1918"
-          },
           "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1914-1918 годы": {
             "en": "United Kingdom, Index of Merchant Seamen’s Campaign Medals, 1914-1918"
+          },
+          "Объединенное Королевство, Каталог выданных медалей морякам Торгового Флота, 1939-1945 годы": {
+            "en": "United Kingdom, Index of Merchant Seamen’s Campaign Medals, 1939-1945"
           },
           "Соединенное Королевство, моряки торгового флота": {
             "en": "United Kingdom, Merchant Navy Seamen"
@@ -3595,10 +3595,10 @@
       "Франция, Рона, Карточки воинского учёта": {
         "en": "France, Rhône, Military Registration Cards"
       },
-      "Франция, Сона и Луара, Военный призыв": {
+      "Франция, Вьенн, Военные призывные карточки": {
         "en": "France, Saône-et-Loire, Military Conscriptions"
       },
-      "Франция, Вьенн, Военные призывные карточки": {
+      "Франция, Сона и Луара, Военный призыв": {
         "en": "France, Vienne, Military Draft Cards"
       },
       "Военные документы": {
