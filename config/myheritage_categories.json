@@ -350,7 +350,7 @@
             "en": "England, Warwickshire Parish Registers, 1538-1900"
           },
           "Финляндия, Карелия, Доконфирмационные списки": {
-            "en": "Finland, Karelia Migrant Registers"
+            "en": "Finland, Karelia, Pre Confirmation Rolls"
           },
           "Франция, Сборник записей актов гражданского состояния, 1585-1928": {
             "en": "France, Compilation of Vital Records, 1585-1928"
@@ -531,10 +531,10 @@
         "en": "Death, Burial, Cemetery & Obituaries",
         "children": {
           "Алабама, записи о смерти, 1908-1974": {
-            "en": "Alabama records deaths 1908-1974"
+            "en": "Alabama, Death Records, 1908-1974"
           },
           "Арканзас, Данные о смертях, 1935-1961": {
-            "en": "Arkansas dannye death 1935-1961"
+            "en": "Arkansas, Dannye death, 1935-1961"
           },
           "Некрологи Австралии, 1860-2019": {
             "en": "Australia Death Notices, 1860-2019"
@@ -542,14 +542,14 @@
           "Австралия, Каталог некрологов с OldNews.com": {
             "en": "Australia Obituary Index from OldNews.com"
           },
+          "Австралия, надписи на кладбищах": {
+            "en": "Australia, Nadpisi cemetery"
+          },
           "Австралия, реестр смертности в Новом Южном Уэльсе, 1787-1986": {
             "en": "Australia, New South Wales Death Index, 1787-1986"
           },
           "Австралия, Квинсленд, Смерти": {
             "en": "Australia, Queensland Deaths"
-          },
-          "Австралия, надписи на кладбищах": {
-            "en": "Australia, Roll of Honour"
           },
           "Австралия, Виктория, Индекс смертей, 1836-1985": {
             "en": "Australia, Victoria Death Index, 1836-1985"
@@ -599,35 +599,44 @@
           "Чехия, Опава, Смерти, 1800-1950": {
             "en": "Czechia, Moravian-Silesian Region, Opava Deaths, 1800-1950"
           },
+          "Свидетельства о смерти Аризоны": {
+            "en": "Death Certificates Arizona"
+          },
+          "Записи регистрации смерти, штат Коннектикут, 1949-2012": {
+            "en": "Death Registration Records, state Connecticut, 1949-2012"
+          },
+          "Реестр записей регистрации смерти, штат Кентукки, 1900 - 1999 годов": {
+            "en": "Death Registration Records, state Kentucky, 1900 - 1999"
+          },
           "Смерти в Джорджии": {
             "en": "Deaths in Georgia"
           },
           "Смерти в Род-Айленде, 1850-1946": {
-            "en": "Deaths in Rhode Island 1850-1946"
+            "en": "Deaths in Rhode Island, 1850-1946"
           },
           "Реестр записей регистрации смерти Англии и Уэльса, GRO каталоги, 1969 - 2007 годов": {
             "en": "England & Wales Deaths, GRO Indexes, 1969 - 2007"
           },
-          "Англия и Уэльс, нонконформистские записи о смерти и захоронениях, 1665-1837": {
-            "en": "England & Wales nonkonformistskie records deaths & burials 1665-1837"
-          },
           "Англия и Уэльс, реестр записей о смерти, 1837-2005": {
             "en": "England & Wales, Death Index, 1837-2005"
           },
-          "Англия, Чешир, приходские смерти и захоронения": {
-            "en": "England Cheshire parish deaths & burials"
+          "Англия и Уэльс, нонконформистские записи о смерти и захоронениях, 1665-1837": {
+            "en": "England & Wales, Nonkonformistskie Death Records & burials, 1665-1837"
           },
           "Англия, записи о смерти и погребении, 1538-1991": {
             "en": "England Deaths and Burials, 1538-1991"
           },
-          "Англия, Эссекс, приходские захоронения": {
-            "en": "England Essex parish burials"
+          "Англия, Чешир, приходские смерти и захоронения": {
+            "en": "England, Cheshire, Parish deaths & burials"
           },
-          "Англия, Ланкашир, Манчестер, погребения": {
-            "en": "England Lancashire manchester burial"
+          "Англия, Эссекс, приходские захоронения": {
+            "en": "England, Essex, Parish burials"
           },
           "Англия, сообщения о похоронах и некрологи": {
             "en": "England, Funeral Notices and Obituaries"
+          },
+          "Англия, Ланкашир, Манчестер, погребения": {
+            "en": "England, Lancashire, Manchester, burial"
           },
           "Флорида, окружные смерти": {
             "en": "Florida County Deaths"
@@ -678,16 +687,16 @@
             "en": "India, Select Deaths and Burials, 1719–1948"
           },
           "Индиана, округ Аллен, Некрологи": {
-            "en": "Indiana county allen obituary"
+            "en": "Indiana, Allen County, obituary"
           },
           "Interment.net": {
             "en": "Interment.net"
           },
           "Ирландия, записи о смерти, 1864-1958": {
-            "en": "Ireland records deaths 1864-1958"
+            "en": "Ireland, Death Records, 1864-1958"
           },
           "Луизиана, реестр смертей, 1819-1969": {
-            "en": "Louisiana records death 1819-1969"
+            "en": "Louisiana, records death, 1819-1969"
           },
           "Мэриленд, Смерти": {
             "en": "Maryland Deaths"
@@ -704,11 +713,11 @@
           "Реестр записей регистрации смерти, штат Миссури, 1910 - 1960 годов": {
             "en": "Missouri Death Certificates, 1910 - 1960"
           },
-          "Миссури, смерти, 1961-1970": {
-            "en": "Missouri deaths 1961-1970"
-          },
           "Миссури, реестр смертности, 1968-2015": {
             "en": "Missouri, Deaths"
+          },
+          "Миссури, смерти, 1961-1970": {
+            "en": "Missouri, deaths, 1961-1970"
           },
           "Миссури, Сент-Луис, Уведомления о смерти": {
             "en": "Missouri, St. Louis Death Notices"
@@ -762,28 +771,19 @@
             "en": "Pennsylvania Death Index, 1906-1964"
           },
           "Реестр захоронений, приход Лейчестершир": {
-            "en": "Records burials parish leichestershir"
+            "en": "Records burials, Leichestershir Parish"
           },
           "Записи о смертях в Западной Вирджинии": {
-            "en": "Records death in zapadnoi Virginia"
-          },
-          "Реестр записей регистрации смерти, штат Кентукки, 1900 - 1999 годов": {
-            "en": "Records records registration deaths state Kentucky 1900 - 1999 godov"
-          },
-          "Записи регистрации смерти, штат Коннектикут, 1949-2012": {
-            "en": "Records registration deaths state Connecticut 1949-2012"
+            "en": "Records death in Zapadnoi Virginia"
           },
           "Шотландия, Надгробные камни и мемориалы": {
-            "en": "Scotland nadgrobnye kamni & memorialy"
+            "en": "Scotland, headstone Kamni & Memorialy"
           },
           "Южная Каролина, округ Гринвилл, некрологи и извещения о смерти": {
-            "en": "South Carolina county grinvill obituary & izvescheniya deaths"
+            "en": "South Carolina, Grinvill County, obituary & notices deaths"
           },
           "Южная Каролина, Некрологи": {
-            "en": "South Carolina obituary"
-          },
-          "Свидетельства о смерти Аризоны": {
-            "en": "Svidetelstva deaths Arizona"
+            "en": "South Carolina, obituary"
           },
           "Реестр записей регистрации смерти, штат Теннесси, 1908 - 1933 годов": {
             "en": "Tennessee Death Records, 1908–1933"
@@ -801,7 +801,7 @@
             "en": "United Kingdom, Select Burial and Cremation Index, 1840-2014"
           },
           "Соединенные Штаты, Калифорния Смерти, 1905-1939": {
-            "en": "United state California deaths 1905-1939"
+            "en": "United state, California deaths, 1905-1939"
           },
           "Соединенные Штаты и Канада, Каталог некрологов, 1900–2019 годы": {
             "en": "United States and Canada, Index of Obituaries, 1900-2019"
@@ -822,7 +822,7 @@
             "en": "Utah Burials"
           },
           "Уэльс, приходские записи о смертях и захоронениях": {
-            "en": "Wales parish records death & burials"
+            "en": "Wales, Parish Death and Burial Records"
           },
           "Вашингтон, записи о смерти, 1907-1960": {
             "en": "Washington, Death Certificates, 1907-1960"
@@ -1871,6 +1871,9 @@
           "Кост-Рика, списки избирателей, 2011 - 2014": {
             "en": "Costa Rica, Electoral Rolls, 2011 - 2014"
           },
+          "Гродненская губерния, Списки избирателей, 1912 г": {
+            "en": "Dau's Blue Book for Detroit, 1912"
+          },
           "Перепись населения немецких меньшинств, 1939": {
             "en": "German Minority Census, 1939"
           },
@@ -1883,9 +1886,6 @@
           "Греция, Избирательные списки и реестры мужчин, 1856–1950": {
             "en": "Greece, Electoral Rolls and Male Registers, 1856-1950"
           },
-          "Гродненская губерния, Списки избирателей, 1912 г": {
-            "en": "Grodno Gubernia, Voters Lists, 1912 from JewishGen"
-          },
           "Венгрия, еврейская перепись населения, 1848 год от JewishGen": {
             "en": "Hungary, Jewish Census, 1848 from JewishGen"
           },
@@ -1895,11 +1895,11 @@
           "Списки избирателей, Ирландия, 1832-1838 годов": {
             "en": "Ireland Electoral Registers, 1832 - 1838"
           },
-          "Ирландия, свободные землевладельцы Ольстера": {
-            "en": "Ireland svobodnye land olstera"
-          },
           "Неплательщики десятины, Ирландия, 1831 год": {
             "en": "Ireland Tithe Defaulters, 1831"
+          },
+          "Ирландия, свободные землевладельцы Ольстера": {
+            "en": "Ireland, Svobodnye land Olstera"
           },
           "Латвия, Списки владельцев внутренних Рижских паспортов, 1918-1940 годы": {
             "en": "Latvia, Riga Internal Passport Holders Index, 1918-1940"
@@ -3131,7 +3131,7 @@
             "en": "Emigrants from Hamburg to Australasia, 1850 - 1879"
           },
           "Финляндия, Миграционные реестры Карелии": {
-            "en": "Finland, Karelia, Pre Confirmation Rolls"
+            "en": "Finland, Karelia Migrant Registers"
           },
           "Иммигрирующие в США немцы": {
             "en": "Germans Immigrating to the United States"
@@ -3157,7 +3157,7 @@
           "Израиль, иммиграционные списки": {
             "en": "Israel, Immigration Lists"
           },
-          "Иммигрирующие в США итальянцы": {
+          "Иммигрирующие в США русские": {
             "en": "Italians Immigrating to the United States"
           },
           "Американцы японского происхождения, переселенные во время Второй мировой войны 1942-1946": {
@@ -3184,7 +3184,7 @@
           "Индекс ранних пионеров Квинсленда, 1824 - 1859 года": {
             "en": "Queensland Early Pioneers Index, 1824 - 1859"
           },
-          "Иммигрирующие в США русские": {
+          "Иммигрирующие в США итальянцы": {
             "en": "Russians Immigrating to the United States"
           },
           "Испания, миграция в Америку, 1880-1930 гг.": {
@@ -3314,14 +3314,11 @@
           "Выписки из реестра Воздушных Сил": {
             "en": "Air Force Register Extracts"
           },
-          "Арканзас, записи об увольнении с военной службы Первой мировой войны": {
-            "en": "Arkansas records uvolnenii military service pervoi mirovoi voiny"
-          },
           "Арканзас, записи о второй регистрации призывных повесток, 1948-1959": {
             "en": "Arkansas, Second Registration Draft Cards, 1948-1959"
           },
-          "Австралия, Мемориальный список": {
-            "en": "Australia memorialnyi spisok"
+          "Арканзас, записи об увольнении с военной службы Первой мировой войны": {
+            "en": "Arkansas, World War I Discharge Records"
           },
           "Австралия, Именной список Первой мировой войны, 1914-1918": {
             "en": "Australia, First World War Nominal Roll, 1914-1918"
@@ -3331,6 +3328,9 @@
           },
           "Австралия, Квинсленд, Портреты солдат Первой мировой войны 1914-1918": {
             "en": "Australia, Queensland, World War I Soldier Portraits 1914-1918"
+          },
+          "Австралия, Мемориальный список": {
+            "en": "Australia, Roll of Honour"
           },
           "Австралия, списки на посадку Первой мировой войны": {
             "en": "Australia, WWI Embarkation Lists"
@@ -3396,7 +3396,7 @@
             "en": "Dod's Peerage, Baronetage, Knightage, Etc. of Great Britain And Ireland, 1920, Part 2"
           },
           "Англия, Ополчение Дарема": {
-            "en": "England opolchenie darema"
+            "en": "England, militia Darema"
           },
           "Финляндия, потери во Второй мировой войне": {
             "en": "Finland WWII Casualty Records"
@@ -3441,7 +3441,7 @@
             "en": "Kansas, World War II Selective Service Records"
           },
           "Каталог аттестатов британского народного ополчения, 1886 - 1910 годов": {
-            "en": "Katalog attestatov britanskogo narodnogo opolcheniya 1886 - 1910 godov"
+            "en": "Katalog certificate Britanskogo Narodnogo militia, 1886 - 1910"
           },
           "Несчастные случаи во время корейской войны, 1950 - 1957 годов": {
             "en": "Korean War Casualties, 1950 - 1957"
@@ -3590,13 +3590,13 @@
         }
       },
       "Франция, Кальвадос, Карточки воинского учёта": {
-        "en": "France kalvados map voinskogo ucheta"
-      },
-      "Франция, Сона и Луара, Военный призыв": {
         "en": "France, Calvados, Military Registration Cards"
       },
       "Франция, Рона, Карточки воинского учёта": {
         "en": "France, Rhône, Military Registration Cards"
+      },
+      "Франция, Сона и Луара, Военный призыв": {
+        "en": "France, Saône-et-Loire, Military Conscriptions"
       },
       "Франция, Вьенн, Военные призывные карточки": {
         "en": "France, Vienne, Military Draft Cards"

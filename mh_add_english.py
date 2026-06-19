@@ -79,6 +79,7 @@ GEO = {
  'род':'Rhode','айленд':'Island','род-айленд':'Rhode Island','юта':'Utah',
  'нью-йорк':'New York','нью-джерси':'New Jersey','нью-гэмпшир':'New Hampshire',
  'гэмпшир':'Hampshire','дакота':'Dakota',
+ 'кальвадос':'Calvados','рона':'Rhône','сена':'Seine','сены':'Seine','роны':'Rhône',
  'йоркшир':'Yorkshire','ланкашир':'Lancashire','чешир':'Cheshire',
  'дербишир':'Derbyshire','эссекс':'Essex','дорсет':'Dorset','норфолк':'Norfolk',
  'кент':'Kent','корнуолл':'Cornwall','бристоль':'Bristol','дублин':'Dublin',
@@ -107,7 +108,9 @@ TERMS = [
  ('рожден','birth'),('крещени','baptism'),('брак','marriage'),('развод','divorce'),
  ('смерти','deaths'),('смертност','mortality'),('смерт','death'),
  ('погребени','burial'),('захоронени','burials'),('захорони','burial'),('захорон','burial'),
- ('окружн','county'),('призывник','conscripts'),('иммигрирующ','immigrating'),('немц','Germans'),
+ ('окружн','county'),('округ','county'),('призывник','conscripts'),('иммигрирующ','immigrating'),
+ ('немц','Germans'),('надгробн','headstone'),('ополчени','militia'),('увольнени','discharge'),
+ ('аттестат','certificate'),('приход','parish'),('извещени','notices'),
  ('похорон','funeral'),('некролог','obituary'),('кладбищ','cemetery'),
  ('церков','church'),('синагог','synagogue'),('метрическ','parish register'),
  ('переписн','census'),('перепис','census'),('избирател','voter'),
@@ -188,28 +191,73 @@ def _geo(word):
             return v
     return None
 
+# Whole multi-word phrases → English, applied BEFORE the word-by-word pass so common
+# genealogy collocations don't come out as word salad («Карточки воинского учёта» →
+# «map voinskogo ucheta»). Longest first. The English here is already Latin, so the
+# word loop keeps it verbatim.
+PHRASES = [
+    ("карточки воинского учёта", "Military Registration Cards"),
+    ("карточки воинского учета", "Military Registration Cards"),
+    ("воинского учёта", "Military Registration"),
+    ("воинского учета", "Military Registration"),
+    ("реестр записей регистрации смерти", "Death Registration Records"),
+    ("записей регистрации смерти", "Death Registration"),
+    ("записи регистрации смерти", "Death Registration Records"),
+    ("приходские записи о смертях и захоронениях", "Parish Death and Burial Records"),
+    ("приходские записи о рождениях и крещениях", "Parish Birth and Baptism Records"),
+    ("приходские записи", "Parish Records"),
+    ("записи о смерти и погребении", "Death and Burial Records"),
+    ("акты гражданского состояния", "Civil Status Records"),
+    ("гражданского состояния", "Civil Status"),
+    ("записи о рождениях", "Birth Records"),
+    ("записи о рождении", "Birth Records"),
+    ("записи о смерти", "Death Records"),
+    ("записи о браке", "Marriage Records"),
+    ("записи о браках", "Marriage Records"),
+    ("свидетельства о смерти", "Death Certificates"),
+    ("свидетельства о рождении", "Birth Certificates"),
+    ("акты о смерти", "Death Certificates"),
+    ("списки избирателей", "Electoral Rolls"),
+    ("списки пассажиров", "Passenger Lists"),
+    ("перепись населения", "Census"),
+    ("переписи населения", "Census"),
+]
+
 def ru_to_en(ru: str) -> str:
     """Term-by-term English translation (fallback when no EN-docx match)."""
     s = ' ' + ru.lower() + ' '
+    for ru_ph, en_ph in PHRASES:              # whole-phrase pass first
+        s = re.sub(r'(?<![а-яё])' + re.escape(ru_ph) + r'(?![а-яё])',
+                   ' ' + en_ph + ' ', s)
     for stem, en in TERMS:                    # longest-ish stems first roughly
         s = re.sub(stem + r'[а-яё]*', ' ' + en + ' ', s)
     PREP = {"и": "&", "а": "&", "в": "in", "во": "in", "от": "from", "для": "for",
             "по": "by", "о": "", "об": "", "на": "", "с": "", "со": "", "у": ""}
     out_words = []
-    for w in re.findall(r"[а-яёa-z0-9'’/.-]+", s):
+    for w in re.findall(r"[A-Za-zА-ЯЁа-яё0-9'’/.-]+|,", s):  # keep case + commas
+        if w == ",":
+            if out_words and out_words[-1] != ",":
+                out_words.append(",")
+            continue
         lw = w.lower()
         if lw in PREP:
             if PREP[lw]:
                 out_words.append(PREP[lw])
+        elif lw in ("год", "года", "годов", "году", "гг", "г", "штат", "штата", "штате"):
+            continue                        # year-noise / «штат» filler → drop
         elif _geo(lw):
             out_words.append(_geo(lw))
-        elif re.fullmatch(r"[a-z0-9'’/.-]+", lw) or re.fullmatch(r'\d{4}([–-]\d{4})?', w):
+        elif re.fullmatch(r"[A-Za-z0-9'’/.-]+", w) or re.fullmatch(r'\d{4}([–-]\d{4})?', w):
             out_words.append(w)            # already latin / year
         elif re.search(r'[а-яё]', lw):
-            out_words.append(_translit(w))  # place name → translit
+            t = _translit(w)               # place name → translit (capitalised)
+            out_words.append(t[:1].upper() + t[1:] if t else t)
         else:
             out_words.append(w)
-    res = re.sub(r'\s+', ' ', ' '.join(out_words)).strip(' ,;&')
+    res = re.sub(r'\s+', ' ', ' '.join(out_words)).replace(' ,', ',').strip(' ,;&')
+    # «county Allen» → «Allen County», «parish Leicestershire» → «Leicestershire Parish»
+    res = re.sub(r'\b(county|parish)\s+([A-Z][\w’-]+)', r'\2 ' + r'\1', res)
+    res = re.sub(r'\b(county|parish)\b', lambda m: m.group(1).capitalize(), res)
     return res[:1].upper() + res[1:] if res else ru
 
 def _tokens_ru_as_en(ru: str) -> set:
