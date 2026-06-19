@@ -350,7 +350,7 @@
             "en": "England, Warwickshire Parish Registers, 1538-1900"
           },
           "Финляндия, Карелия, Доконфирмационные списки": {
-            "en": "Finland, Karelia, Pre Confirmation Rolls"
+            "en": "Finland, Karelia Migrant Registers"
           },
           "Франция, Сборник записей актов гражданского состояния, 1585-1928": {
             "en": "France, Compilation of Vital Records, 1585-1928"
@@ -542,14 +542,14 @@
           "Австралия, Каталог некрологов с OldNews.com": {
             "en": "Australia Obituary Index from OldNews.com"
           },
+          "Австралия, надписи на кладбищах": {
+            "en": "Australia, Nadpisi cemetery"
+          },
           "Австралия, реестр смертности в Новом Южном Уэльсе, 1787-1986": {
             "en": "Australia, New South Wales Death Index, 1787-1986"
           },
           "Австралия, Квинсленд, Смерти": {
             "en": "Australia, Queensland Deaths"
-          },
-          "Австралия, надписи на кладбищах": {
-            "en": "Australia, Roll of Honour"
           },
           "Австралия, Виктория, Индекс смертей, 1836-1985": {
             "en": "Australia, Victoria Death Index, 1836-1985"
@@ -3131,7 +3131,7 @@
             "en": "Emigrants from Hamburg to Australasia, 1850 - 1879"
           },
           "Финляндия, Миграционные реестры Карелии": {
-            "en": "Finland, Karelia Migrant Registers"
+            "en": "Finland, Karelia, Pre Confirmation Rolls"
           },
           "Иммигрирующие в США немцы": {
             "en": "Germans Immigrating to the United States"
@@ -3233,9 +3233,6 @@
           "Австралия, отъезжающие из штата Виктория пассажиры, 1852-1915 годы": {
             "en": "Australia, Outwards Passengers from Victoria, 1852-1915"
           },
-          "Австралия, натурализации в Квинсленде": {
-            "en": "Australia, Queensland Naturalizations"
-          },
           "Списки пассажиров Бостона, Массачусетс, 1891-1943": {
             "en": "Boston, Massachusetts Passenger Lists, 1891-1943"
           },
@@ -3254,38 +3251,11 @@
           "Ellis Island и другие списки пассажиров Нью-Йорка, 1820-1957": {
             "en": "Ellis Island and Other New York Passenger Lists, 1820-1957"
           },
-          "Франция, Натурализация": {
-            "en": "France, Naturalizations"
-          },
           "Гонолулу, Гавайи, списки пассажиров": {
             "en": "Honolulu, Hawaii Passenger Lists"
           },
-          "Иллинойс, Северный округ (Восточное отделение), Индекс натурализации": {
-            "en": "Illinois, Northern District (Eastern Division), Naturalization Index"
-          },
-          "Индиана, Натурализация": {
-            "en": "Indiana Naturalizations"
-          },
           "Штат Луизиана, Новый Орлеан, списки пассажиров": {
             "en": "Louisiana, New Orleans, Passenger Lists"
-          },
-          "Заявления на натурализацию в Подмандатной Палестине, 1937-1947": {
-            "en": "Mandatory Palestine Naturalization Applications, 1937-1947"
-          },
-          "Натурализация в Массачусетсе": {
-            "en": "Massachusetts Naturalizations"
-          },
-          "Натурализации в Миннесоте": {
-            "en": "Minnesota Naturalizations"
-          },
-          "Миннесота, регистрация иностранцев, 1918": {
-            "en": "Minnesota, Alien Registrations, 1918"
-          },
-          "Миннесота, Карточный указатель натурализации, 1930-1988": {
-            "en": "Minnesota, Naturalization Card Index, 1930-1988"
-          },
-          "Миссури, Натурализация": {
-            "en": "Missouri, Naturalizations"
           },
           "Нью-Йорк: списки пассажиров и членов экипажа, 1957–1963 гг": {
             "en": "New York City Passenger and Crew Lists, 1957-1963"
@@ -3296,26 +3266,11 @@
           "Нью-Йорк, Индексы книг пассажирских списков 1906-1942": {
             "en": "New York, Passenger List Book Indexes 1906-1942"
           },
-          "Нью-Йорк, натурализация округа Вестчестер": {
-            "en": "New York, Westchester County Naturalizations"
-          },
-          "Северная Дакота, натурализации": {
-            "en": "North Dakota Naturalizations"
-          },
-          "Огайо, записи об окружной натурализации": {
-            "en": "Ohio, County Naturalization Records"
-          },
           "Порт Нью-Йорк, Перечень уволенных или расформированных экипажей, 1917-1957 годы": {
             "en": "Port of New York, Index to Discharged or Deserted Crew, 1917-1957"
           },
-          "Португалия, Мадейра, Заявления на получение паспортов": {
-            "en": "Portugal, Madeira Passport Applications"
-          },
           "Списки пассажиров Сиэтла, штат Вашингтон": {
             "en": "Seattle, Washington Passenger Lists"
-          },
-          "Реестры записей о натурализации в США": {
-            "en": "U.S. Naturalization Records"
           },
           "Соединенное Королевство и Ирландия, списки прибывающих пассажиров, 1878-1960": {
             "en": "United Kingdom and Ireland, Incoming Passenger Lists, 1878-1960"
@@ -3323,32 +3278,11 @@
           "Соединенное Королевство и Ирландия, списки выезжающих пассажиров, 1890-1960": {
             "en": "United Kingdom and Ireland, Outgoing Passenger Lists, 1890-1960"
           },
-          "Соединенное Королевство, свидетельства и декларации о натурализации": {
-            "en": "United Kingdom, Naturalisation Certificates and Declarations"
-          },
-          "Заявления на получение паспорта США, 1795-1925 годы": {
-            "en": "United States Passport Applications, 1795-1925"
-          },
-          "Соединенные Штаты, Файлы по делам иностранцев": {
-            "en": "United States, Alien Case Files"
-          },
           "Соединенные Штаты, пересечения границы из Канады, 1895–1956": {
             "en": "United States, Border Crossings from Canada, 1895-1956"
           },
           "Соединенные Штаты, Списки прибывающих пассажиров из Канады, 1895-1957": {
             "en": "United States, Incoming Passenger Lists from Canada, 1895-1957"
-          },
-          "Индекс записей натурализации США, Северное Иллинойс": {
-            "en": "US Naturalization Record Index, Northern Illinois"
-          },
-          "Записи о натурализации США, Новая Англия, 1791-1906 гг": {
-            "en": "US Naturalization Records, New England, 1791-1906"
-          },
-          "РRecords гражданства США, Северная Калифорния": {
-            "en": "US Naturalization Records, Northern California"
-          },
-          "Западная Вирджиния, записи о натурализации, 1814-1991": {
-            "en": "West Virginia Naturalization Records, 1814-1991"
           }
         }
       }
@@ -3380,14 +3314,14 @@
           "Австралия, Именной список Первой мировой войны, 1914-1918": {
             "en": "Australia, First World War Nominal Roll, 1914-1918"
           },
-          "Австралия, Мемориальный список": {
-            "en": "Australia, Memorialnyi Spisok"
-          },
           "Австралия, Рекомендации и награды за воинские почести": {
             "en": "Australia, Military Honours and Awards Recommendations"
           },
           "Австралия, Квинсленд, Портреты солдат Первой мировой войны 1914-1918": {
             "en": "Australia, Queensland, World War I Soldier Portraits 1914-1918"
+          },
+          "Австралия, Мемориальный список": {
+            "en": "Australia, Roll of Honour"
           },
           "Австралия, списки на посадку Первой мировой войны": {
             "en": "Australia, WWI Embarkation Lists"
@@ -3652,10 +3586,10 @@
       "Франция, Рона, Карточки воинского учёта": {
         "en": "France, Rhône, Military Registration Cards"
       },
-      "Франция, Сона и Луара, Военный призыв": {
+      "Франция, Вьенн, Военные призывные карточки": {
         "en": "France, Saône-et-Loire, Military Conscriptions"
       },
-      "Франция, Вьенн, Военные призывные карточки": {
+      "Франция, Сона и Луара, Военный призыв": {
         "en": "France, Vienne, Military Draft Cards"
       },
       "Военные документы": {

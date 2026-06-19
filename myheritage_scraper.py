@@ -2418,44 +2418,65 @@ _VIS_JS = ("const V = e => { if (!e) return false; const r = e.getClientRects();
            " return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };")
 
 
+_SEL_HDR = ('[data-automations="selector_header"], '
+            '[data-automations="selector_header_container"], .selector_header')
+
+
 async def _set_results_per_page(page, log, want="50"):
-    """Set «Results per page» to `want` (50) on the VISIBLE selector
-    (`data-automations="selector_header"`). Real click + JS fallback, ~2s waits for the
-    lazily-drawn option list, and verbose logging so a live run shows what happened."""
+    """Set «Results per page» to `want` (50). The selector
+    (`data-automations="selector_header"`, the span showing «20») is rendered LAZILY near
+    the bottom pagination and may sit in a sub-frame — a live run showed `found:0` because
+    we checked too early / only the top frame. So we SCROLL down and search EVERY frame
+    before acting on the VISIBLE control (class fallback `.selector_header` too)."""
+    frame = None
+    for _ in range(6):
+        for fr in page.frames:
+            try:
+                c = await fr.evaluate("(s) => document.querySelectorAll(s).length", _SEL_HDR)
+            except Exception:
+                c = 0
+            if c:
+                frame = fr
+                break
+        if frame:
+            break
+        # selector is lazy / below the fold → scroll everything to the bottom and retry
+        for fr in page.frames:
+            try:
+                await fr.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+            except Exception:
+                pass
+        await asyncio.sleep(1.2)
+    if frame is None:
+        log("  !! селектор «результатов на странице» не найден (после скролла/фреймов)")
+        return
     try:
-        info = await page.evaluate("() => {" + _VIS_JS + r"""
-            const hs = [...document.querySelectorAll(
-                '[data-automations="selector_header"], [data-automations="selector_header_container"]')];
+        info = await frame.evaluate("(s) => {" + _VIS_JS + r"""
+            const hs = [...document.querySelectorAll(s)];
             const h = hs.find(V) || hs[0];
             return h ? {found:true, total:hs.length, visible:hs.filter(V).length,
                        cur:(h.textContent||'').trim()}
                      : {found:false, total:hs.length};
-        }""")
+        }""", _SEL_HDR)
         log(f"  per-page selector: {info}")
         if not info.get("found"):
-            log("  !! селектор «результатов на странице» не найден")
             return
         if info.get("cur") == want:
             log(f"  → Результатов на странице уже {want}")
             return
-        # open the dropdown on the VISIBLE header
+        # open the dropdown on the VISIBLE header (real click, JS fallback)
         try:
-            await page.locator(
-                '[data-automations="selector_header"]:visible').first.click(timeout=4000)
+            await frame.locator(
+                '[data-automations="selector_header"]:visible, .selector_header:visible'
+            ).first.click(timeout=4000)
         except Exception:
-            try:
-                await page.locator(
-                    '[data-automations="selector_header_container"]:visible'
-                ).first.click(timeout=4000)
-            except Exception:
-                await page.evaluate("() => {" + _VIS_JS + """
-                    const h = [...document.querySelectorAll(
-                        '[data-automations="selector_header"], [data-automations="selector_header_container"]')].find(V);
-                    if (h) h.click();
-                }""")
+            await frame.evaluate("(s) => {" + _VIS_JS + """
+                const h = [...document.querySelectorAll(s)].find(V);
+                if (h) h.click();
+            }""", _SEL_HDR)
         await asyncio.sleep(2)                          # option list draws ~2s
         # click the VISIBLE «50» option (leaf with exact text)
-        res = await page.evaluate("(w) => {" + _VIS_JS + r"""
+        res = await frame.evaluate("(w) => {" + _VIS_JS + r"""
             const cands = [...document.querySelectorAll(
                 'li, span, a, div, button, [role="option"], [data-automations]')];
             const hit = cands.filter(e => e.children.length === 0
@@ -2465,9 +2486,9 @@ async def _set_results_per_page(page, log, want="50"):
         }""", want)
         log(f"  per-page option «{want}»: {res}")
         await asyncio.sleep(2)                          # results reload with `want`/page
-        now = await page.evaluate(
-            """() => { const h = document.querySelector(
-                   '[data-automations="selector_header"]'); return h ? (h.textContent||'').trim() : ''; }""")
+        now = await frame.evaluate(
+            "(s) => { const h = document.querySelector(s); return h ? (h.textContent||'').trim() : ''; }",
+            _SEL_HDR)
         log(f"  → Результатов на странице теперь: {now}")
     except Exception as e:
         log(f"  → per-page: {e}")
