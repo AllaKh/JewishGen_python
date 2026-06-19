@@ -2100,6 +2100,35 @@ _CAT_I18N = {
 }
 
 
+async def _expand_category_facet(page, log):
+    """Click any «Show more / Показать ещё» link inside the «Narrow down by category»
+    facet so every category is visible before we pick one. MH renders these long lists
+    lazily and needs ~2 seconds to draw them fully, so we pause after each expand."""
+    MORE_JS = r"""(words) => {
+        const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        let n = 0;
+        for (const e of document.querySelectorAll('a, span, div, button')) {
+            if (e.children.length) continue;            // leaf only
+            if (words.includes(norm(e.textContent))) {
+                try { e.click(); n++; } catch (_) {}
+            }
+        }
+        return n;
+    }"""
+    words = ["show more", "see more", "show all", "показать ещё", "показать еще",
+             "показать больше", "показать все", "показать всё", "voir plus",
+             "mehr anzeigen", "ver más", "ver mas", "mostrar más"]
+    for _ in range(5):
+        try:
+            n = await page.evaluate(MORE_JS, words)
+        except Exception:
+            n = 0
+        if not n:
+            break
+        log(f"  → «Показать ещё» в категориях: +{n}")
+        await asyncio.sleep(2)                           # long list draws ~2s
+
+
 async def _apply_category_filter(page, label, log):
     """Click the results-page «Narrow down by category» row whose .name matches the
     English `label` OR any of its language variants (the site shows the label in its own
@@ -2128,6 +2157,8 @@ async def _apply_category_filter(page, label, log):
         except Exception:
             pass
         await asyncio.sleep(0.5)
+    await asyncio.sleep(2)                           # the long category list draws ~2s
+    await _expand_category_facet(page, log)          # reveal «Show more» categories
     try:
         before = await page.evaluate(
             "() => (document.querySelector('a[href*=\"showRecord\"]')||{}).href || ''")
@@ -2379,25 +2410,45 @@ async def _collect_one_page(page):
 
 
 async def _set_results_per_page(page, log, want="50"):
-    """Open the results-per-page dropdown (data-automations=
-    selector_header_container) and pick `want` (e.g. 50) to reduce paging."""
+    """Open the results-per-page selector (the span that shows the current «20»:
+    `<span class="selector_header" data-automations="selector_header">20</span>`) and
+    pick `want` (50) so fewer page turns are needed. MH renders the option list lazily,
+    so we wait ~2s after opening it and ~2s after picking before the results reload."""
     try:
-        hdr = page.locator('[data-automations="selector_header_container"]').first
+        hdr = page.locator('[data-automations="selector_header"]').first
+        if not await hdr.count():                      # older markup fallback
+            hdr = page.locator('[data-automations="selector_header_container"]').first
         if not await hdr.count():
+            log("  !! селектор «результатов на странице» не найден")
             return
         cur = (await hdr.text_content() or "").strip()
         if cur == want:
+            log(f"  → Результатов на странице уже {want}")
             return
         await hdr.click(timeout=4000)
-        await asyncio.sleep(0.8)
-        # pick the option whose text is exactly `want`
-        opt = page.get_by_text(re.compile(rf"^{want}$")).first
-        if await opt.count():
-            await opt.click(timeout=4000)
-            await asyncio.sleep(2)
-            log(f"  → Результатов на странице: {want}")
-    except Exception:
-        pass
+        await asyncio.sleep(2)                          # long option list draws ~2s
+        # click the leaf element whose exact text is `want` (50)
+        picked = await page.evaluate(r"""(w) => {
+            const cands = document.querySelectorAll(
+                '[data-automations*="selector"] *, [class*="selector"] *, '
+                + '[role="option"], li, span, a, div');
+            for (const e of cands) {
+                if (e.children.length === 0 && (e.textContent || '').trim() === w) {
+                    try { e.click(); } catch (_) {}
+                    return true;
+                }
+            }
+            return false;
+        }""", want)
+        if not picked:
+            opt = page.get_by_text(re.compile(rf"^\s*{want}\s*$")).last
+            if await opt.count():
+                await opt.click(timeout=4000)
+        await asyncio.sleep(2)                          # results reload with `want`/page
+        now = (await hdr.text_content() or "").strip()
+        log(f"  → Результатов на странице: {now or want}")
+    except Exception as e:
+        log(f"  → per-page: {e}")
 
 
 async def _goto_next_results(page, log):
@@ -2418,9 +2469,15 @@ async def _goto_next_results(page, log):
             """() => { const a = document.querySelector('a[href*=\"showRecord\"]');
                        return a ? a.href : ''; }""")
         await nxt.scroll_into_view_if_needed(timeout=3000)
-        await nxt.click(timeout=5000)
+        try:
+            await nxt.click(timeout=5000)
+        except Exception:
+            # overlay / hidden duplicate → click it directly in the DOM instead
+            await page.evaluate(
+                """() => { const a = document.querySelector(
+                       'a[data-automations=\"next_icon\"]'); if (a) a.click(); }""")
         # wait until the first record link changes (AJAX page swap)
-        for _ in range(15):
+        for k in range(15):
             await asyncio.sleep(1)
             after = await page.evaluate(
                 """() => { const a = document.querySelector('a[href*=\"showRecord\"]');
@@ -2428,6 +2485,10 @@ async def _goto_next_results(page, log):
             if after and after != before:
                 log("  → Перешёл на следующую страницу")
                 return True
+            if k == 6:                      # halfway: retry the click via the DOM
+                await page.evaluate(
+                    """() => { const a = document.querySelector(
+                           'a[data-automations=\"next_icon\"]'); if (a) a.click(); }""")
         log("  → «Далее»: страница не сменилась")
         return False
     except Exception as e:
@@ -2479,7 +2540,7 @@ async def _diag_results(page, log):
         log(f"  🔎 диагностика не вышла: {e}")
 
 
-async def _collect(page, log, max_pages=8, want_first="", want_last="", want_year=""):
+async def _collect(page, log, max_pages=25, want_first="", want_last="", want_year=""):
     # Wait for result cards to render
     results, seen_urls = [], set()
     for _t in range(25):
@@ -2491,9 +2552,9 @@ async def _collect(page, log, max_pages=8, want_first="", want_last="", want_yea
         if res.get("rows"):
             break
 
-    # Show 50 per page to reduce the number of page turns
+    # Show 50 per page to reduce the number of page turns (MH reloads ~2s)
     await _set_results_per_page(page, log, "50")
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
 
     page_no = 1
     while page_no <= max_pages:
@@ -2515,10 +2576,15 @@ async def _collect(page, log, max_pages=8, want_first="", want_last="", want_yea
                     new_rel += 1
         log(f"  → Страница {page_no}: записей {len(rows)} "
             f"(новых {new}, релевантных {new_rel}), всего {len(results)}")
-        # Once a page brings NO new name-relevant records, we've passed the
-        # relevant block (the «expanded criteria» tail) → stop paginating.
-        if results and new_rel == 0:
-            log("  → больше нет релевантных имён — стоп")
+        # Walk EVERY result page. Only halt when MyHeritage's «expanded criteria»
+        # divider is reached (everything after it is irrelevant) or a page brings
+        # no new records at all — NOT merely because a page's names stopped fuzzy-
+        # matching (that wrongly cut pagination short on deeper pages).
+        if res.get("stop"):
+            log("  → достигнут разделитель «расширения критериев» — стоп")
+            break
+        if results and new == 0:
+            log("  → новых записей на странице нет — последняя страница")
             break
         try:
             advanced = await _goto_next_results(page, log)
