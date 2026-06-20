@@ -3,7 +3,7 @@
 import re
 
 # A 4-digit year glued DIRECTLY (no space) to a following capital letter is the
-# common "слипшиеся строки" symptom in family / event lists, e.g.
+# common "glued-together rows" symptom in family / event lists, e.g.
 #   "Моисей … 1858 - 1931Сора-Лея … 1860 - 1936"
 # A space after the year ("1950 Detroit") is left alone — that's a real date+place.
 _YEAR_GLUE = re.compile(r"(1[5-9]\d\d|20\d\d)(?=[A-ZА-ЯЁ])")

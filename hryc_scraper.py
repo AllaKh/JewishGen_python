@@ -162,7 +162,7 @@ def _add_link(para, text, url):
 
 
 # landscape A4 with 0.7" L/R margins → ~10.3" usable; keep the table inside it so the
-# right margin survives (sum ≈ 9.8"). #, Источник, Ссылка narrow — Запись wide.
+# right margin survives (sum ≈ 9.8"). #, Source, Link columns narrow — Record wide.
 # python-docx ignores table-level widths → set on EVERY cell per row.
 _COLW = [Inches(0.4), Inches(0.9), Inches(7.8), Inches(0.7)]
 
@@ -252,7 +252,7 @@ def write_xlsx(path: Path, rows: list, qlines: list, append: bool = False):
             cell = ws.cell(row=ws.max_row, column=5)
             cell.hyperlink = r["url"]; cell.value = "Открыть"
             cell.font = Font(color="0563C1", underline="single")
-    # #, База, Источник, URL narrow — Запись wide
+    # #, Database, Source, URL columns narrow — Record wide
     for i, wd in enumerate([5, 10, 10, 120, 10], 1):
         ws.column_dimensions[get_column_letter(i)].width = wd
     # wrap the long snippet column
