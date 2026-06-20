@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction, QIntValidator
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 
 
 class _YearSpin(QSpinBox):
@@ -65,7 +65,7 @@ def _svg_icon(svg, size=20):
 _HERE    = Path(__file__).resolve().parent
 _ROOT    = _HERE.parent
 _CONFIG  = _ROOT / "config"
-_SAVE    = _HERE / ".mh_autosave.json"
+_SAVE    = autosave_path(".mh_autosave.json")
 _DEF_DIR = str(Path.home() / "Downloads" / "MyHeritage_results")
 
 if str(_ROOT) not in sys.path:

@@ -1,6 +1,25 @@
 """gui/_app_icon.py — shared app icon + window-header helpers."""
+import os
+import sys
 import threading
 from pathlib import Path
+
+_GUI_DIR = Path(__file__).resolve().parent
+
+
+def autosave_path(name: str) -> Path:
+    """Where a GUI keeps its autosave file. In a PACKAGED build the app folder may be
+    read-only, so use a per-user data dir (%APPDATA%/JewishGenealogySearch, created if
+    needed) — that's what makes "remember my last input" survive installation. In a normal
+    dev run it stays next to the gui modules (unchanged)."""
+    if getattr(sys, "frozen", False):
+        base = Path(os.environ.get("APPDATA") or Path.home()) / "JewishGenealogySearch"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return _GUI_DIR / name
+        return base / name
+    return _GUI_DIR / name
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt, QObject, QEvent
 from PySide6.QtWidgets import (QLabel, QHBoxLayout, QPushButton, QApplication,

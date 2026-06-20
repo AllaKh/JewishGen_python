@@ -18,11 +18,11 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QApplication,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
-_SAVE   = _HERE / ".wikisource_autosave.json"
+_SAVE   = autosave_path(".wikisource_autosave.json")
 _DEF_DIR = str(Path.home() / "Downloads" / "Wikisource_results")
 
 if str(_ROOT) not in sys.path:

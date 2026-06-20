@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QScrollArea, QFrame, QToolButton)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 
 try:
     import hryc_scraper as _scraper
@@ -26,7 +26,7 @@ except Exception:
 _HERE    = Path(__file__).resolve().parent
 _CONFIG  = _HERE.parent / "config"
 _SRCFILE = _CONFIG / "hryc_sources.json"
-_SAVE    = _HERE / ".hryc_autosave.json"
+_SAVE    = autosave_path(".hryc_autosave.json")
 _DEF_DIR = str(_HERE.parent / "results")
 
 STYLE = """

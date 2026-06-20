@@ -17,12 +17,12 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
 _CONFIG = _ROOT / "config"
-_SAVE   = _HERE / ".pamyat_autosave.json"
+_SAVE   = autosave_path(".pamyat_autosave.json")
 _DEF_DIR = str(Path.home() / "Downloads" / "Pamyat_results")
 
 if str(_ROOT) not in sys.path:

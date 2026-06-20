@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QSizePolicy,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 
 
 def _load_facets():
@@ -33,7 +33,7 @@ FACETS = _load_facets()
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
-_SAVE   = _HERE / ".gwar_autosave.json"
+_SAVE   = autosave_path(".gwar_autosave.json")
 _DEF_DIR = str(Path.home() / "Downloads" / "Gwar_results")
 
 if str(_ROOT) not in sys.path:

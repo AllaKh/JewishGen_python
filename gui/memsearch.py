@@ -21,12 +21,12 @@ from PySide6.QtWidgets import (
     QGroupBox, QRadioButton, QButtonGroup, QStackedWidget, QSizePolicy,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
 _CONFIG = _ROOT / "config"
-_SAVE   = _HERE / ".memsearch_autosave.json"
+_SAVE   = autosave_path(".memsearch_autosave.json")
 _DEF_DIR = str(Path.home() / "Downloads" / "Memsearch_results")
 
 if str(_ROOT) not in sys.path:
@@ -109,7 +109,7 @@ class Worker(QThread):
 class MemsearchApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Memsearch")
+        self.setWindowTitle("Memorial")
         self.setMinimumWidth(780)
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
@@ -122,7 +122,7 @@ class MemsearchApp(QMainWindow):
         outer = QVBoxLayout(root)
         outer.setContentsMargins(16, 12, 16, 12); outer.setSpacing(10)
 
-        outer.addLayout(make_header("Memlogo.png", "Memsearch", color="#c0392b"))
+        outer.addLayout(make_header("Memlogo.png", "Memorial", color="#c0392b"))
         outer.addWidget(QLabel(
             "Search across Soviet-repression victim databases (Memorial / GULAG.CZ)."))
 

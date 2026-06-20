@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QApplication, QGroupBox, QComboBox,
     QFrame, QGridLayout, QScrollArea,
 )
-from gui._app_icon import app_icon, make_header, make_cancel_button
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
 
@@ -48,7 +48,7 @@ def _svg_icon(svg: bytes, size: int = 20) -> QIcon:
 _HERE    = Path(__file__).resolve().parent
 _ROOT    = _HERE.parent
 _CONFIG  = _ROOT / "config"
-_SAVE    = _HERE / ".fs_autosave.json"
+_SAVE    = autosave_path(".fs_autosave.json")
 _DEF_DIR = str(Path.home() / "Downloads" / "FamilySearch_results")
 
 if str(_ROOT) not in sys.path:
