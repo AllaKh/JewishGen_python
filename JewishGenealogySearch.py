@@ -1,5 +1,5 @@
 """
-JewishGenSearch.py — entry point
+JewishGenealogySearch.py — entry point
 
 Opens the Launcher window, which lists all genealogy databases.
 Integrated scrapers: JewishGen, MyHeritage, FamilySearch, Ancestry, and others.

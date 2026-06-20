@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for JewishGenSearch — driven by build_installer.ps1.
+"""PyInstaller spec for JewishGenealogySearch — driven by build_installer.ps1.
 
 Bundles the launcher, EVERY gui/*.py window + every *_scraper.py, the config/ and
 storage/ (and models/) assets, and the Playwright Python package.
@@ -9,7 +9,7 @@ see them by following imports — we therefore add every gui module and every sc
 a hidden import (auto-discovered below, so new databases are picked up automatically).
 
 NOTE: PyInstaller does NOT bundle the Playwright *browser* binaries — build_installer.ps1
-copies the Chromium folder next to the .exe (dist/JewishGenSearch/ms-playwright) and the
+copies the Chromium folder next to the .exe (dist/JewishGenealogySearch/ms-playwright) and the
 app points PLAYWRIGHT_BROWSERS_PATH at it on startup.
 """
 import os
@@ -40,7 +40,7 @@ pw_datas, pw_bins, pw_hidden = collect_all("playwright")
 hidden += pw_hidden
 
 a = Analysis(
-    ["JewishGenSearch.py"],
+    ["JewishGenealogySearch.py"],
     pathex=[ROOT],
     binaries=pw_bins,
     datas=datas + pw_datas,
@@ -58,7 +58,7 @@ _ver  = os.path.join("packaging", "version_info.txt")
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name="JewishGenSearch",
+    name="JewishGenealogySearch",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -70,5 +70,5 @@ exe = EXE(
 coll = COLLECT(
     exe, a.binaries, a.datas,
     strip=False, upx=False,
-    name="JewishGenSearch",
+    name="JewishGenealogySearch",
 )

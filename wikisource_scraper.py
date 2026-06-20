@@ -43,7 +43,7 @@ except Exception:
     _DOCX_OK = False
 
 # ── Constants ───────────────────────────────────────────────────────────────
-UA = "JewishGenSearch/1.0 (genealogy research)"
+UA = "JewishGenealogySearch/1.0 (genealogy research)"
 WS_API = "https://uk.wikisource.org/w/api.php"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 UPLOAD = "https://upload.wikimedia.org/wikipedia/commons"

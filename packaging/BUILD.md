@@ -1,87 +1,222 @@
-# Building the JewishGen Search installer
+# Как собрать инсталлятор «Jewish Genealogy Search» — подробная инструкция
 
-You build the Windows installer yourself by running, from the project root:
+> Эта инструкция для человека, который **никогда раньше этого не делал**. Читай
+> сверху вниз, ничего не пропускай. Все команды можно копировать как есть.
+
+---
+
+## 0. Что вообще происходит (в двух словах)
+
+Сейчас программа запускается так: `python JewishGenealogySearch.py`. Чтобы её можно
+было отдать другому человеку, у которого **нет Python**, нужно:
+
+1. **Упаковать** весь проект в один `.exe` (это делает программа **PyInstaller**) —
+   получается папка с `JewishGenealogySearch.exe` и всеми файлами, которые ему нужны.
+2. **Сделать инсталлятор** — один файл `…Setup.exe`, который при запуске установит
+   программу в меню «Пуск», создаст ярлык и добавит «Удаление программы». Это делает
+   **Inno Setup**.
+3. (по желанию) **Подписать** `.exe` и инсталлятор твоим сертификатом — чтобы Windows
+   и антивирусы доверяли программе и не пугали пользователя предупреждениями.
+
+Всё это автоматически делает один скрипт — **`build_installer.ps1`**. Ты запускаешь его,
+ждёшь пару минут, получаешь готовый инсталлятор. После любой правки в проекте — просто
+запускаешь его снова.
+
+---
+
+## 1. Что нужно установить ОДИН РАЗ (подготовка)
+
+Это делается **только один раз** на твоём компьютере. Дальше — просто запуск скрипта.
+
+### 1.1. Инструменты сборки внутри проекта (PyInstaller и Pillow)
+
+Открой **PowerShell** в папке проекта (`I:\Python Projects\JewishGen_python`) и выполни:
+
+```powershell
+.\venv\Scripts\python -m pip install pyinstaller pillow
+```
+
+- **PyInstaller** — упаковщик Python → `.exe`.
+- **Pillow** — библиотека картинок; нужна, чтобы из `config/app_icon.png` сделать иконку
+  `.ico` для `.exe`.
+
+> Если у тебя папка виртуального окружения называется `.venv`, а не `venv`, замени
+> `venv` на `.venv`. Скрипт сборки сам находит и ту, и другую.
+
+### 1.2. Браузер Playwright (Chromium)
+
+Программа управляет настоящим браузером Chromium. Чтобы он попал внутрь готового
+приложения, он должен быть установлен у тебя:
+
+```powershell
+.\venv\Scripts\python -m playwright install chromium
+```
+
+Он скачается в служебную папку `C:\Users\<ты>\AppData\Local\ms-playwright\`. Скрипт
+сборки потом **сам скопирует** его рядом с `.exe`, чтобы установленная программа была
+самодостаточной (у пользователя не нужен ни Python, ни Playwright).
+
+### 1.3. Inno Setup 6 (делает сам инсталлятор)
+
+1. Зайди на **https://jrsoftware.org/isinfo.php**.
+2. Нажми **Download**, скачай `innosetup-6.x.x.exe`.
+3. Запусти его и установи как обычную программу (всё по умолчанию, кнопка «Далее»).
+4. Проверять ничего не надо — скрипт сборки сам найдёт `ISCC.exe` (это «компилятор»
+   Inno Setup) в `C:\Program Files (x86)\Inno Setup 6\`.
+
+> Без Inno Setup получится только **портативная папка** (без инсталлятора) — для этого
+> запускают скрипт с ключом `-SkipInstaller` (см. ниже).
+
+### 1.4. (для подписи) сертификат и signtool — можно отложить
+
+Подпись нужна, чтобы Windows SmartScreen и антивирусы доверяли программе. Это **не
+обязательно для теста на своём компьютере**, но **обязательно для нормальной раздачи
+людям** (иначе у них выскочит синее окно «Windows защитила ваш компьютер»).
+
+Что нужно для подписи:
+- **Сертификат для подписи кода** (code-signing certificate) — это файл `.pfx` с
+  паролем. Его **покупают** у удостоверяющего центра (CA): DigiCert, Sectigo, GlobalSign
+  и т.п. (примерно от 100–200 $ в год). Это отдельная процедура с проверкой личности.
+- **signtool.exe** — утилита подписи. Ставится вместе с **Windows SDK** или Visual
+  Studio. Скачать SDK: https://developer.microsoft.com/windows/downloads/windows-sdk/
+  (при установке достаточно галочки «Windows SDK Signing Tools for Desktop Apps»).
+
+Пока сертификата нет — пропусти этот пункт. Сборка всё равно получится, просто
+**без подписи** (для проверки на своём ПК это нормально).
+
+---
+
+## 2. Как собрать (основная команда)
+
+Открой PowerShell в папке проекта и выполни:
 
 ```powershell
 .\build_installer.ps1
 ```
 
-That produces:
-
-* `dist\JewishGenSearch\` — the portable app folder (the `.exe` + everything it needs), and
-* `Output\JewishGenSearch-Setup-<version>.exe` — the installer to hand to other people.
-
-Run it again any time after you change the code — it rebuilds from scratch.
+Готово. Через пару минут получишь инсталлятор. Полезные варианты запуска:
 
 ```powershell
-.\build_installer.ps1 -Version 1.3.0      # set the version number
-.\build_installer.ps1 -SkipInstaller      # only the portable folder, no installer
-.\build_installer.ps1 -Clean              # also wipe PyInstaller's build cache
+.\build_installer.ps1 -Version 1.0.0       # задать номер версии (по умолчанию 1.0.0)
+.\build_installer.ps1 -SkipInstaller       # только портативная папка, без инсталлятора
+.\build_installer.ps1 -Clean               # дополнительно стереть кэш PyInstaller
 ```
+
+> Если PowerShell ругается, что «выполнение скриптов отключено», один раз выполни:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
+> и подтверди (Y). Это разрешает запускать локальные скрипты.
 
 ---
 
-## One-time setup
+## 3. Что скрипт делает по шагам (что откуда берётся)
 
-1. **Build tools (into the project venv):**
-   ```powershell
-   .\venv\Scripts\python -m pip install pyinstaller pillow
-   ```
-2. **Playwright browser** (the app drives a real Chromium):
-   ```powershell
-   .\venv\Scripts\python -m playwright install chromium
-   ```
-   The build script copies this Chromium next to the `.exe`, so the installed app is
-   self-contained (the end user does **not** need Python or Playwright).
-3. **Inno Setup 6** — https://jrsoftware.org/isinfo.php (this is what makes the installer).
-4. **Windows SDK** (for `signtool.exe`) — only needed if you sign (see below). It comes with
-   Visual Studio or the standalone Windows SDK.
+Когда ты запускаешь `build_installer.ps1`, он по порядку:
+
+1. **Находит Python** проекта (в `venv\` или `.venv\`).
+2. **Делает иконку**: из `config/app_icon.png` создаёт `config/app_icon.ico`
+   (через Pillow) и файл с информацией о версии `packaging/version_info.txt`.
+3. **Упаковывает программу** (PyInstaller по сценарию `packaging/JewishGenealogySearch.spec`):
+   - берёт `JewishGenealogySearch.py` и **все** окна `gui/*.py` и скраперы `*_scraper.py`
+     (находит их автоматически — новые базы подхватятся сами);
+   - кладёт рядом папки `config/`, `storage/`, `models/`;
+   - результат → **`dist\JewishGenealogySearch\`** с файлом `JewishGenealogySearch.exe`.
+4. **Кладёт браузер**: копирует Chromium из `…\AppData\Local\ms-playwright\` в
+   `dist\JewishGenealogySearch\ms-playwright\`. Программа при запуске сама берёт браузер
+   оттуда.
+5. **Подписывает** `JewishGenealogySearch.exe` — **только если** ты задала сертификат
+   (см. раздел 4). Если нет — пишет, что оставляет без подписи, и идёт дальше.
+6. **Собирает инсталлятор** (Inno Setup по `packaging/installer.iss`) →
+   **`Output\JewishGenealogySearch-Setup-<версия>.exe`**.
+7. **Подписывает инсталлятор** — тоже только если задан сертификат.
+
+В конце он печатает, где лежат готовые файлы.
 
 ---
 
-## Signing (anti-tamper + antivirus / SmartScreen)
+## 4. Подпись (зачем и как)
 
-Signing is the realistic, industry-standard protection for a Windows app:
+Подпись — это и есть «защита» в практическом смысле:
+- **От подмены/взлома**: любая правка `.exe` после подписи **ломает подпись** — Windows
+  это видит.
+- **От антивирусов и предупреждений**: подписанный и «проштампованный временем»
+  (timestamp) файл со временем зарабатывает репутацию SmartScreen, и у людей **не
+  выскакивает** «неизвестный издатель» и реже бывают ложные срабатывания антивируса.
 
-* It makes the binary **tamper-evident** — any edit to the `.exe` invalidates the signature.
-* A signed **and timestamped** binary builds **SmartScreen reputation** and stops most
-  **antivirus false positives** and the "unknown publisher" warning.
-
-To sign, give the script your **code-signing certificate** (a `.pfx` you buy from a CA such
-as DigiCert, Sectigo, etc.):
+Чтобы подписать — задай свой сертификат `.pfx` через переменные окружения **перед**
+запуском сборки (в том же окне PowerShell):
 
 ```powershell
-$env:CODESIGN_PFX = "C:\path\to\your-codesign.pfx"
-$env:CODESIGN_PFX_PASSWORD = "your-pfx-password"
-.\build_installer.ps1 -Version 1.3.0
+$env:CODESIGN_PFX = "C:\путь\к\твоему-сертификату.pfx"
+$env:CODESIGN_PFX_PASSWORD = "пароль-от-pfx"
+.\build_installer.ps1 -Version 1.0.0
 ```
 
-Both the `.exe` and the installer get signed. Without a cert the build still works, but it
-is **unsigned** (fine for testing on your own machine).
+Подпишутся и `.exe`, и инсталлятор.
 
-### Just testing? make a self-signed cert
+### 4.1. Сделать тестовый («самоподписанный») сертификат — чтобы потренироваться
+
+Настоящий сертификат от CA нужен для раздачи людям. Но проверить, что подпись вообще
+работает, можно бесплатным самоподписанным (он **не** будет доверенным на чужих
+компьютерах — только для теста у себя):
+
 ```powershell
-$c = New-SelfSignedCertificate -Type CodeSigning -Subject "CN=JewishGen Search Test" -CertStoreLocation Cert:\CurrentUser\My
+$c = New-SelfSignedCertificate -Type CodeSigning -Subject "CN=Jewish Genealogy Search Test" -CertStoreLocation Cert:\CurrentUser\My
 $pw = ConvertTo-SecureString "test123" -AsPlainText -Force
 Export-PfxCertificate -Cert $c -FilePath ".\codesign-test.pfx" -Password $pw
-$env:CODESIGN_PFX = ".\codesign-test.pfx"; $env:CODESIGN_PFX_PASSWORD = "test123"
+$env:CODESIGN_PFX = ".\codesign-test.pfx"
+$env:CODESIGN_PFX_PASSWORD = "test123"
+.\build_installer.ps1
 ```
-A self-signed cert verifies the signing pipeline but is **not** trusted by other machines —
-for real distribution you need a CA-issued certificate.
+
+### 4.2. Можно ли сделать программу «невзламываемой»?
+
+Честно: **нет**, ни для одной программы на Python (и почти ни для какой вообще).
+Код можно декомпилировать. Что реально помогает и что уже сделано:
+- упаковка в `.exe` (не исходники, а байт-код);
+- **UPX выключен** специально (UPX-сжатие часто принимают за вирус);
+- **подпись** (главная практическая защита — целостность + доверие).
+
+Если хочется сильнее затруднить декомпиляцию — есть платный обфускатор **PyArmor**
+(https://pyarmor.dashingsoft.com/), его подключают перед упаковкой. Но «защиты от
+взлома на 100%» не существует — стандарт индустрии именно подпись.
 
 ---
 
-## Stronger anti-crack (optional)
+## 5. Что получилось и что кому отдавать
 
-Python bytecode can be decompiled. PyInstaller already ships bytecode (not source) and UPX
-is disabled (UPX trips antivirus). For stronger obfuscation install **PyArmor**
-(https://pyarmor.dashingsoft.com/) and obfuscate before packaging. Be aware that **no**
-Python packaging is truly crack-proof — Authenticode signing (integrity + reputation) is
-the protection that actually matters for distribution.
+После успешной сборки:
+
+- **`Output\JewishGenealogySearch-Setup-<версия>.exe`** — **это и есть инсталлятор**.
+  Его отдаёшь людям. Пользователь запускает его, программа ставится в меню «Пуск»
+  (по умолчанию **без прав администратора**, в его личную папку), появляется ярлык и
+  пункт «Удаление программы».
+- **`dist\JewishGenealogySearch\`** — портативная версия (папка целиком). Можно просто
+  заархивировать в `.zip` и отдать — человек распакует и запустит
+  `JewishGenealogySearch.exe` без установки.
 
 ---
 
-## What is generated (and git-ignored)
+## 6. Что не попадает в git (это нормально)
 
-`build/`, `dist/`, `Output/`, `config/app_icon.ico`, `packaging/version_info.txt` and any
-`*.pfx` are build artifacts — they are not committed.
+Папки и файлы, которые **создаются при сборке**, в репозиторий не кладутся (они есть в
+`.gitignore`): `build/`, `dist/`, `Output/`, `config/app_icon.ico`,
+`packaging/version_info.txt`, и любые `*.pfx` (сертификаты — секретные, их в git нельзя).
+
+---
+
+## 7. Если что-то пошло не так (частые ошибки)
+
+| Сообщение / симптом | Что делать |
+|---|---|
+| `PyInstaller / Pillow missing` | Выполни п. 1.1: `.\venv\Scripts\python -m pip install pyinstaller pillow` |
+| `Inno Setup (ISCC.exe) not found` | Установи Inno Setup 6 (п. 1.3) или собери с `-SkipInstaller` |
+| `signtool.exe not found` | Поставь Windows SDK (п. 1.4) или собирай без подписи (не задавай `CODESIGN_PFX`) |
+| `no chromium folder copied` | Выполни `.\venv\Scripts\python -m playwright install chromium` и собери снова |
+| PowerShell: «выполнение скриптов отключено» | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (п. 2) |
+| Антивирус удалил `.exe` | Подпиши сборку настоящим сертификатом (п. 4); UPX уже выключен |
+| Сборка идёт долго (2–5 мин) | Это нормально — упаковывается Python + копируется Chromium (сотни МБ) |
+
+> Первый раз обязательно прогони всё до конца у себя и проверь, что установленная
+> программа открывается и ищет. Дальше после любых правок — просто `.\build_installer.ps1`.

@@ -12,7 +12,7 @@ Built with Python + Playwright (browser automation) + PySide6 (GUI).
 ```
 JewishGen_python/
 │
-├── JewishGenSearch.py        ← entry point — run this
+├── JewishGenealogySearch.py        ← entry point — run this
 ├── jewishgen_scraper.py      ← JewishGen browser automation + file writing
 ├── requirements.txt
 │
@@ -101,7 +101,7 @@ pip install -r requirements.txt
 playwright install chromium
 
 # 5. Run
-python JewishGenSearch.py
+python JewishGenealogySearch.py
 ```
 
 ### First run
@@ -114,7 +114,7 @@ the session is remembered.
 
 ## Building a standalone executable
 
-### Windows — produces `JewishGenSearch.exe`
+### Windows — produces `JewishGenealogySearch.exe`
 
 **Prerequisites:** do everything in the venv that already has all packages installed.
 
@@ -126,7 +126,7 @@ pip install pyinstaller
 pyinstaller ^
   --onedir ^
   --windowed ^
-  --name JewishGenSearch ^
+  --name JewishGenealogySearch ^
   --add-data "config;config" ^
   --add-data "storage;storage" ^
   --add-data "models;models" ^
@@ -135,7 +135,7 @@ pyinstaller ^
   --hidden-import PySide6.QtSvgWidgets ^
   --hidden-import playwright ^
   --collect-all playwright ^
-  JewishGenSearch.py
+  JewishGenealogySearch.py
 ```
 
 After the build completes:
@@ -150,22 +150,22 @@ for /f "tokens=*" %i in ('playwright install chromium --dry-run 2^>^&1 ^| findst
 # C:\Users\<YOU>\AppData\Local\ms-playwright\chromium-XXXX\
 
 # Copy it next to the exe:
-xcopy /E /I "%LOCALAPPDATA%\ms-playwright\chromium-*" "dist\JewishGenSearch\ms-playwright\"
+xcopy /E /I "%LOCALAPPDATA%\ms-playwright\chromium-*" "dist\JewishGenealogySearch\ms-playwright\"
 ```
 
-**Distribute** the entire `dist\JewishGenSearch\` folder — zip it up and send it.
-The recipient just double-clicks `JewishGenSearch.exe`. No Python needed.
+**Distribute** the entire `dist\JewishGenealogySearch\` folder — zip it up and send it.
+The recipient just double-clicks `JewishGenealogySearch.exe`. No Python needed.
 
 ---
 
-### macOS — produces `JewishGenSearch.app`
+### macOS — produces `JewishGenealogySearch.app`
 
 ```
 # 1. Build
 pyinstaller \
   --onedir \
   --windowed \
-  --name JewishGenSearch \
+  --name JewishGenealogySearch \
   --add-data "config:config" \
   --add-data "storage:storage" \
   --add-data "models:models" \
@@ -174,7 +174,7 @@ pyinstaller \
   --hidden-import PySide6.QtSvgWidgets \
   --hidden-import playwright \
   --collect-all playwright \
-  JewishGenSearch.py
+  JewishGenealogySearch.py
 
 # 2. Copy the Playwright browser
 # Find path:
@@ -182,10 +182,10 @@ python -c "import playwright; print(playwright.__file__)"
 # Browser is in ~/Library/Caches/ms-playwright/
 
 cp -r ~/Library/Caches/ms-playwright/chromium-* \
-      dist/JewishGenSearch/JewishGenSearch.app/Contents/MacOS/ms-playwright/
+      dist/JewishGenealogySearch/JewishGenealogySearch.app/Contents/MacOS/ms-playwright/
 ```
 
-**Distribute** by zipping `dist/JewishGenSearch/JewishGenSearch.app`.
+**Distribute** by zipping `dist/JewishGenealogySearch/JewishGenealogySearch.app`.
 On first launch macOS may show "unidentified developer" — right-click → Open to bypass.
 
 ---

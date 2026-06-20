@@ -1,4 +1,4 @@
-; installer.iss — Inno Setup script for JewishGenSearch.
+; installer.iss — Inno Setup script for JewishGenealogySearch.
 ; Compiled by build_installer.ps1 via ISCC.exe. The app version is passed on the command
 ; line:  ISCC.exe /DMyAppVersion=1.0.0 packaging\installer.iss
 ; The produced setup .exe is Authenticode-signed afterwards by build_installer.ps1.
@@ -6,11 +6,11 @@
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
-#define MyAppName "JewishGen Search"
-#define MyAppExe  "JewishGenSearch.exe"
+#define MyAppName "Jewish Genealogy Search"
+#define MyAppExe  "JewishGenealogySearch.exe"
 #define MyAppPublisher "Alla Khananashvili"
 ; folder produced by PyInstaller (relative to this .iss file's parent = repo root)
-#define DistDir "..\dist\JewishGenSearch"
+#define DistDir "..\dist\JewishGenealogySearch"
 
 [Setup]
 AppId={{6F3A9C1E-1B2D-4E7A-9C44-JEWISHGENSEARCH}}
@@ -23,7 +23,7 @@ DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\Output
-OutputBaseFilename=JewishGenSearch-Setup-{#MyAppVersion}
+OutputBaseFilename=JewishGenealogySearch-Setup-{#MyAppVersion}
 SetupIconFile=..\config\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExe}
 WizardStyle=modern

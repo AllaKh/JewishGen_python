@@ -1,7 +1,7 @@
 """
 gui/launcher.py
 ---------------
-Root window — shown when JewishGenSearch.py starts.
+Root window — shown when JewishGenealogySearch.py starts.
 
 Lists all genealogy databases loaded from  config/sites.json.
 Styles are loaded from  config/styles.json.

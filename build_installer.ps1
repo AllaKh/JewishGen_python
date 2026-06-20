@@ -1,13 +1,13 @@
 <#
-build_installer.ps1 — build a (optionally signed) Windows installer for JewishGenSearch.
+build_installer.ps1 — build a (optionally signed) Windows installer for JewishGenealogySearch.
 
 WHAT IT DOES, in order:
   1. find the project's virtual-env Python
   2. generate the app icon (config/app_icon.ico) and a Windows version resource
-  3. run PyInstaller (packaging/JewishGenSearch.spec) → dist/JewishGenSearch/
+  3. run PyInstaller (packaging/JewishGenealogySearch.spec) → dist/JewishGenealogySearch/
   4. copy Playwright's Chromium next to the .exe (so the app is self-contained)
   5. Authenticode-sign the .exe            (only if you supply a code-signing cert)
-  6. compile the installer with Inno Setup → Output/JewishGenSearch-Setup-<ver>.exe
+  6. compile the installer with Inno Setup → Output/JewishGenealogySearch-Setup-<ver>.exe
   7. Authenticode-sign the installer        (only if you supply a code-signing cert)
 
 YOU RUN IT yourself after any code change, simply:
@@ -76,11 +76,11 @@ VSVersionInfo(
   kids=[
     StringFileInfo([StringTable(u'040904B0', [
       StringStruct(u'CompanyName', u'Alla Khananashvili'),
-      StringStruct(u'FileDescription', u'JewishGen Search — genealogy meta-search'),
+      StringStruct(u'FileDescription', u'Jewish Genealogy Search — genealogy meta-search'),
       StringStruct(u'FileVersion', u'$Version'),
-      StringStruct(u'InternalName', u'JewishGenSearch'),
-      StringStruct(u'OriginalFilename', u'JewishGenSearch.exe'),
-      StringStruct(u'ProductName', u'JewishGen Search'),
+      StringStruct(u'InternalName', u'JewishGenealogySearch'),
+      StringStruct(u'OriginalFilename', u'JewishGenealogySearch.exe'),
+      StringStruct(u'ProductName', u'Jewish Genealogy Search'),
       StringStruct(u'ProductVersion', u'$Version')])]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]
@@ -90,13 +90,13 @@ Ok "version resource written"
 
 # ── 3. PyInstaller ───────────────────────────────────────────────────────────
 if ($Clean -and (Test-Path "build")) { Remove-Item "build" -Recurse -Force }
-if (Test-Path "dist\JewishGenSearch") { Remove-Item "dist\JewishGenSearch" -Recurse -Force }
+if (Test-Path "dist\JewishGenealogySearch") { Remove-Item "dist\JewishGenealogySearch" -Recurse -Force }
 Info "Running PyInstaller (this can take a few minutes)…"
-& $py -m PyInstaller --noconfirm --clean "packaging\JewishGenSearch.spec"
+& $py -m PyInstaller --noconfirm --clean "packaging\JewishGenealogySearch.spec"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed." }
-$DistApp = Join-Path $Root "dist\JewishGenSearch"
-if (-not (Test-Path (Join-Path $DistApp "JewishGenSearch.exe"))) { throw "Build produced no JewishGenSearch.exe" }
-Ok "built dist\JewishGenSearch\JewishGenSearch.exe"
+$DistApp = Join-Path $Root "dist\JewishGenealogySearch"
+if (-not (Test-Path (Join-Path $DistApp "JewishGenealogySearch.exe"))) { throw "Build produced no JewishGenealogySearch.exe" }
+Ok "built dist\JewishGenealogySearch\JewishGenealogySearch.exe"
 
 # ── 4. bundle Playwright Chromium next to the exe ────────────────────────────
 Info "Bundling Playwright Chromium"
@@ -132,9 +132,9 @@ function Sign-File($path) {
     Ok "signed"
 }
 
-Sign-File (Join-Path $DistApp "JewishGenSearch.exe")
+Sign-File (Join-Path $DistApp "JewishGenealogySearch.exe")
 
-if ($SkipInstaller) { Info "Done (‑SkipInstaller): portable build in dist\JewishGenSearch"; return }
+if ($SkipInstaller) { Info "Done (‑SkipInstaller): portable build in dist\JewishGenealogySearch"; return }
 
 # ── 6. Inno Setup installer ──────────────────────────────────────────────────
 $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
@@ -147,7 +147,7 @@ if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found. Install from https://j
 Info "Compiling installer with Inno Setup"
 & $iscc "/DMyAppVersion=$Version" "packaging\installer.iss"
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed." }
-$setup = Join-Path $Root "Output\JewishGenSearch-Setup-$Version.exe"
+$setup = Join-Path $Root "Output\JewishGenealogySearch-Setup-$Version.exe"
 if (-not (Test-Path $setup)) { throw "Installer not produced." }
 Ok "built $setup"
 
