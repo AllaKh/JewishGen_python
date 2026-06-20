@@ -300,7 +300,7 @@ async def _search(page, fn, ln, place, year, log, exact=None):
     await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(3)
 
-    # Ждём форму
+    # Wait for the form
     for sel in ['input[placeholder*="First and Middle" i]',
                 'input[id*="givenName" i]']:
         try:
@@ -344,7 +344,7 @@ async def _search(page, fn, ln, place, year, log, exact=None):
         await page.wait_for_url(lambda u: "discovery/results" in u, timeout=20000)
     except Exception:
         pass
-    await asyncio.sleep(5)  # обязательно 5 секунд
+    await asyncio.sleep(5)  # 5 seconds is required
 
     # GUARANTEE the birth-year filter: the form field is unreliable, so if the
     # results URL doesn't carry the birth date, add it (q.birthLikeDate.from/to)
@@ -476,41 +476,41 @@ async def _click_hr(page, log):
         log("  (HR tab не найден)")
         return
 
-    # Ждём URL с tab=records
+    # Wait for the tab=records URL
     try:
         await page.wait_for_url(lambda u: "tab=records" in u, timeout=8000)
     except Exception:
         await asyncio.sleep(2)
 
-    # Ждём СТРОКИ ТАБЛИЦЫ (таблица грузится через XHR после смены URL)
+    # Wait for the TABLE ROWS (the table loads via XHR after the URL changes)
     try:
         await page.wait_for_selector("tbody tr", timeout=20000)
     except Exception:
-        await asyncio.sleep(5)  # если не дождались — всё равно идём дальше
+        await asyncio.sleep(5)  # if they didn't appear — proceed anyway
 
     log(f"  HR tab → {page.url}")
 
 
-# ── 3. ЛОГИН — ОДИН РАЗ ──────────────────────────────────────────────────── #
+# ── 3. LOGIN — ONCE ──────────────────────────────────────────────────────── #
 
 async def _login(page, username: str, password: str, log) -> bool:
     """
-    Заполнить #userName и #password через page.fill().
-    Нажать #login. Ждать редиректа обратно на familysearch.org.
-    Вызывать ТОЛЬКО ОДИН РАЗ за сессию.
+    Fill #userName and #password via page.fill().
+    Click #login. Wait for the redirect back to familysearch.org.
+    Call ONLY ONCE per session.
     """
     log(f"  Страница логина: {page.url[:80]}")
 
-    # Ждём поле #userName
+    # Wait for the #userName field
     try:
         await page.locator("#userName").wait_for(state="visible", timeout=20000)
     except Exception:
         log("  !! #userName не появился")
         return False
 
-    await asyncio.sleep(2)  # дать форме полностью отрисоваться
+    await asyncio.sleep(2)  # let the form finish rendering
 
-    # Заполняем с retry: иногда React-форма сбрасывает значение после fill
+    # Fill with retry: the React form sometimes clears the value after fill
     for attempt in range(3):
         try:
             await page.fill("#userName", username)
@@ -549,7 +549,7 @@ async def _login(page, username: str, password: str, log) -> bool:
         log("  !! #password не удалось заполнить")
         return False
 
-    # Финальная проверка
+    # Final check
     u_val = await page.locator("#userName").input_value()
     p_val = await page.locator("#password").input_value()
     log(f"  Проверка: user={'OK' if u_val else '!ПУСТО'}, "
@@ -559,7 +559,7 @@ async def _login(page, username: str, password: str, log) -> bool:
         log("  !! Поля пустые — логин провалится")
         return False
 
-    # Нажать ТОЛЬКО #login — ничего другого
+    # Click ONLY #login — nothing else
     try:
         await page.click("#login", timeout=5000)
         log("  #login нажат")
@@ -567,7 +567,7 @@ async def _login(page, username: str, password: str, log) -> bool:
         log(f"  !! #login: {e}")
         return False
 
-    # Ждём редирект
+    # Wait for the redirect
     try:
         await page.wait_for_url(
             lambda u: "familysearch.org" in u and "login" not in u,
@@ -628,7 +628,7 @@ async def _collect(page, qname: str, log) -> list:
                 continue
             seen.add(url)
 
-            # Имя из cells[2] <strong>
+            # Name from cells[2] <strong>
             idx  = 2 if len(cells) > 3 else max(0, len(cells) - 3)
             name = ""
             coll = ""
@@ -740,7 +740,7 @@ async def _advanced(page, adv: dict, log):
                 pass
         await _type_field(page, sel, val, key, log)
 
-    # Семейные члены — через data-testid (точные имена из HTML FamilySearch)
+    # Family members — via data-testid (exact ids from the FamilySearch HTML)
     # (btn_testid, given_field_testid, given_exact_testid, surname_field_testid, surname_exact_testid)
     fam_testids = {
         "spouse": ("spouse-fieldGroupButton",
@@ -764,7 +764,7 @@ async def _advanced(page, adv: dict, log):
         if not fv and not lv:
             continue
 
-        # Нажать кнопку раскрытия секции (Spouse / Father / Mother / Other Person)
+        # Click the section-expand button (Spouse / Father / Mother / Other Person)
         try:
             btn = page.locator(f'[data-testid="{btn_tid}"]').first
             if await btn.count():
@@ -910,7 +910,7 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
     before = set(DOWNLOADS_DIR.glob("*.jpg")) | set(DOWNLOADS_DIR.glob("*.jpeg"))
     tabs_before = set(ctx.pages)
 
-    # Найти и кликнуть лучшую картинку
+    # Find and click the best image
     img_src = await _best_img(page)
     clicked = False
     if img_src:
@@ -948,7 +948,7 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
         log("    Картинка на странице не найдена")
         return None
 
-    # Вьюер может открыться в новой вкладке
+    # The viewer may open in a new tab
     viewer = page
     await asyncio.sleep(1)
     new_tabs = set(ctx.pages) - tabs_before
@@ -961,18 +961,18 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
         await asyncio.sleep(2)
         log("    Вьюер в новой вкладке")
 
-    # Ждём появления основной кнопки Download (после логина viewer грузится дольше)
+    # Wait for the main Download button (the viewer loads slower after login)
     try:
         await viewer.wait_for_selector(
             'button[aria-label*="Download" i]', timeout=8000)
     except Exception:
-        pass  # если не появилась — пробуем всё равно
+        pass  # if it didn't appear — try anyway
 
-    # Весь блок download обёрнут в expect_download чтобы не пропустить событие
+    # The whole download block is wrapped in expect_download so the event isn't missed
     downloaded = None
     try:
         async with viewer.expect_download(timeout=45000) as dl_info:
-            # Кнопка download (стрелка вниз)
+            # Download button (down arrow)
             dl_ok = False
             for sel in [
                 'button[aria-label*="Download" i]',
@@ -1039,13 +1039,13 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
                 break
 
     if not downloaded and not img_src:
-        # Кнопка не найдена, нет картинки
+        # No button found, no image
         if viewer is not page:
             try: await viewer.close()
             except Exception: pass
         return None
 
-    # Закрыть лишние вкладки
+    # Close any extra tabs
     await asyncio.sleep(0.5)
     for pg in list(ctx.pages):
         if pg not in (page, viewer) and "familysearch" not in pg.url:
@@ -1124,8 +1124,8 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
     await page.goto(url, wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(3)
 
-    # Если редирект на логин — залогиниться ОДИН РАЗ
-    # Проверяем и по URL и по заголовку страницы (JS-редирект может ещё не завершиться)
+    # If redirected to login — sign in ONCE
+    # Check both the URL and the page title (the JS redirect may not be finished yet)
     page_title = (await page.title()).lower()
     is_login = "login" in page.url or "sign in" in page_title or "sign-in" in page_title
     if is_login:
@@ -1141,15 +1141,15 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
             log("  !! Вход провалился")
             return rec
         logged_in_ref[0] = True
-        # После логина state= редиректит на нужную запись,
-        # но если нет — навигируем вручную
+        # After login the state= param redirects back to the right record,
+        # but if not — navigate there manually
         if url.split("?")[0] not in page.url:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)
 
-    # Заголовок — ТОЛЬКО h1/h2 (НЕ [class*="title"] — он хватал всю панель «person
-    # details» ОДНИМ слипшимся блоком: «…NameRuby…SexFemale…»). Первая строка,
-    # с капом длины: имя не бывает 250 символов, так слипшийся блок отсекается.
+    # Title — ONLY h1/h2 (NOT [class*="title"] — that grabbed the whole «person
+    # details» panel as ONE glued block: «…NameRuby…SexFemale…»). First line,
+    # length-capped: a name is never 250 chars, so the glued block is rejected.
     for sel in ["h1", "h2"]:
         try:
             t = (await page.locator(sel).first.text_content(timeout=3000) or "").strip()
@@ -1160,7 +1160,7 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
         except Exception:
             pass
 
-    # Данные: dl/dt/dd (с защитой от слипания — длинный «label» = не поле, а блок)
+    # Data: dl/dt/dd (with anti-gluing — a long «label» is a block, not a field)
     td: dict = {}
     try:
         dts = await page.query_selector_all("dl dt")
@@ -1172,10 +1172,10 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
                 td[k] = v
     except Exception:
         pass
-    # «person details» панель + любые таблицы — КЛАСС-АГНОСТИЧНО через _FS_FIELDS_JS
-    # (ровно 2 однострочных ребёнка, label<45/value<300, без вложенных таблиц). НЕ
-    # свой loose-обход <table tr>: он хватал ВЕСЬ блок «Isidor Sitron person
-    # details…NARA)» одной ячейкой (text_content склеивает) → слипшаяся строка.
+    # «person details» panel + any tables — CLASS-AGNOSTIC via _FS_FIELDS_JS (exactly
+    # 2 single-line children, label<45/value<300, no nested tables). NOT a loose
+    # <table tr> walk: that grabbed the WHOLE «Isidor Sitron person details…NARA)»
+    # block as one cell (text_content concatenates) → a glued row.
     if not td:
         try:
             for k, v in (await page.evaluate(_FS_FIELDS_JS)):
@@ -1184,7 +1184,7 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
             pass
     rec["table_data"] = td
 
-    # Метка для имени файла
+    # Label for the file name
     img_label = name_hint
     if td:
         parts = [name_hint]
@@ -1199,7 +1199,7 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
 
     img_dir = images_root / safe_fn(img_label)
 
-    # Превьюшка (маленькая) для Word
+    # Small thumbnail for Word
     img_src = await _best_img(page)
     if img_src:
         rec["thumb_bytes"] = await _fetch_bytes(ctx, img_src)
@@ -1210,10 +1210,10 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
     else:
         log("    На странице нет картинки документа")
 
-    # Полноформатная JPG через вьюер. view=index тоже пробуем — некоторые
-    # индексные записи ИМЕЮТ скачиваемое изображение документа (пользователь
-    # подтвердила: «вот же оно, доступно»). _download_jpg сам кликает картинку /
-    # открывает вьюер и имеет свои fallback-селекторы, если _best_img пуст.
+    # Full-size JPG via the viewer. We try view=index too — some index records DO
+    # have a downloadable document image (the user confirmed: «вот же оно, доступно»).
+    # _download_jpg clicks the image / opens the viewer itself and has its own
+    # fallback selectors if _best_img is empty.
     is_index = "view=index" in url
     jp = None
     if img_src or is_index:
@@ -1466,8 +1466,8 @@ async def run_scraper(
     summary   = {"ok": False}
     file_base = safe_fn(f"familysearch_{qname}") if qname else "familysearch_results"
 
-    # logged_in_ref[0] == True после первого успешного входа
-    # Передаём как список чтобы _scrape_page мог изменить флаг
+    # logged_in_ref[0] == True after the first successful login
+    # Passed as a list so _scrape_page can mutate the flag
     logged_in_ref = [False]
 
     _prog(0, "Запускаю браузер...")
@@ -1564,8 +1564,8 @@ async def run_scraper(
             docx_p = output_folder / f"{file_base}.docx"
             xlsx_p = output_folder / f"{file_base}.xlsx"
 
-            # Если файлы уже есть — ВСЕГДА спросить: перезаписать / дополнить /
-            # пропустить. Без callback или без конфликта — обычная перезапись.
+            # If the files already exist — ALWAYS ask: overwrite / append / skip.
+            # Without a callback or without a conflict — plain overwrite.
             existing_names = [p.name for p, want in
                               ((docx_p, want_docx), (xlsx_p, want_xlsx))
                               if want and records and p.exists()]

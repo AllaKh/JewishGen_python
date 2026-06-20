@@ -3997,7 +3997,7 @@ async def run_scraper(*,
                     # longer overwrite each other to a single file).
                     fn = safe_fn(" — ".join(parts)) + f"_{i}" + ext
                     (images_dir / fn).write_bytes(data)
-                    det["doc_path"] = str((images_dir / fn).resolve())   # путь для Word/Excel
+                    det["doc_path"] = str((images_dir / fn).resolve())   # path for Word/Excel
                     saved_imgs += 1
                 except Exception as _e:
                     log(f"    !! файл не сохранён на диск: {type(_e).__name__}: {_e}")

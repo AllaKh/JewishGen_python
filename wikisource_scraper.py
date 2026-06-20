@@ -491,8 +491,8 @@ def write_docx(path, recs, qlines, append=False):
         doc.add_paragraph("")
     tbl = doc.add_table(rows=1, cols=4); tbl.style = "Light Grid Accent 1"
     tbl.autofit = False; tbl.allow_autofit = False
-    # «№» — узкая; «Источник» — чуть шире (чтобы слово влезало); «Название
-    # документа» и «Файл» — широкие (A4 ≈ 7").
+    # «№» narrow; «Источник» a bit wider (so the word fits); «Название
+    # документа» and «Файл» wide (A4 ≈ 7").
     widths = (Inches(0.4), Inches(3.3), Inches(2.35), Inches(0.95))
     for c, txt, wd in zip(tbl.rows[0].cells, ("№", "Название документа", "Файл", "Источник"), widths):
         c.text = txt; c.width = wd
