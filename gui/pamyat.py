@@ -277,7 +277,7 @@ class PamyatApp(QMainWindow):
         self._src_box = QWidget()
         sbox = QVBoxLayout(self._src_box); sbox.setContentsMargins(0, 0, 0, 0)
         # Select all / Reset for the source checkboxes (sources are all-on by default
-        # on the site; the scraper clicks Сбросить before ticking the chosen ones).
+        # on the site; the scraper clicks Reset («Сбросить») before ticking the chosen ones).
         rr = QHBoxLayout()
         self._src_all = QPushButton("Select all")
         self._src_all.setObjectName("advBtn")
@@ -305,7 +305,7 @@ class PamyatApp(QMainWindow):
         self._scroll.setWidget(body)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
-        # Horizontal scroll = «порнография» — NEVER show it. The window resizes
+        # Horizontal scroll is strictly forbidden — NEVER show it. The window resizes
         # horizontally to the form's natural width (capped to the screen).
         # Vertical scroll appears ONLY when the screen is too short to fit it.
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

@@ -655,7 +655,7 @@ def _docx_add_record(doc, i, rec):
                 ph = rec.get("photo")
                 if ph and Path(ph).exists():
                     p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
-                    p.add_run(str(Path(ph).resolve()))   # точный путь куда сгружен
+                    p.add_run(str(Path(ph).resolve()))   # exact path where it was saved
             except Exception:
                 pass
     if rec.get("url"):

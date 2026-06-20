@@ -1060,7 +1060,7 @@ def _docx_add_person(doc, i, rec):
             if png:
                 doc.add_picture(io.BytesIO(png), width=Inches(3.3))
                 p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
-                p.add_run(str(Path(img).resolve()))      # точный путь куда сгружен
+                p.add_run(str(Path(img).resolve()))      # exact path where it was saved
         except Exception:
             pass
 

@@ -417,7 +417,7 @@ class MyHeritageApp(QMainWindow):
     def _build_ui(self):
         self._match_actions = {}
         # Top-level vertical scroll — the whole window scrolls on a low-res screen, so
-        # nothing is ever cut off (user: «динамическая гуйка + прокрутка на низкой»).
+        # nothing is ever cut off (user: dynamic GUI + scroll on low-res screens).
         outer_root = QWidget(); self.setCentralWidget(outer_root)
         _ol = QVBoxLayout(outer_root); _ol.setContentsMargins(0, 0, 0, 0); _ol.setSpacing(0)
         self._content_scroll = QScrollArea()
@@ -642,7 +642,7 @@ class MyHeritageApp(QMainWindow):
         # The LEADING slot is ALWAYS an 18×18 widget — an arrow button when the node has
         # children, otherwise an identical-size blank placeholder. Using the SAME widget
         # size (not addSpacing) makes every checkbox start at the same x AND every row the
-        # same height, so arrow rows and leaf rows line up («неровно» fix).
+        # same height, so arrow rows and leaf rows line up (alignment fix).
         if children:
             arrow = QPushButton("▶"); arrow.setObjectName("advBtn")
             arrow.setFixedSize(18, 18); arrow.setCheckable(True)
@@ -650,7 +650,7 @@ class MyHeritageApp(QMainWindow):
         else:
             ph = QWidget(); ph.setFixedSize(18, 18)
             row.addWidget(ph)
-        # Dual label «English / Русский» (user's request): English first (display), the
+        # Dual label (English name / Russian original) — user's request: English first (display), the
         # Russian original next to it. The checkbox IDENTITY stays the Russian name — the
         # scraper clicks the facet by the site-language (Russian) text, and save/load keys
         # on it. `data["en"]` is the matched-or-translated English from mh_add_english.py.

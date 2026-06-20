@@ -153,7 +153,7 @@ async def _scrape_record(page, url: str, images_dir: Path, log) -> dict:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(1.5)
 
-        # ── Fallback name from a heading (skip the "АИС Скарб" site header) ─ #
+        # ── Fallback name from a heading (skip the "AIS Skarb" site header) ─ #
         rec["name"] = await page.evaluate(r"""() => {
             const bad = /скарб|skarb|каталог|поиск/i;
             for (const sel of ['h1', 'h2', '.detail-title', '.page-title',
@@ -261,7 +261,7 @@ async def _scrape_record(page, url: str, images_dir: Path, log) -> dict:
                     rec["image_path"] = img_path
                     break
         else:
-            # Even without "Наличие фото: да", check for content images
+            # Even without an explicit "photo available" flag, check for content images
             for img in await page.query_selector_all("img[src]"):
                 src = (await img.get_attribute("src") or "").strip()
                 if not src:
@@ -386,7 +386,7 @@ def write_docx(path: Path, records: list, query_info: dict):
             except Exception:
                 doc.add_paragraph(f"  [{Path(img_path).name}]")
             p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
-            p.add_run(str(Path(img_path).resolve()))     # точный путь куда сгружен
+            p.add_run(str(Path(img_path).resolve()))     # exact path where it was saved
         elif thumb:
             doc.add_paragraph("Превью:").runs[0].bold = True
             try:
@@ -424,7 +424,7 @@ def write_xlsx(path: Path, records: list, query_info: dict):
             if k not in all_fields:
                 all_fields.append(k)
 
-    # Columns: #, Имя, <all record fields…>, Фото, URL (link LAST)
+    # Columns: #, Name, <all record fields…>, Photo, URL (link LAST)
     cols = ["#", "Имя"] + all_fields + ["Файл", "URL"]
     for ci, cn in enumerate(cols, 1):
         c = ws.cell(row=1, column=ci, value=cn)
@@ -514,8 +514,8 @@ async def run_scraper(
         _prog(100, "Не указаны фамилии для поиска.")
         return summary
 
-    # Build search query: "Фамилия1 или Фамилия2 или ..."
-    # АИС Скарб search form: <input type="text" name="q" ...>
+    # Build search query: "Surname1 или Surname2 или ..." (« или » = the site's OR separator)
+    # AIS Skarb search form: <input type="text" name="q" ...>
     query = " или ".join(surnames)
     q_prefix = safe_fn("_".join(surnames[:3]), 50)
 
@@ -537,7 +537,7 @@ async def run_scraper(
 
         try:
             # ── 1. Search ──────────────────────────────────────────── #
-            # АИС Скарб: GET param name="q" (from HTML: <input type="text" name="q">)
+            # AIS Skarb: GET param name="q" (from HTML: <input type="text" name="q">)
             search_url = BASE_URL + "?" + urlencode({"q": query})
             _prog(5, f"Поиск: {query}")
             await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
@@ -583,7 +583,7 @@ async def run_scraper(
                 rec = await _scrape_record(page, row["url"], images_dir, log)
                 # Name = the search-result link text (authoritative person name,
                 # e.g. "Шур Шая Залмановна"). The page <h1> is the site header
-                # "АИС Скарб", so NEVER use it. Heading only as last resort.
+                # "AIS Skarb", so NEVER use it. Heading only as last resort.
                 rec["name"] = row["name"] or rec.get("name") or ""
                 # Merge search-table data into fields if not already there
                 if "Дата рождения" not in rec["fields"] and row["birth"]:

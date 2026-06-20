@@ -188,7 +188,7 @@ class GwarApp(QMainWindow):
         max_w = scr.width() - 16
         # On a screen narrower than the 820 design width, the window MUST be allowed to
         # shrink below 820 — otherwise it sticks out past the screen edge and a horizontal
-        # scrollbar appears (the «никогда горизонтальный скролл» rule). So cap the minimum
+        # scrollbar appears (the "never a horizontal scrollbar" rule). So cap the minimum
         # width by the screen.
         self.setMinimumWidth(min(820, max_w))
         # facet columns: 3 equal columns that FILL the available width on a big screen and
@@ -230,7 +230,7 @@ class GwarApp(QMainWindow):
         main.addWidget(QLabel("WWI (1914–1918) participant records "
                               "(gwar.mil.ru) — the site is Russian only."))
 
-        # Scrollable form (mirrors the site sections) — same as Память народа.
+        # Scrollable form (mirrors the site sections) — same as the Pamyat scraper.
         body = QWidget(); outer = QVBoxLayout(body)
         outer.setContentsMargins(0, 0, 8, 0); outer.setSpacing(10)
 
@@ -243,8 +243,8 @@ class GwarApp(QMainWindow):
         bgl.addWidget(QLabel("First name:"), 0, 2); bgl.addWidget(self.f_first, 0, 3)
         bgl.addWidget(QLabel("Patronymic:"), 1, 0); bgl.addWidget(self.f_mid, 1, 1)
         bgl.addWidget(QLabel("Birth date:"), 1, 2); bgl.addWidget(self.f_birth, 1, 3)
-        # «Exact match» checkbox REMOVED per the user — it forced strict ФИО equality
-        # and rejected valid hits (e.g. the Военачальник «Иванов Николай Иудович»).
+        # "Exact match" checkbox REMOVED per the user — it forced strict full-name equality
+        # and rejected valid hits (e.g. the commander «Иванов Николай Иудович»).
         # The scraper now always uses fuzzy matching (surname ~0.7, given/patronymic
         # by initial / stem) — see exact=False in the payload below.
         outer.addWidget(bg)
@@ -260,7 +260,7 @@ class GwarApp(QMainWindow):
         pgl.addWidget(QLabel("Settlement:"), 1, 2); pgl.addWidget(self.f_set, 1, 3)
         outer.addWidget(pg)
 
-        # 3) Sections (Разделы) — all on by default ──────────────────────────
+        # 3) Sections (the site's «Разделы») — all on by default ──────────────
         secg = QGroupBox("Sections")
         secl = QHBoxLayout(secg); secl.setSpacing(12)
         self._sec_cbs = {}
@@ -281,7 +281,7 @@ class GwarApp(QMainWindow):
         self._facet_box = QWidget()
         fgl = QGridLayout(self._facet_box); fgl.setSpacing(8)
         self._facet_grid = fgl          # kept so _fit() can re-size columns for low-res
-        # «Источники информации» — ALL 9 checked by default (user's request). They map
+        # «Источники информации» (information sources) — ALL 9 checked by default (user's request). They map
         # to types=… (the full default set), so checking them all = the site's default.
         self._fc_sources = _FacetChecks(FACETS.get("sources", []), all_checked=True,
                                         searchable=False, scroll=False, on_change=self._save)
@@ -422,7 +422,7 @@ class GwarApp(QMainWindow):
             "awards":      self._fc_awards.checked(),
             "losses":      self._fc_losses.checked(),
             "notable":     self._fc_known.checked(),
-            "exact":       False,   # «строгое соответствие» removed → always fuzzy ФИО
+            "exact":       False,   # "exact match" removed → always fuzzy full-name compare
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":         print,
             "cancel_event": getattr(self, "_cancel_ev", None),
@@ -529,7 +529,7 @@ class GwarApp(QMainWindow):
         # per-search refinements applied server-side; silently re-checking a stale set
         # (e.g. all 9 «Information sources» left over from a previous run) quietly
         # broadens the search and drowns the narrow filter you actually want now — the
-        # «выбрал всю первую секцию, но не выбрал военачальников» bug. The name / place
+        # "ticked the whole first section but not the commanders" bug. The name / place
         # / storage fields above ARE restored — that's the search history worth keeping.
 
 

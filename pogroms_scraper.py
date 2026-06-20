@@ -274,7 +274,7 @@ def _docx_add_person(doc, i, rec):
         except Exception:
             pass
         p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
-        p.add_run(str(Path(rec["photo_path"]).resolve()))   # точный путь куда сгружен
+        p.add_run(str(Path(rec["photo_path"]).resolve()))   # exact path where it was saved
     doc.add_paragraph("")
 
 

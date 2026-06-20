@@ -1294,7 +1294,7 @@ def _docx_add_record(doc, i, rec):
         except Exception:
             doc.add_paragraph(f"  [{Path(imgs[0]).name}]")
         p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
-        p.add_run(str(Path(imgs[0]).resolve()))      # точный путь куда сгружен
+        p.add_run(str(Path(imgs[0]).resolve()))      # exact path where it was saved
     elif tb:
         doc.add_paragraph("Превью документа:").runs[0].bold = True
         try:

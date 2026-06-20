@@ -3324,7 +3324,7 @@ def _docx_add_record(doc, i, rec):
     dp = rec.get("doc_path")
     if dp and Path(dp).exists():
         p = doc.add_paragraph(); p.add_run("Файл: ").bold = True
-        p.add_run(str(Path(dp).resolve()))           # точный путь куда сгружен
+        p.add_run(str(Path(dp).resolve()))           # exact path where it was saved
     # "View full profile on this site" link
     if rec.get("profile_url"):
         pp = doc.add_paragraph()
