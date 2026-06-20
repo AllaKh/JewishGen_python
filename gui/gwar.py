@@ -217,8 +217,8 @@ class GwarApp(QMainWindow):
         self._scroll.setMinimumHeight(scroll_h)
         self._scroll.setMaximumHeight(scroll_h)
         self.resize(target_w, target_h)
-        self.move(scr.x() + max(0, (scr.width() - self.width()) // 2),
-                  scr.y() + 8)
+        # positioning is handled once by the launcher (center_window) — _fit only
+        # RESIZES, never moves, so the window doesn't jerk on open.
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)

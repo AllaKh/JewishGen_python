@@ -129,18 +129,16 @@ class SiteCard(QFrame):
             import importlib
             mod = importlib.import_module(module_path)
             cls = getattr(mod, cls_name)
-            self._win = cls()
-            self._win.show()
             # Open EVERY database window in the same place: centered on the launcher's
-            # screen, capped to fit, never off-screen — on any resolution. Deferred so
-            # it runs AFTER the window's own dynamic _fit sizing settles (and once more
-            # a little later in case that sizing was itself deferred).
+            # screen, capped to fit, never off-screen — on any resolution.
             from PySide6.QtCore import QTimer
             from gui._app_icon import center_window
             _scr = self.screen()
-            for _delay in (0, 130):
-                QTimer.singleShot(
-                    _delay, lambda w=self._win, s=_scr: center_window(w, s))
+            self._win = cls()
+            center_window(self._win, _scr)      # position BEFORE first paint → no flash/jump
+            self._win.show()
+            # one correction after the window's own dynamic sizing has settled
+            QTimer.singleShot(0, lambda w=self._win, s=_scr: center_window(w, s))
         except Exception as exc:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(

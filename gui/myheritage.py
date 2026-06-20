@@ -424,7 +424,8 @@ class MyHeritageApp(QMainWindow):
         self._content_scroll.setWidgetResizable(True)
         self._content_scroll.setFrameShape(QFrame.NoFrame)
         self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        _ol.addWidget(self._content_scroll)
+        _ol.addWidget(self._content_scroll, 1)        # stretchy → leaves room for the fixed bottom bar
+        self._ol = _ol                                 # the FORM scrolls here; bottom bar is added below, OUTSIDE
         root = QWidget(); self._content_scroll.setWidget(root)
         self._outer = QVBoxLayout(root)
         self._outer.setContentsMargins(18, 12, 18, 12)
@@ -586,13 +587,15 @@ class MyHeritageApp(QMainWindow):
         ol.addLayout(dr)
         self._outer.addWidget(og)
 
-        # ── Progress ─────────────────────────────────────────────────────── #
+        # ── Fixed bottom bar (OUTSIDE the scroll → progress + Start/Cancel are ALWAYS
+        #    visible; only the form above scrolls when Advanced/Category is open) ──── #
+        self._bottom = QWidget()
+        _bl = QVBoxLayout(self._bottom)
+        _bl.setContentsMargins(18, 4, 18, 8); _bl.setSpacing(6)
         self.pbar  = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        self._outer.addWidget(self.pbar)
-        self._outer.addWidget(self.stlbl)
-
-        # ── Start ─────────────────────────────────────────────────────────── #
+        _bl.addWidget(self.pbar)
+        _bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
@@ -600,8 +603,9 @@ class MyHeritageApp(QMainWindow):
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        self._outer.addLayout(br)
-        self._outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _bl.addLayout(br)
+        _bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _ol.addWidget(self._bottom, 0)                 # fixed (no stretch) at the bottom
 
         # Autosave wiring
         for w in self._all_fields():
@@ -711,33 +715,25 @@ class MyHeritageApp(QMainWindow):
         return out
 
     def _fit(self):
-        """Dynamic sizing: grow to the content but NEVER exceed THIS monitor's work area —
-        the top-level scroll takes over on a low-res screen. Resize in place; only nudge
-        back on-screen if an edge spills — do NOT re-center (that made the window jump
-        between monitors every time Advanced/Category opened)."""
+        """Dynamic sizing: grow to the content but NEVER exceed this monitor's work area.
+        The FORM scrolls inside _content_scroll; the bottom bar (progress + Start/Cancel)
+        is fixed and always visible, so when Advanced/Category opens the form just gets a
+        scrollbar instead of pushing the window off-screen. Positioning is the launcher's
+        job (center_window) — _fit only resizes, never moves (so no jumping/jerking)."""
         sw = self.screen() or QApplication.primaryScreen()
         scr = sw.availableGeometry()
         max_w, max_h = scr.width() - 16, scr.height() - 48
         self.setMinimumWidth(min(860, max_w))
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
-        # Recompute from the ACTUAL settled content: invalidate the content layout and
-        # shrink the inner widget to its real sizeHint, so a just-collapsed node doesn't
-        # leave the window oversized (setWidgetResizable would then stretch the inner
-        # widget and show an empty gap below the list).
         cw = self._content_scroll.widget()
         self._outer.invalidate(); self._outer.activate()
         cw.adjustSize()
-        hint = cw.sizeHint().height() + 4
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8     # form + fixed bottom bar
         w = min(max(self.width(), self.minimumWidth()), max_w)
-        h = min(hint, max_h)
+        h = min(hint, max_h)                              # capped → form scrolls past this
         self.resize(w, h)
         self.setMaximumHeight(max_h)
-        # clamp back on-screen ONLY if a corner spilled (no jumping otherwise)
-        nx, ny = self.x(), self.y()
-        nx = min(nx, scr.right() - w - 4);  nx = max(nx, scr.left() + 4)
-        ny = min(ny, scr.bottom() - h - 4); ny = max(ny, scr.top() + 8)
-        if (nx, ny) != (self.x(), self.y()):
-            self.move(nx, ny)
 
     def _record_type(self) -> str:
         for opt, rb in self._rt_buttons.items():
