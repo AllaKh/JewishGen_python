@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QComboBox, QSpinBox,
     QFileDialog, QProgressBar, QMessageBox, QApplication,
     QGroupBox, QRadioButton, QButtonGroup, QStackedWidget, QSizePolicy,
+    QCheckBox, QScrollArea, QFrame,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import (app_icon, make_header, make_cancel_button, autosave_path,
+                           clamp_on_screen)
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -49,6 +51,15 @@ except ImportError:
 
 # Site / language selector → lang code sent to the scraper.
 SITE_LANG = {"Russian (ru)": "ru", "English (en)": "en"}
+
+
+def _load_sources():
+    """The site's «ГДЕ ИЩЕМ?» (WHERE WE SEARCH) database list — {key, en, ru}."""
+    try:
+        return json.loads((_CONFIG / "memsearch_sources.json").read_text("utf-8"))
+    except Exception:
+        return []
+SOURCES = _load_sources()
 
 STYLE = """
 QMainWindow,QWidget{font-family:Segoe UI,Arial,sans-serif;font-size:11px;}
@@ -115,12 +126,42 @@ class MemsearchApp(QMainWindow):
         self.setWindowIcon(app_icon())
         self._build_ui()
         self._load()
+        self._fit()
+        for _ms in (0, 130, 320):
+            QTimer.singleShot(_ms, self._fit)
+
+    def _fit(self):
+        """Grow the window to the form's content (capped to the screen) so the form
+        scrolls past the cap and the fixed bottom Start/Cancel bar is ALWAYS visible,
+        on any resolution. No move — the launcher positions it (no jumping)."""
+        if not hasattr(self, "_content_scroll"):
+            return
+        scr = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        max_w, max_h = scr.width() - 16, scr.height() - 48
+        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        cw = self._content_scroll.widget(); cw.adjustSize()
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8
+        self.resize(min(max(self.width(), self.minimumWidth()), max_w), min(hint, max_h))
+        self.setMaximumHeight(max_h)
+        clamp_on_screen(self)
 
     # ── UI ────────────────────────────────────────────────────────────────── #
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
-        outer = QVBoxLayout(root)
+        self._ol = QVBoxLayout(root)
+        self._ol.setContentsMargins(0, 0, 0, 0); self._ol.setSpacing(0)
+
+        # Scrollable form (so a tall form scrolls instead of pushing the buttons off
+        # the screen) + a FIXED bottom bar that always shows Start/Cancel.
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget(); outer = QVBoxLayout(content)
         outer.setContentsMargins(16, 12, 16, 12); outer.setSpacing(10)
+        self._content_scroll.setWidget(content)
+        self._ol.addWidget(self._content_scroll, 1)
 
         outer.addLayout(make_header("Memlogo.png", "Memorial", color="#c0392b"))
         outer.addWidget(QLabel(
@@ -156,8 +197,37 @@ class MemsearchApp(QMainWindow):
         tl.addStretch()
         outer.addWidget(tg)
 
-        # Per-tab advanced fields (stacked)
-        ag = QGroupBox("Advanced search (for the selected type)")
+        # Where to search (databases) — the site's «ГДЕ ИЩЕМ?» (WHERE WE SEARCH) list.
+        wg = QGroupBox("Where to search (databases)")
+        wl = QVBoxLayout(wg); wl.setSpacing(4)
+        topr = QHBoxLayout()
+        self.f_all_src = QCheckBox("Select all")
+        self.f_all_src.setChecked(True)
+        self.f_all_src.stateChanged.connect(self._toggle_all_sources)
+        topr.addWidget(self.f_all_src); topr.addStretch()
+        wl.addLayout(topr)
+        host = QWidget(); hl = QVBoxLayout(host)
+        hl.setContentsMargins(2, 2, 2, 2); hl.setSpacing(1)
+        self._src_checks = []                                   # (checkbox, source key)
+        for s in SOURCES:
+            cb = QCheckBox((s.get("en") or s.get("ru") or s["key"]).replace("&", "&&"))
+            cb.setChecked(True)
+            if s.get("ru"):
+                cb.setToolTip(s["ru"])
+            cb.stateChanged.connect(self._on_src_toggle)
+            self._src_checks.append((cb, s["key"]))
+            hl.addWidget(cb)
+        sc = QScrollArea(); sc.setWidget(host); sc.setWidgetResizable(True)
+        sc.setFrameShape(QFrame.NoFrame)
+        sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sc.setMaximumHeight(170)
+        wl.addWidget(sc)
+        outer.addWidget(wg)
+
+        # Per-tab filter fields. Shown only for a SPECIFIC record type — on «All types»
+        # there are no type-specific filters, so the box is HIDDEN (no empty box).
+        ag = QGroupBox("Filters for the selected type")
+        self._adv_group = ag
         al = QVBoxLayout(ag)
         self._stack = QStackedWidget()
         self._stack.addWidget(self._page_all())
@@ -170,7 +240,10 @@ class MemsearchApp(QMainWindow):
         # otherwise reserves the tallest page → empty space for small tabs).
         self._stack.currentChanged.connect(self._shrink_stack)
         outer.addWidget(ag)
+        for rb in self._tab_buttons.values():
+            rb.toggled.connect(lambda *_: self._update_adv())
         self._tab_buttons[TABS[0]].setChecked(True)
+        self._update_adv()
 
         # Output
         og = QGroupBox("Output (Word)")
@@ -180,11 +253,13 @@ class MemsearchApp(QMainWindow):
         ol.addWidget(QLabel("Save to:")); ol.addWidget(self.f_folder, 1); ol.addWidget(bb)
         outer.addWidget(og)
 
-        # Progress + start
+        # ── Fixed bottom bar (progress + Start/Cancel) — ALWAYS visible ──────
+        self._bottom = QWidget()
+        bl = QVBoxLayout(self._bottom)
+        bl.setContentsMargins(16, 6, 16, 8); bl.setSpacing(6)
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        outer.addWidget(self.pbar); outer.addWidget(self.stlbl)
-
+        bl.addWidget(self.pbar); bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
@@ -192,8 +267,9 @@ class MemsearchApp(QMainWindow):
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        outer.addLayout(br)
-        outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        bl.addLayout(br)
+        bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        self._ol.addWidget(self._bottom, 0)
 
         # Autosave wiring
         for w in (self.f_query, self.f_last, self.f_first, self.f_patr,
@@ -259,7 +335,31 @@ class MemsearchApp(QMainWindow):
         if cur:
             cur.adjustSize()
             self._stack.setFixedHeight(max(cur.sizeHint().height(), 10))
-        QTimer.singleShot(0, self.adjustSize)
+        QTimer.singleShot(0, self._fit)
+
+    def _update_adv(self):
+        """Show the per-type filter box only for a SPECIFIC record type — on «All types»
+        there are no type-specific filters, so it's hidden (no empty «nightmare» box)."""
+        if hasattr(self, "_adv_group"):
+            self._adv_group.setVisible(self._tab() != TABS[0])
+        QTimer.singleShot(0, self._fit)
+
+    def _toggle_all_sources(self, state):
+        on = bool(state)
+        for cb, _k in self._src_checks:
+            cb.blockSignals(True); cb.setChecked(on); cb.blockSignals(False)
+        self._save()
+
+    def _on_src_toggle(self, *_):
+        all_on = bool(self._src_checks) and all(cb.isChecked() for cb, _k in self._src_checks)
+        self.f_all_src.blockSignals(True); self.f_all_src.setChecked(all_on)
+        self.f_all_src.blockSignals(False)
+        self._save()
+
+    def _selected_sources(self):
+        """Checked source keys; [] when ALL are checked (= no filter, search every base)."""
+        sel = [k for cb, k in self._src_checks if cb.isChecked()]
+        return [] if len(sel) == len(self._src_checks) else sel
 
     # ── helpers ─────────────────────────────────────────────────────────────#
     def _browse(self):
@@ -280,6 +380,7 @@ class MemsearchApp(QMainWindow):
             "query":       self.f_query.text().strip(),
             "lang":        SITE_LANG.get(self.f_lang.currentText(), "ru"),
             "entity_tab":  self._tab(),
+            "sources":     self._selected_sources(),
             "last_name":   self.f_last.text().strip(),
             "first_name":  self.f_first.text().strip(),
             "patronymic":  self.f_patr.text().strip(),
@@ -366,6 +467,7 @@ class MemsearchApp(QMainWindow):
                 "place": self.f_place.text(), "pamong": self.f_pamong.currentText(),
                 "object": self.f_object.text(), "oamong": self.f_oamong.currentText(),
                 "doc": self.f_doc.text(), "folder": self.f_folder.text(),
+                "sources": [k for cb, k in self._src_checks if cb.isChecked()],
             }
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2),
                              encoding="utf-8")
@@ -393,6 +495,13 @@ class MemsearchApp(QMainWindow):
         t = d.get("tab")
         if t in self._tab_buttons:
             self._tab_buttons[t].setChecked(True)
+        # restore the database selection (default: all checked)
+        if "sources" in d and self._src_checks:
+            keep = set(d.get("sources") or [])
+            for cb, k in self._src_checks:
+                cb.blockSignals(True); cb.setChecked(k in keep); cb.blockSignals(False)
+            self._on_src_toggle()
+        self._update_adv()
 
 
 if __name__ == "__main__":

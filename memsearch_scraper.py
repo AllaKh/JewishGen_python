@@ -177,6 +177,31 @@ def _add_hyperlink(para, text, url):
 
 
 # ── Search + navigation ───────────────────────────────────────────────────── #
+async def _apply_sources(page, sources, log) -> None:
+    """Limit the search to the chosen databases. memsearch builds its results URL as
+    /search?query=…&page=1&entityTypes=…&searchSource=<comma-joined source keys> (verified
+    from the site's JS bundle). So after the search lands on /search we just rewrite the
+    searchSource param to the selected keys and reload — server-side filtering, no clicks."""
+    if not sources:
+        return                                   # all databases → no filter
+    try:
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+        u = page.url
+        if "/search" not in u:
+            log("  !! Фильтр источников: страница результатов не /search — пропуск")
+            return
+        pr = urlparse(u)
+        qs = parse_qs(pr.query)
+        qs["searchSource"] = [",".join(sources)]
+        new = urlunparse(pr._replace(query=urlencode(qs, doseq=True)))
+        if new != u:
+            await page.goto(new, wait_until="domcontentloaded", timeout=40000)
+            await asyncio.sleep(2)
+        log(f"  ✓ Ограничил поиск базами: {len(sources)}")
+    except Exception as e:
+        log(f"  !! Фильтр источников не применён: {e}")
+
+
 async def _do_search(page, query: str, lang: str, log) -> bool:
     """Open the LANGUAGE-specific home page, type the query, click the search
     button. True if results show."""
@@ -699,6 +724,7 @@ async def run_scraper(*,
     query="",
     lang="ru",                       # site language: "ru" or "en"
     entity_tab="All types",          # canonical English tab
+    sources=None,                    # source keys to limit to (None/[] = all databases)
     # People
     last_name="", first_name="", patronymic="", birth_year="",
     region="", region_type="",
@@ -761,6 +787,7 @@ async def run_scraper(*,
 
             await _select_tab(page, entity_tab, log)
             await _fill_advanced(page, entity_tab, params, log)
+            await _apply_sources(page, sources, log)   # limit to chosen databases
             await asyncio.sleep(1.0)
 
             # ── Collect + OPEN each card (click → new tab) page by page ── #
