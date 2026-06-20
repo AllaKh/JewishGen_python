@@ -93,11 +93,13 @@ def load_sources() -> list:
 
 def build_search_url(query: str, selected_ids, page: int = 1, *,
                      no_stemming: bool = False, no_fuzziness: bool = False,
-                     show_experts: bool = False) -> str:
+                     show_experts: bool = False, fund: str = "", inventory: str = "",
+                     record: str = "", doc_dates: str = "", added_since: str = "") -> str:
     """Replicate the site form (verified against the user's live URLs): R.Q + every
     source's R.S[i].Chk / .Id (Chk=true only for ticked sources; indices must be
-    contiguous, so ALL 164 are sent in order), plus R.Page, R.SearchInRecords and the
-    three option flags (Без стемминга / Без ошибок / Эксперты)."""
+    contiguous, so ALL 164 are sent in order), plus R.Page, R.SearchInRecords, the three
+    option flags (Без стемминга / Без ошибок / Эксперты) and the archive-reference /
+    date fields (R.Fund / R.Inventory / R.Record / R.DocDateRange / R.UpdateStartDate)."""
     sel = set(selected_ids or [])
     params = [("R.Q", query)]
     for s in load_sources():
@@ -110,6 +112,11 @@ def build_search_url(query: str, selected_ids, page: int = 1, *,
         ("R.NoFuzziness", "true" if no_fuzziness else "false"),
         ("R.ShowExperts", "true" if show_experts else "false"),
     ]
+    if fund:        params.append(("R.Fund", fund))
+    if inventory:   params.append(("R.Inventory", inventory))
+    if record:      params.append(("R.Record", record))
+    if doc_dates:   params.append(("R.DocDateRange", doc_dates))
+    if added_since: params.append(("R.UpdateStartDate", added_since))
     return SEARCH_URL + "?" + _up.urlencode(params)
 
 
@@ -126,9 +133,16 @@ def parse_results(html: str, log) -> dict:
 
     for bm in re.finditer(r'<div style="margin: ?1em">(.*?)</div>', html, re.S):
         inner = bm.group(1)
-        # drop the «pay to open the document» note at the end of each block
+        # document link (paid account): <a href="/document?id=…">Title</a>
+        doc_url, doc_title = "", ""
+        dm = re.search(r'<a[^>]+href="(/document\?id=[^"]+)"[^>]*>(.*?)</a>', inner, re.S)
+        if dm:
+            doc_url = BASE_URL + _html.unescape(dm.group(1))
+            doc_title = _strip_tags(dm.group(2))
+        # drop the «pay to open» note and the document-link anchor from the snippet text
         inner = re.sub(r'<span[^>]*>\s*(Для открытия|To open|Каб адкрыць).*$', '',
                        inner, flags=re.S)
+        inner = re.sub(r'<a[^>]+href="/document[^"]*"[^>]*>.*?</a>', '', inner, flags=re.S)
         inner = re.sub(r'<br\s*/?>', ' ', inner)
         # keep the site's <b>…</b> match highlights as sentinels (\x02…\x03) so Word
         # can render the searched word in bold; everything else → plain text
@@ -140,10 +154,11 @@ def parse_results(html: str, log) -> dict:
         text = inner.replace('\x02', '').replace('\x03', '')        # plain (Excel/dedup)
         if not text or len(text) < 4:
             continue
-        if text in seen:
+        key = text + "|" + doc_url
+        if key in seen:
             continue
-        seen.add(text)
-        rows.append({"source": "", "text": text, "rich": inner, "url": ""})
+        seen.add(key)
+        rows.append({"source": doc_title, "text": text, "rich": inner, "url": doc_url})
 
     return {"rows": rows, "total": total}
 
@@ -162,9 +177,9 @@ def _add_link(para, text, url):
 
 
 # landscape A4 with 0.7" L/R margins → ~10.3" usable; keep the table inside it so the
-# right margin survives (sum ≈ 9.8"). #, Source, Link columns narrow — Record wide.
+# right margin survives (sum ≈ 9.8"). #, Source, File, Link narrow — Record wide.
 # python-docx ignores table-level widths → set on EVERY cell per row.
-_COLW = [Inches(0.4), Inches(0.9), Inches(7.8), Inches(0.7)]
+_COLW = [Inches(0.4), Inches(1.4), Inches(5.6), Inches(1.7), Inches(0.7)]
 
 
 def _set_widths(cells):
@@ -189,12 +204,12 @@ def _add_rich(cell, rich):
 
 
 def _docx_table(doc, rows):
-    tbl = doc.add_table(rows=1, cols=4)
+    tbl = doc.add_table(rows=1, cols=5)
     tbl.style = "Light Grid Accent 1"
     tbl.autofit = False
     tbl.allow_autofit = False
     hdr = tbl.rows[0].cells
-    for c, h in zip(hdr, ("#", "Источник", "Запись", "Ссылка")):
+    for c, h in zip(hdr, ("#", "Источник", "Запись", "Файл", "Ссылка")):
         c.text = ""
         c.paragraphs[0].add_run(h).bold = True
     _set_widths(hdr)
@@ -203,8 +218,11 @@ def _docx_table(doc, rows):
         cells[0].text = str(i)
         cells[1].text = r.get("source", "") or ""
         _add_rich(cells[2], r.get("rich") or r.get("text", "") or "")
+        # saved document scan(s) — full path(s), one per line
+        files = r.get("files") or []
+        cells[3].paragraphs[0].add_run("\n".join(files)).font.size = Pt(8)
         if r.get("url"):
-            _add_link(cells[3].paragraphs[0], "Открыть", r["url"])
+            _add_link(cells[4].paragraphs[0], "Открыть", r["url"])
         _set_widths(cells)
 
 
@@ -234,7 +252,7 @@ def write_docx(path: Path, rows: list, qlines: list, append: bool = False):
 def write_xlsx(path: Path, rows: list, qlines: list, append: bool = False):
     if not _OPENPYXL_OK:
         return
-    cols = ["#", "База", "Источник", "Запись", "URL"]
+    cols = ["#", "База", "Источник", "Запись", "Файл", "URL"]
     if append and path.exists():
         wb = load_workbook(str(path)); ws = wb.active
         n0 = ws.max_row - 1
@@ -247,17 +265,19 @@ def write_xlsx(path: Path, rows: list, qlines: list, append: bool = False):
         n0 = 0
     for i, r in enumerate(rows, 1):
         ws.append([n0 + i, SITE_NAME, _safe(r.get("source", "")),
-                   _safe(r.get("text", "")), _safe(r.get("url", ""))])
+                   _safe(r.get("text", "")), _safe("\n".join(r.get("files") or [])),
+                   _safe(r.get("url", ""))])
         if r.get("url"):
-            cell = ws.cell(row=ws.max_row, column=5)
+            cell = ws.cell(row=ws.max_row, column=6)
             cell.hyperlink = r["url"]; cell.value = "Открыть"
             cell.font = Font(color="0563C1", underline="single")
-    # #, Database, Source, URL columns narrow — Record wide
-    for i, wd in enumerate([5, 10, 10, 120, 10], 1):
+    # #, Database, Source, File, URL narrow — Record wide
+    for i, wd in enumerate([5, 10, 10, 90, 40, 10], 1):
         ws.column_dimensions[get_column_letter(i)].width = wd
-    # wrap the long snippet column
-    for row in ws.iter_rows(min_row=2, min_col=4, max_col=4):
-        row[0].alignment = Alignment(wrap_text=True, vertical="top")
+    # wrap the long snippet + file columns
+    for row in ws.iter_rows(min_row=2, min_col=4, max_col=5):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
     ws.freeze_panes = "A2"
     wb.save(str(path))
 
@@ -321,6 +341,61 @@ def _clear_singleton_locks():
             pass
 
 
+def _looks_image(b: bytes) -> bool:
+    return (b[:3] == b"\xff\xd8\xff" or b[:8] == b"\x89PNG\r\n\x1a\n"
+            or b[:6] in (b"GIF87a", b"GIF89a")
+            or (b[:4] == b"RIFF" and b[8:12] == b"WEBP"))
+
+
+async def _open_document(page, url, images_dir, base, dump, log):
+    """Open a document page (/document?id=…) and save its scanned page image(s).
+    The exact /document markup wasn't available offline, so this is best-effort + the
+    FIRST document's HTML is dumped (results/hryc_document_sample.html) to refine later.
+    Returns (saved_file_paths, page_text)."""
+    saved, text = [], ""
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+    except Exception as e:
+        log(f"    !! документ не открылся: {e}")
+        return saved, text
+    try:
+        html = await page.content()
+    except Exception:
+        html = ""
+    if dump is not False:
+        try:
+            (Path(dump) / "hryc_document_sample.html").write_text(html, encoding="utf-8")
+        except Exception:
+            pass
+    text = _strip_tags(re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.S))[:6000]
+    # largest images on the page = the scanned document page(s)
+    try:
+        srcs = await page.evaluate(r"""() => {
+            const out = [];
+            for (const im of document.querySelectorAll('img')) {
+                const s = im.currentSrc || im.src || '';
+                const a = (im.naturalWidth || 0) * (im.naturalHeight || 0);
+                if (s && a > 40000 && !/logo|icon|avatar|sprite|\.svg/i.test(s)) out.push([s, a]);
+            }
+            return out.sort((x, y) => y[1] - x[1]).map(z => z[0]).slice(0, 25);
+        }""")
+    except Exception:
+        srcs = []
+    for i, src in enumerate(srcs, 1):
+        try:
+            resp = await page.request.get(src, timeout=30000)
+            b = await resp.body()
+            if len(b) > 3000 and _looks_image(b):
+                images_dir.mkdir(parents=True, exist_ok=True)
+                ext = ".png" if b[:4] == b"\x89PNG" else (".webp" if b[8:12] == b"WEBP" else ".jpg")
+                fp = images_dir / f"{base}_{i}{ext}"
+                fp.write_bytes(b)
+                saved.append(str(fp.resolve()))
+        except Exception:
+            continue
+    return saved, text
+
+
 # ── orchestrator ────────────────────────────────────────────────────────────── #
 async def run_scraper(
     *,
@@ -331,6 +406,13 @@ async def run_scraper(
     no_stemming:   bool      = False,
     no_fuzziness:  bool      = False,
     show_experts:  bool      = False,
+    fund:          str       = "",
+    inventory:     str       = "",
+    record:        str       = "",
+    doc_dates:     str       = "",
+    added_since:   str       = "",
+    open_documents: bool     = True,    # open & save the linked documents (paid account)
+    max_docs:      int       = 60,
     max_pages:     int       = 50,
     output_format: str       = "both",
     output_folder            = Path("."),
@@ -402,7 +484,9 @@ async def run_scraper(
                     break
                 url = build_search_url(query, sources or [], pno,
                                        no_stemming=no_stemming, no_fuzziness=no_fuzziness,
-                                       show_experts=show_experts)
+                                       show_experts=show_experts, fund=fund,
+                                       inventory=inventory, record=record,
+                                       doc_dates=doc_dates, added_since=added_since)
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 html = await page.content()
                 if pno == 1:
@@ -434,6 +518,28 @@ async def run_scraper(
                 _prog(100, "Ничего не найдено.")
                 return summary
 
+            # ── 2b. Open & save the linked documents (paid account) ─────── #
+            doc_rows = [r for r in rows if r.get("url")]
+            n_docs = 0
+            if open_documents and doc_rows:
+                images_dir = output_folder / "images" / safe_fn(query)
+                todo = doc_rows[:max_docs]
+                _prog(85, f"Открываю документы: {len(todo)} из {len(doc_rows)}…")
+                for i, r in enumerate(todo, 1):
+                    if _cancelled():
+                        break
+                    files, dtext = await _open_document(
+                        page, r["url"], images_dir,
+                        safe_fn(r.get("source") or f"{query}_{i}"),
+                        dump=(output_folder if i == 1 else False), log=log)
+                    if files:
+                        r["files"] = files; n_docs += 1
+                    if dtext and len(dtext) > len(r.get("text", "")):
+                        r["text"] = dtext        # richer text from the opened document
+                    _prog(85 + min(8, i * 8 // max(len(todo), 1)),
+                          f"  документ {i}/{len(todo)}: {len(files)} скан(ов)")
+                log(f"  → Открыто документов со сканами: {n_docs}")
+
             # ── 3. SAVE ──────────────────────────────────────────────── #
             _prog(88, "Сохранение файлов…")
             base   = safe_fn(f"hryc_{query}") or "hryc_results"
@@ -463,6 +569,7 @@ async def run_scraper(
 
             _prog(100, f"Готово — {len(rows)} записей.")
             summary.update({"ok": True, "n_records": len(rows), "total": total,
+                            "documents": n_docs,
                             "docx_count": 1 if sd else 0,
                             "xlsx_path": str(xlsx_p) if sx else None,
                             "output_folder": str(output_folder)})

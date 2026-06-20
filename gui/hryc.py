@@ -187,6 +187,22 @@ class HrycApp(QMainWindow):
             opt.addWidget(c)
         opt.addStretch()
         sl.addLayout(opt, 1, 0, 1, 2)
+        # archive-reference + date fields (site: R.Fund / R.Inventory / R.Record /
+        # R.DocDateRange / R.UpdateStartDate)
+        af = QGridLayout(); af.setSpacing(8)
+        self.f_fund = QLineEdit(); self.f_fund.setPlaceholderText("Фонд")
+        self.f_inv  = QLineEdit(); self.f_inv.setPlaceholderText("Опись")
+        self.f_rec  = QLineEdit(); self.f_rec.setPlaceholderText("Дело")
+        af.addWidget(QLabel("Fund:"), 0, 0);      af.addWidget(self.f_fund, 0, 1)
+        af.addWidget(QLabel("Inventory:"), 0, 2); af.addWidget(self.f_inv, 0, 3)
+        af.addWidget(QLabel("File:"), 0, 4);      af.addWidget(self.f_rec, 0, 5)
+        self.f_docdates = QLineEdit(); self.f_docdates.setPlaceholderText("1800;1800-1834")
+        self.f_added    = QLineEdit(); self.f_added.setPlaceholderText("YYYY-MM-DD")
+        af.addWidget(QLabel("Doc dates:"), 1, 0);   af.addWidget(self.f_docdates, 1, 1)
+        af.addWidget(QLabel("Added since:"), 1, 2); af.addWidget(self.f_added, 1, 3)
+        for c in (1, 3, 5):
+            af.setColumnStretch(c, 1)
+        sl.addLayout(af, 2, 0, 1, 2)
         outer.addWidget(sg)
 
         # where to search — tree of sources + Select all
@@ -239,7 +255,8 @@ class HrycApp(QMainWindow):
         self._ol.addWidget(self._bottom, 0)
 
         for w in (self.f_email, self.f_pass, self.f_query, self.f_folder,
-                  self.f_docx, self.f_xlsx, self.f_nostem, self.f_nofuzz, self.f_experts):
+                  self.f_docx, self.f_xlsx, self.f_nostem, self.f_nofuzz, self.f_experts,
+                  self.f_fund, self.f_inv, self.f_rec, self.f_docdates, self.f_added):
             (w.textChanged if isinstance(w, QLineEdit) else w.stateChanged).connect(self._save)
 
     # ── source tree ───────────────────────────────────────────────────────── #
@@ -330,6 +347,11 @@ class HrycApp(QMainWindow):
             "no_stemming":   self.f_nostem.isChecked(),
             "no_fuzziness":  self.f_nofuzz.isChecked(),
             "show_experts":  self.f_experts.isChecked(),
+            "fund":          self.f_fund.text().strip(),
+            "inventory":     self.f_inv.text().strip(),
+            "record":        self.f_rec.text().strip(),
+            "doc_dates":     self.f_docdates.text().strip(),
+            "added_since":   self.f_added.text().strip(),
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":           print,
@@ -362,6 +384,9 @@ class HrycApp(QMainWindow):
                 "nostem": self.f_nostem.isChecked(),
                 "nofuzz": self.f_nofuzz.isChecked(),
                 "experts": self.f_experts.isChecked(),
+                "fund": self.f_fund.text(), "inventory": self.f_inv.text(),
+                "record": self.f_rec.text(), "doc_dates": self.f_docdates.text(),
+                "added_since": self.f_added.text(),
                 "sources": self._selected_ids(),
             }, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -383,6 +408,11 @@ class HrycApp(QMainWindow):
         self.f_nostem.setChecked(bool(d.get("nostem", False)))
         self.f_nofuzz.setChecked(bool(d.get("nofuzz", False)))
         self.f_experts.setChecked(bool(d.get("experts", False)))
+        self.f_fund.setText(str(d.get("fund", "")))
+        self.f_inv.setText(str(d.get("inventory", "")))
+        self.f_rec.setText(str(d.get("record", "")))
+        self.f_docdates.setText(str(d.get("doc_dates", "")))
+        self.f_added.setText(str(d.get("added_since", "")))
         want = set(d.get("sources", []))
         if want:
             for cb, sid in self._src_checks:
