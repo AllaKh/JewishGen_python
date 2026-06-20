@@ -5,7 +5,7 @@ with a «Select all» toggle the site itself lacks) → results to Word + Excel.
 Opening/saving the actual documents needs a paid account and comes later.
 GUI is English; source names are shown «English / Русский» (the checkbox identity is
 the site's own name — search uses the source id, the label is display only)."""
-import sys, json, threading
+import sys, json, threading, asyncio
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, Qt
@@ -92,7 +92,7 @@ class Worker(QThread):
 
         self.payload["ask_file_conflict"] = ask_file_conflict
         try:
-            result = _scraper.run_scraper(**self.payload)
+            result = asyncio.run(_scraper.run_scraper(**self.payload))   # async (Playwright)
         except Exception as exc:
             result = {"ok": False, "error": "exception",
                       "message": f"{type(exc).__name__}: {exc}"}
@@ -107,7 +107,8 @@ class HrycApp(QMainWindow):
         self.setMinimumWidth(820)
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
-        self._src_checks = []          # [(checkbox, source_id)]
+        self._src_checks = []          # [(checkbox, source_id)] — leaf sources
+        self._group_checks = []        # group (section) checkboxes
         self._build_ui()
         self._load()
 
@@ -236,6 +237,7 @@ class HrycApp(QMainWindow):
         arrow.setFixedWidth(16)
         gcb = QCheckBox(self._dual(node))
         gcb.setStyleSheet("font-weight:bold;")
+        self._group_checks.append(gcb)
         row.addWidget(arrow); row.addWidget(gcb); row.addStretch()
         parent_layout.addLayout(row)
 
@@ -264,6 +266,8 @@ class HrycApp(QMainWindow):
         on = st == Qt.Checked.value
         for cb, _ in self._src_checks:
             cb.blockSignals(True); cb.setChecked(on); cb.blockSignals(False)
+        for gcb in self._group_checks:          # tick the section/group boxes too
+            gcb.blockSignals(True); gcb.setChecked(on); gcb.blockSignals(False)
         self._on_check()
 
     def _on_check(self, *_):
