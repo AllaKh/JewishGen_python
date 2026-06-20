@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QApplication, QGroupBox, QFrame, QGridLayout, QScrollArea,
 )
 from gui._app_icon import app_icon, make_header, make_cancel_button
-from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QEvent
+from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QEvent, QTimer
 from PySide6.QtGui import QIcon, QStandardItem, QStandardItemModel
 
 _EYE_OPEN = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
@@ -372,7 +372,16 @@ class AncestryApp(QMainWindow):
 
     # ── Build UI ──────────────────────────────────────────────────────────── #
     def _build_ui(self):
-        root = QWidget(); self.setCentralWidget(root)
+        # Top-level content scroll + a FIXED bottom bar: the form scrolls, Start/Cancel
+        # stay always visible, and the window never grows past the screen.
+        outer_root = QWidget(); self.setCentralWidget(outer_root)
+        _ol = QVBoxLayout(outer_root); _ol.setContentsMargins(0, 0, 0, 0); _ol.setSpacing(0)
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _ol.addWidget(self._content_scroll, 1)
+        root = QWidget(); self._content_scroll.setWidget(root)
         self._outer = QVBoxLayout(root)
         self._outer.setContentsMargins(18, 12, 18, 12)
         self._outer.setSpacing(8)
@@ -502,13 +511,8 @@ class AncestryApp(QMainWindow):
         fr2.addWidget(self.f_stories, 1, 0); fr2.addWidget(self.f_photos, 1, 1)
         av.addLayout(fr2)
 
-        self._adv_scroll = QScrollArea()
-        self._adv_scroll.setWidget(self._adv)
-        self._adv_scroll.setWidgetResizable(True)
-        self._adv_scroll.setFrameShape(QFrame.NoFrame)
-        self._adv_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._adv_scroll.setVisible(False)
-        self._outer.addWidget(self._adv_scroll)
+        self._adv.setVisible(False)            # the single top-level scroll handles overflow
+        self._outer.addWidget(self._adv)
 
         # ── Result filters (left-panel; applied AFTER the search) ──────────── #
         self._flt_btn = QPushButton("▶   Filters  (Record type / Location / Date — multi-pass)")
@@ -554,13 +558,8 @@ class AncestryApp(QMainWindow):
         fv.addLayout(self._rd_columns(_rd_spec(), self._rd_checks, self._rd_combos,
                                       self._rd_reg))
 
-        self._flt_scroll = QScrollArea()
-        self._flt_scroll.setWidget(self._flt)
-        self._flt_scroll.setWidgetResizable(True)
-        self._flt_scroll.setFrameShape(QFrame.NoFrame)
-        self._flt_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._flt_scroll.setVisible(False)
-        self._outer.addWidget(self._flt_scroll)
+        self._flt.setVisible(False)            # the single top-level scroll handles overflow
+        self._outer.addWidget(self._flt)
 
         # Output
         og = QGroupBox("Output")
@@ -579,11 +578,14 @@ class AncestryApp(QMainWindow):
         ol.addLayout(dr)
         self._outer.addWidget(og)
 
+        # ── Fixed bottom bar (OUTSIDE the scroll → progress + Start/Cancel ALWAYS visible) ──
+        self._bottom = QWidget()
+        _bl = QVBoxLayout(self._bottom)
+        _bl.setContentsMargins(18, 4, 18, 8); _bl.setSpacing(6)
         self.pbar  = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        self._outer.addWidget(self.pbar)
-        self._outer.addWidget(self.stlbl)
-
+        _bl.addWidget(self.pbar)
+        _bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH")
         self.start_btn.setObjectName("startBtn")
@@ -591,9 +593,9 @@ class AncestryApp(QMainWindow):
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        self._outer.addLayout(br)
-        self._outer.addWidget(
-            QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _bl.addLayout(br)
+        _bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _ol.addWidget(self._bottom, 0)
 
         for w in self._static_widgets():
             if   isinstance(w, QLineEdit): w.textChanged.connect(self._save)
@@ -603,13 +605,11 @@ class AncestryApp(QMainWindow):
         self._fit()
 
     def _toggle_flt(self, on: bool):
-        self._flt_scroll.setVisible(on)
-        if on:
-            sh = QApplication.primaryScreen().availableGeometry().height()
-            self._flt_scroll.setMaximumHeight(int(sh * 0.5))
+        self._flt.setVisible(on)
         self._flt_btn.setText(("▼" if on else "▶") +
                               "   Filters  (Record type / Location / Date — multi-pass)")
         self._fit()
+        QTimer.singleShot(0, self._fit)        # re-fit after the layout settles
 
     def _tree_node(self, spec, checks, combos, reg, path=(), depth=0) -> QVBoxLayout:
         """One expandable tree node. Header = [arrow | aligned spacer] + [checkbox].
@@ -886,19 +886,26 @@ class AncestryApp(QMainWindow):
 
     # ── Advanced toggle / fit ─────────────────────────────────────────────── #
     def _toggle_adv(self, on: bool):
-        self._adv_scroll.setVisible(on)
-        if on:
-            screen_h = QApplication.primaryScreen().availableGeometry().height()
-            self._adv_scroll.setMaximumHeight(int(screen_h * 0.5))
+        self._adv.setVisible(on)
         self._adv_btn.setText(("▼" if on else "▶") + "   Advanced Search")
         self._fit()
+        QTimer.singleShot(0, self._fit)        # re-fit after the layout settles
 
     def _fit(self):
-        QApplication.processEvents()
+        """Resize to the form, capped to the screen (incl. the fixed bottom bar). The
+        form scrolls inside _content_scroll; Start/Cancel stay visible. No move() —
+        the launcher centers the window once on open (so it never jumps/jerks)."""
+        sw = self.screen() or QApplication.primaryScreen()
+        scr = sw.availableGeometry()
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
-        hint = self.centralWidget().sizeHint()
-        scr = QApplication.primaryScreen().availableGeometry()
-        self.resize(self.width(), min(hint.height() + 42, scr.height() - 24))
+        cw = self._content_scroll.widget()
+        self._outer.invalidate(); self._outer.activate()
+        cw.adjustSize()
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8
+        w = min(self.width(), scr.width() - 16)
+        self.resize(w, min(hint, scr.height() - 48))
+        self.setMaximumHeight(scr.height() - 48)
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _static_widgets(self) -> list:
