@@ -15,7 +15,7 @@ import sys, re, json, time
 import html as _html
 from pathlib import Path
 from urllib import request as _rq, parse as _up
-from http.cookiejar import CookieJar
+from http.cookiejar import CookieJar, Cookie
 
 try:
     from docx import Document
@@ -66,8 +66,18 @@ def _strip_tags(html: str) -> str:
 
 
 def _opener():
-    """A urllib opener with its own cookie jar (keeps the login session)."""
-    return _rq.build_opener(_rq.HTTPCookieProcessor(CookieJar()))
+    """A urllib opener with its own cookie jar (keeps the login session). The site
+    gates the session behind ASP.NET cookie-consent (`.AspNet.Consent=yes`, set by the
+    «Принять» banner) — so we pre-seed that cookie («сначала прими куки, потом войти»),
+    otherwise login is not remembered."""
+    jar = CookieJar()
+    jar.set_cookie(Cookie(
+        version=0, name=".AspNet.Consent", value="yes",
+        port=None, port_specified=False, domain=".hryc.by", domain_specified=True,
+        domain_initial_dot=True, path="/", path_specified=True, secure=False,
+        expires=None, discard=False, comment=None, comment_url=None,
+        rest={"SameSite": "Lax"}, rfc2109=False))
+    return _rq.build_opener(_rq.HTTPCookieProcessor(jar))
 
 
 def _get(opener, url: str, timeout: int = 45) -> str:
@@ -104,8 +114,10 @@ def load_sources() -> list:
 
 # ── login ───────────────────────────────────────────────────────────────────── #
 def login(opener, email: str, password: str, log) -> bool:
-    """GET the login page (for the antiforgery token + cookie), then POST credentials.
-    Returns True if the resulting home page shows a logged-in state."""
+    """Accept cookies → GET the login page (antiforgery token + cookie) → POST creds.
+    Success is detected by the POST redirecting AWAY from the login page (backup: a
+    logout link on the home page)."""
+    _get(opener, BASE_URL + "/")               # collect session/consent cookies first
     page = _get(opener, LOGIN_URL)
     m = re.search(r'name="__RequestVerificationToken"[^>]*value="([^"]+)"', page)
     token = m.group(1) if m else ""
@@ -119,34 +131,43 @@ def login(opener, email: str, password: str, log) -> bool:
     }
     try:
         resp = _post(opener, LOGIN_URL + "?returnUrl=%2F", data)
-        body = resp.read().decode("utf-8", "replace")
+        final = (resp.geturl() or "").lower()
+        body  = resp.read().decode("utf-8", "replace")
     except Exception as e:
         log(f"  !! POST логина не прошёл: {e}")
         return False
-    # validation errors are re-rendered on the SAME login form
-    if re.search(r'(field-validation-error|validation-summary-errors)[^>]*>\s*[^<\s]',
-                 body):
-        log("  !! сайт вернул ошибку входа (неверный email/пароль?)")
+    # a failed login re-renders the login form (we stay on /Identity/Account/Login)
+    if "identity/account/login" in final or 'name="Input.Password"' in body:
+        if re.search(r'(field-validation-error|validation-summary-errors)[^>]*>\s*[^<\s]',
+                     body):
+            log("  !! сайт вернул ошибку входа (неверный email/пароль?)")
+        else:
+            log("  !! вход не подтверждён (остались на странице логина)")
         return False
-    # confirm by loading the home page: a logged-in user has a Logout link / no Login link
-    home = _get(opener, BASE_URL + "/")
-    logged = ("Identity/Account/Logout" in home
-              or "Identity/Account/Manage" in home
-              or 'href="/Identity/Account/Login"' not in home)
-    log("  ✓ Вход выполнен" if logged else "  !! вход не подтверждён (нет logout-ссылки)")
-    return logged
+    log("  ✓ Вход выполнен")
+    return True
 
 
 # ── search ──────────────────────────────────────────────────────────────────── #
-def build_search_url(query: str, selected_ids) -> str:
-    """Replicate the site form: R.Q + every source's R.S[i].Chk / .Id
-    (Chk=True only for the ticked sources). Indices must be contiguous, so we
-    send ALL sources in order."""
+def build_search_url(query: str, selected_ids, page: int = 1, *,
+                     no_stemming: bool = False, no_fuzziness: bool = False,
+                     show_experts: bool = False) -> str:
+    """Replicate the site form (verified against the user's live URLs): R.Q + every
+    source's R.S[i].Chk / .Id (Chk=true only for ticked sources; indices must be
+    contiguous, so ALL 164 are sent in order), plus R.Page, R.SearchInRecords and the
+    three option flags (Без стемминга / Без ошибок / Эксперты)."""
     sel = set(selected_ids or [])
     params = [("R.Q", query)]
     for s in load_sources():
-        params.append((f"R.S[{s['idx']}].Chk", "True" if s["id"] in sel else "False"))
+        params.append((f"R.S[{s['idx']}].Chk", "true" if s["id"] in sel else "false"))
         params.append((f"R.S[{s['idx']}].Id", s["id"]))
+    params += [
+        ("R.Page", str(page)),
+        ("R.SearchInRecords", "True"),
+        ("R.NoStemming",  "true" if no_stemming  else "false"),
+        ("R.NoFuzziness", "true" if no_fuzziness else "false"),
+        ("R.ShowExperts", "true" if show_experts else "false"),
+    ]
     return SEARCH_URL + "?" + _up.urlencode(params)
 
 
@@ -285,6 +306,10 @@ def run_scraper(
     password:      str       = "",
     query:         str       = "",
     sources:       list|None = None,    # list of source IDs to search
+    no_stemming:   bool      = False,   # «Без стемминга»
+    no_fuzziness:  bool      = False,   # «Без ошибок»
+    show_experts:  bool      = False,   # «Эксперты»
+    max_pages:     int       = 25,
     output_format: str       = "both",
     output_folder            = Path("."),
     log                      = print,
@@ -323,21 +348,40 @@ def run_scraper(
         if cancel_event and cancel_event.is_set():
             return summary
 
-        # ── 2. SEARCH ────────────────────────────────────────────────── #
+        # ── 2. SEARCH (walk every page) ──────────────────────────────── #
         _prog(25, "Поиск…")
-        url = build_search_url(query, sources or [])
-        html = _get(opener, url)
-        # keep a raw dump so the (offline-unknown) result markup can be refined
-        try:
-            (output_folder / "hryc_last_results.html").write_text(html, encoding="utf-8")
-        except Exception:
-            pass
-
-        res = parse_results(html, log)
-        rows, denied = res["rows"], res["denied"]
+        rows, denied, seen = [], [], set()
+        for page in range(1, max_pages + 1):
+            if cancel_event and cancel_event.is_set():
+                break
+            url = build_search_url(query, sources or [], page,
+                                   no_stemming=no_stemming, no_fuzziness=no_fuzziness,
+                                   show_experts=show_experts)
+            html = _get(opener, url)
+            if page == 1:
+                # raw dump so the (offline-unknown) result markup can be refined
+                try:
+                    (output_folder / "hryc_last_results.html").write_text(
+                        html, encoding="utf-8")
+                except Exception:
+                    pass
+            res = parse_results(html, log)
+            if page == 1:
+                denied = res["denied"]
+            new = 0
+            for r in res["rows"]:
+                k = (r["source"], r["text"], r["url"])
+                if k in seen:
+                    continue
+                seen.add(k); rows.append(r); new += 1
+            _prog(25 + min(40, page * 5),
+                  f"  стр.{page}: +{new} (всего {len(rows)})")
+            if new == 0:                       # no new records → last page
+                break
+            time.sleep(0.4)
         if denied:
             log(f"  ⚠ Источников без доступа (нужен платный аккаунт): {len(denied)}")
-        _prog(60, f"Найдено записей: {len(rows)}")
+        _prog(65, f"Найдено записей: {len(rows)}")
 
         if not rows:
             summary.update({"ok": True, "n_records": 0, "denied": len(denied),

@@ -140,6 +140,18 @@ class HrycApp(QMainWindow):
         self.f_query.setPlaceholderText("Surname, place, etc. (фамилия, населённый пункт…)")
         sl.addWidget(QLabel("Query:"), 0, 0); sl.addWidget(self.f_query, 0, 1)
         sl.setColumnStretch(1, 1)
+        # search options (the site's R.NoStemming / R.NoFuzziness / R.ShowExperts)
+        opt = QHBoxLayout()
+        self.f_nostem  = QCheckBox("No stemming")
+        self.f_nofuzz  = QCheckBox("No fuzziness")
+        self.f_experts = QCheckBox("Experts")
+        self.f_nostem.setToolTip("Без стемминга — match the exact word form")
+        self.f_nofuzz.setToolTip("Без ошибок — no fuzzy/typo matching")
+        self.f_experts.setToolTip("Эксперты — include expert-level sources")
+        for c in (self.f_nostem, self.f_nofuzz, self.f_experts):
+            opt.addWidget(c)
+        opt.addStretch()
+        sl.addLayout(opt, 1, 0, 1, 2)
         outer.addWidget(sg)
 
         # where to search — tree of sources + Select all
@@ -193,7 +205,7 @@ class HrycApp(QMainWindow):
         outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
 
         for w in (self.f_email, self.f_pass, self.f_query, self.f_folder,
-                  self.f_docx, self.f_xlsx):
+                  self.f_docx, self.f_xlsx, self.f_nostem, self.f_nofuzz, self.f_experts):
             (w.textChanged if isinstance(w, QLineEdit) else w.stateChanged).connect(self._save)
 
     # ── source tree ───────────────────────────────────────────────────────── #
@@ -278,6 +290,9 @@ class HrycApp(QMainWindow):
             "password":      self.f_pass.text(),
             "query":         self.f_query.text().strip(),
             "sources":       self._selected_ids(),
+            "no_stemming":   self.f_nostem.isChecked(),
+            "no_fuzziness":  self.f_nofuzz.isChecked(),
+            "show_experts":  self.f_experts.isChecked(),
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":           print,
@@ -306,6 +321,9 @@ class HrycApp(QMainWindow):
                 "folder": self.f_folder.text(),
                 "docx":   self.f_docx.isChecked(),
                 "xlsx":   self.f_xlsx.isChecked(),
+                "nostem": self.f_nostem.isChecked(),
+                "nofuzz": self.f_nofuzz.isChecked(),
+                "experts": self.f_experts.isChecked(),
                 "sources": self._selected_ids(),
             }, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -323,6 +341,9 @@ class HrycApp(QMainWindow):
         self.f_folder.setText(str(d.get("folder", _DEF_DIR)) or _DEF_DIR)
         self.f_docx.setChecked(bool(d.get("docx", True)))
         self.f_xlsx.setChecked(bool(d.get("xlsx", True)))
+        self.f_nostem.setChecked(bool(d.get("nostem", False)))
+        self.f_nofuzz.setChecked(bool(d.get("nofuzz", False)))
+        self.f_experts.setChecked(bool(d.get("experts", False)))
         want = set(d.get("sources", []))
         if want:
             for cb, sid in self._src_checks:
