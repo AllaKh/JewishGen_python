@@ -390,8 +390,9 @@ class HrycApp(QMainWindow):
                     (["Excel"] if r.get("xlsx_path") else [])
             msg = f"{n} record(s) saved"
             if parts: msg += " → " + " + ".join(parts)
-            if r.get("denied"):
-                msg += f"\n\n{r['denied']} source(s) need a paid account."
+            if r.get("total"):
+                msg += f"\n\nTotal on site: {r['total']} (snippets; open the document " \
+                       "needs the paid «Эксперт» tariff)."
             if r.get("output_folder"):
                 msg += f"\n\nFolder:\n{r['output_folder']}"
             QMessageBox.information(self, "Done", msg)

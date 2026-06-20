@@ -102,45 +102,31 @@ def build_search_url(query: str, selected_ids, page: int = 1, *,
 
 
 def parse_results(html: str, log) -> dict:
-    """Best-effort extraction of the result list. The logged-in result markup is still
-    being confirmed, so this stays generic AND the caller dumps the raw HTML — that dump
-    pins down the real structure.
+    """Each result on a hryc results page is a text-snippet block
+    `<div style="margin: 1em"> …matched OCR text with <b>highlights</b>… <span>Для
+    открытия документа …</span></div>` (≈20 per page; «Total: N» up the top, capped at
+    1000; the document itself opens only on the paid «Эксперт» tariff). We keep the
+    snippet text as the list row. Returns {rows, total}."""
+    rows, seen = [], set()
 
-    Returns {rows, denied}: rows = [{source, text, url}], denied = source names that need
-    a higher (paid) access level."""
-    rows, denied, seen = [], [], set()
+    m = re.search(r'Total:.{0,60}?(\d[\d\s ,]*)', html, re.S)
+    total = int(re.sub(r'\D', '', m.group(1))) if m else 0
 
-    for m in re.finditer(
-            r'data-on="([^"]+)"[^>]*class="[^"]*search-source-check-denied', html):
-        denied.append(_html.unescape(m.group(1)))
-    for m in re.finditer(
-            r'class="[^"]*search-source-check-denied[^"]*"[^>]*data-on="([^"]+)"', html):
-        denied.append(_html.unescape(m.group(1)))
-
-    SKIP = re.compile(r'^/(Identity|lib|css|js|Home|Help|search|zakroma|favicon)', re.I)
-    cur_src = ""
-    for tok in re.finditer(
-            r'<span class="search-source-name">(.*?)</span>'
-            r'|<a\s+[^>]*href="([^"#]+)"[^>]*>(.*?)</a>', html, re.S):
-        if tok.group(1) is not None:
-            cur_src = _strip_tags(tok.group(1))
-            continue
-        href, inner = tok.group(2), tok.group(3)
-        if not href or SKIP.match(href):
-            continue
-        if href.startswith(("http://", "https://")) and "hryc.by" not in href:
-            continue
+    for bm in re.finditer(r'<div style="margin: ?1em">(.*?)</div>', html, re.S):
+        inner = bm.group(1)
+        # drop the «pay to open the document» note at the end of each block
+        inner = re.sub(r'<span[^>]*>\s*(Для открытия|To open|Каб адкрыць).*$', '',
+                       inner, flags=re.S)
+        inner = re.sub(r'<br\s*/?>', '\n', inner)
         text = _strip_tags(inner)
-        if not text or len(text) < 2:
+        if not text or len(text) < 4:
             continue
-        url = href if href.startswith("http") else BASE_URL + href
-        key = (cur_src, text, url)
-        if key in seen:
+        if text in seen:
             continue
-        seen.add(key)
-        rows.append({"source": cur_src, "text": text, "url": url})
+        seen.add(text)
+        rows.append({"source": "", "text": text, "url": ""})
 
-    return {"rows": rows, "denied": sorted(set(denied))}
+    return {"rows": rows, "total": total}
 
 
 # ── Word ────────────────────────────────────────────────────────────────────── #
@@ -261,9 +247,9 @@ async def _login(page, email, password, log) -> bool:
         log(f"  !! не удалось заполнить форму логина: {e}")
         return False
     try:
-        await page.wait_for_load_state("networkidle", timeout=15000)
+        await page.wait_for_load_state("domcontentloaded", timeout=10000)
     except Exception:
-        await asyncio.sleep(2)
+        pass
     ok = await _is_logged_in(page)
     log("  ✓ Вход выполнен" if ok else
         "  !! вход не подтверждён — проверь email/пароль (или войди вручную в окне)")
@@ -349,19 +335,18 @@ async def run_scraper(
                 "  → Статус: гость (большинство источников будут недоступны)")
 
             # ── 2. SEARCH (walk every page) ──────────────────────────── #
+            # Results are server-rendered in the page (≈20 snippet blocks per page),
+            # so we only need domcontentloaded — NO networkidle/sleep (that 10s wait
+            # per page was the hang the user complained about).
             _prog(20, "Поиск…")
-            rows, denied, seen = [], [], set()
+            rows, seen, total, pages = [], set(), 0, max_pages
             for pno in range(1, max_pages + 1):
                 if _cancelled():
                     break
                 url = build_search_url(query, sources or [], pno,
                                        no_stemming=no_stemming, no_fuzziness=no_fuzziness,
                                        show_experts=show_experts)
-                await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-                try:
-                    await page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception:
-                    await asyncio.sleep(1.5)
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 html = await page.content()
                 if pno == 1:
                     try:
@@ -371,25 +356,24 @@ async def run_scraper(
                         pass
                 res = parse_results(html, log)
                 if pno == 1:
-                    denied = res["denied"]
+                    total = res.get("total", 0)
+                    if total:
+                        pages = min(max_pages, (total + 19) // 20)  # ≈20 per page
                 new = 0
                 for r in res["rows"]:
-                    k = (r["source"], r["text"], r["url"])
-                    if k in seen:
+                    if r["text"] in seen:
                         continue
-                    seen.add(k); rows.append(r); new += 1
-                _prog(20 + min(55, pno * 4), f"  стр.{pno}: +{new} (всего {len(rows)})")
-                if new == 0:
+                    seen.add(r["text"]); rows.append(r); new += 1
+                _prog(20 + min(60, pno * 60 // max(pages, 1)),
+                      f"  стр.{pno}/{pages}: +{new} (всего {len(rows)})")
+                if new == 0 or pno >= pages:
                     break
-                await asyncio.sleep(0.4)
 
-            if denied:
-                log(f"  ⚠ Источников без доступа (нужен платный аккаунт): {len(denied)}")
-            _prog(80, f"Найдено записей: {len(rows)}")
+            _prog(85, f"Найдено (Total на сайте: {total}): собрано {len(rows)}")
 
             if not rows:
-                summary.update({"ok": True, "n_records": 0, "denied": len(denied),
-                                "message": "Ничего не найдено (или нет доступа)."})
+                summary.update({"ok": True, "n_records": 0, "total": total,
+                                "message": "Ничего не найдено (или нужен платный доступ)."})
                 _prog(100, "Ничего не найдено.")
                 return summary
 
@@ -421,7 +405,7 @@ async def run_scraper(
                     log(f"  Excel: {xlsx_p}")
 
             _prog(100, f"Готово — {len(rows)} записей.")
-            summary.update({"ok": True, "n_records": len(rows), "denied": len(denied),
+            summary.update({"ok": True, "n_records": len(rows), "total": total,
                             "docx_count": 1 if sd else 0,
                             "xlsx_path": str(xlsx_p) if sx else None,
                             "output_folder": str(output_folder)})
