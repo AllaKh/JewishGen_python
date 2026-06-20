@@ -112,11 +112,17 @@ def build_search_url(query: str, selected_ids, page: int = 1, *,
         ("R.NoFuzziness", "true" if no_fuzziness else "false"),
         ("R.ShowExperts", "true" if show_experts else "false"),
     ]
-    if fund:        params.append(("R.Fund", fund))
-    if inventory:   params.append(("R.Inventory", inventory))
-    if record:      params.append(("R.Record", record))
-    if doc_dates:   params.append(("R.DocDateRange", doc_dates))
-    if added_since: params.append(("R.UpdateStartDate", added_since))
+    # Mirror the real form submission EXACTLY (verified against the user's live URL):
+    # these five fields are ALWAYS present, even when empty. R.UpdateStartDate is
+    # data-val-required, so it must be sent — empty = the form's «0001-01-01» sentinel
+    # (= no «added since» filter). An empty R.DocDateRange means no document-date filter.
+    params += [
+        ("R.Fund", fund),
+        ("R.Inventory", inventory),
+        ("R.Record", record),
+        ("R.DocDateRange", doc_dates),
+        ("R.UpdateStartDate", added_since or "0001-01-01"),
+    ]
     return SEARCH_URL + "?" + _up.urlencode(params)
 
 
