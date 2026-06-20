@@ -52,6 +52,18 @@ HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
                  "officeDocument/2006/relationships/hyperlink")
 
 
+# OCR snippets carry stray control characters that python-docx / openpyxl reject
+# ("All strings must be XML compatible … no … control characters"). Strip everything
+# illegal for XML — _CTRL_KEEP preserves our \x02/\x03 bold sentinels during parsing;
+# _CTRL_ALL removes everything (used at write time, after sentinels are consumed).
+_CTRL_KEEP = re.compile(r'[\x00\x01\x04-\x08\x0b\x0c\x0e-\x1f]')
+_CTRL_ALL  = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+
+def _safe(s) -> str:
+    return _CTRL_ALL.sub('', s or '')
+
+
 # ── helpers ─────────────────────────────────────────────────────────────────── #
 def safe_fn(s: str, n: int = 100) -> str:
     return re.sub(r"\s+", " ",
@@ -124,6 +136,7 @@ def parse_results(html: str, log) -> dict:
         inner = re.sub(r'<\s*/\s*b\s*>', '\x03', inner, flags=re.I)
         inner = re.sub(r'<[^>]+>', ' ', inner)
         inner = re.sub(r'[ \t\r\n]+', ' ', _html.unescape(inner)).strip()
+        inner = _CTRL_KEEP.sub('', inner)                           # drop XML-illegal ctrl chars
         text = inner.replace('\x02', '').replace('\x03', '')        # plain (Excel/dedup)
         if not text or len(text) < 4:
             continue
@@ -162,12 +175,12 @@ def _add_rich(cell, rich):
     """Render the snippet into the cell, bolding the searched word(s) — the site marked
     them with <b>…</b>, kept here as \\x02…\\x03 sentinels."""
     para = cell.paragraphs[0]
-    plain = lambda s: s.replace("\x02", "").replace("\x03", "")
+    plain = lambda s: _safe(s.replace("\x02", "").replace("\x03", ""))
     i = 0
     for m in re.finditer(r'\x02(.*?)\x03', rich):
         if m.start() > i:
             para.add_run(plain(rich[i:m.start()])).font.size = Pt(8)
-        para.add_run(m.group(1)).bold = True
+        para.add_run(_safe(m.group(1))).bold = True
         para.runs[-1].font.size = Pt(8)
         i = m.end()
     if i < len(rich):
@@ -231,7 +244,8 @@ def write_xlsx(path: Path, rows: list, qlines: list, append: bool = False):
             ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor="DCE6F1")
         n0 = 0
     for i, r in enumerate(rows, 1):
-        ws.append([n0 + i, SITE_NAME, r.get("source", ""), r.get("text", ""), r.get("url", "")])
+        ws.append([n0 + i, SITE_NAME, _safe(r.get("source", "")),
+                   _safe(r.get("text", "")), _safe(r.get("url", ""))])
         if r.get("url"):
             cell = ws.cell(row=ws.max_row, column=5)
             cell.hyperlink = r["url"]; cell.value = "Открыть"
