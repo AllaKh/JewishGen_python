@@ -83,6 +83,31 @@ def app_icon() -> QIcon:
     return QIcon()
 
 
+def center_window(window, screen=None):
+    """Cap a window to the screen and center it there, so EVERY GUI opens in the same
+    spot, never off-screen, on any resolution. `screen` defaults to the window's current
+    screen — the launcher passes its OWN screen so windows don't hop between monitors.
+    Call it deferred (after the window's own dynamic sizing has settled)."""
+    app = QApplication.instance()
+    sc = screen or window.screen() or (app.primaryScreen() if app else None)
+    if sc is None:
+        return
+    g = sc.availableGeometry()
+    # title-bar + border thickness, so the WHOLE window (frame included) stays on screen
+    dw = max(0, window.frameGeometry().width()  - window.geometry().width())
+    dh = max(0, window.frameGeometry().height() - window.geometry().height())
+    avail_w = g.width()  - dw - 8
+    avail_h = g.height() - dh - 8
+    # let the window shrink to the screen even if it set a larger minimum size
+    window.setMinimumSize(min(window.minimumWidth(), max(avail_w, 200)),
+                          min(window.minimumHeight(), max(avail_h, 200)))
+    window.resize(min(window.width(), avail_w), min(window.height(), avail_h))
+    w, h = window.width(), window.height()      # actual size after constraints
+    fw, fh = w + dw, h + dh                      # full size incl. frame
+    window.move(g.x() + max(0, (g.width()  - fw) // 2),
+                g.y() + max(0, (g.height() - fh) // 2))
+
+
 def make_header(logo_file: str, title: str,
                 color: str = "#2a4a7f", logo_w: int = 110) -> QHBoxLayout:
     """
