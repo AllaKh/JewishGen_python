@@ -161,9 +161,10 @@ def _add_link(para, text, url):
     hl.append(run); para._p.append(hl)
 
 
-# column widths (landscape A4 ≈ 10.5" usable): #, Источник, Ссылка narrow — Запись wide.
+# landscape A4 with 0.7" L/R margins → ~10.3" usable; keep the table inside it so the
+# right margin survives (sum ≈ 9.8"). #, Источник, Ссылка narrow — Запись wide.
 # python-docx ignores table-level widths → set on EVERY cell per row.
-_COLW = [Inches(0.4), Inches(1.0), Inches(8.3), Inches(0.8)]
+_COLW = [Inches(0.4), Inches(0.9), Inches(7.8), Inches(0.7)]
 
 
 def _set_widths(cells):
@@ -219,6 +220,7 @@ def write_docx(path: Path, rows: list, qlines: list, append: bool = False):
         for s in doc.sections:
             s.orientation = 1
             s.page_width, s.page_height = Mm(297), Mm(210)
+            s.left_margin = s.right_margin = Inches(0.7)   # keep real left/right margins
         h = doc.add_heading("hryc.by — результаты поиска", level=1)
         h.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for q in qlines:
