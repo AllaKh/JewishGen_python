@@ -12,8 +12,8 @@ Built with Python + Playwright (browser automation) + PySide6 (GUI).
 ```
 JewishGen_python/
 │
-├── app.py                    ← entry point — run this
-├── scraper.py                ← browser automation + file writing
+├── JewishGenSearch.py        ← entry point — run this
+├── jewishgen_scraper.py      ← JewishGen browser automation + file writing
 ├── requirements.txt
 │
 ├── gui/
@@ -101,7 +101,7 @@ pip install -r requirements.txt
 playwright install chromium
 
 # 5. Run
-python app.py
+python JewishGenSearch.py
 ```
 
 ### First run
@@ -135,7 +135,7 @@ pyinstaller ^
   --hidden-import PySide6.QtSvgWidgets ^
   --hidden-import playwright ^
   --collect-all playwright ^
-  app.py
+  JewishGenSearch.py
 ```
 
 After the build completes:
@@ -174,7 +174,7 @@ pyinstaller \
   --hidden-import PySide6.QtSvgWidgets \
   --hidden-import playwright \
   --collect-all playwright \
-  app.py
+  JewishGenSearch.py
 
 # 2. Copy the Playwright browser
 # Find path:

@@ -6,7 +6,7 @@
 
 ## Проект
 
-Python-скрапер для генеалогического поиска. Лончер (`app.py` → `gui/launcher.py`) с карточками баз.  
+Python-скрапер для генеалогического поиска. Лончер (`JewishGenSearch.py` → `gui/launcher.py`) с карточками баз.  
 Интегрированные скраперы: **JewishGen**, **FamilySearch**, **MyHeritage**, **АИС Скарб**. Остальные базы — ссылкой в браузер.  
 Стек: Playwright (async), PySide6 GUI, python-docx, openpyxl.
 
