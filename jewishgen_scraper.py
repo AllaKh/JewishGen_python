@@ -1578,7 +1578,7 @@ async def extract_matches(page, keywords, keyword_mode="OR"):
 
 async def follow_next_pages(page, keywords, acc, keyword_mode="OR",
                            pause=2.5, max_pages=100):
-    """Walk pagination collecting matching rows into *acc*.
+    r"""Walk pagination collecting matching rows into *acc*.
 
     Fixes applied:
     - seen_page_sigs  : stops if the same page signature appears twice
