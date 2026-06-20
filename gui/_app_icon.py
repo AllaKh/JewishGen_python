@@ -123,8 +123,29 @@ def center_window(window, screen=None):
     window.resize(min(window.width(), avail_w), min(window.height(), avail_h))
     w, h = window.width(), window.height()      # actual size after constraints
     fw, fh = w + dw, h + dh                      # full size incl. frame
+    # horizontally centered, vertically biased toward the TOP (upper third) so a tall
+    # window's bottom — the Start/Cancel bar — is never pushed off-screen.
     window.move(g.x() + max(0, (g.width()  - fw) // 2),
-                g.y() + max(0, (g.height() - fh) // 2))
+                g.y() + max(8, (g.height() - fh) // 5))
+
+
+def clamp_on_screen(window, screen=None):
+    """Move a window MINIMALLY so it sits fully on-screen (bottom never clipped → the
+    Start/Cancel bar stays visible). Move-only — no resize, no re-centering — so a window
+    that resized in its own _fit doesn't jerk; it just slides on-screen if it spilled."""
+    app = QApplication.instance()
+    sc = screen or window.screen() or (app.primaryScreen() if app else None)
+    if sc is None:
+        return
+    g = sc.availableGeometry()
+    fg = window.frameGeometry()
+    x, y = window.x(), window.y()
+    if fg.right()  > g.right():  x -= (fg.right()  - g.right())
+    if fg.bottom() > g.bottom(): y -= (fg.bottom() - g.bottom())
+    x = max(x, g.x() + 4)
+    y = max(y, g.y() + 8)
+    if (x, y) != (window.x(), window.y()):
+        window.move(x, y)
 
 
 def make_header(logo_file: str, title: str,

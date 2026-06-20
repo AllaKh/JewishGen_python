@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QScrollArea, QFrame, QToolButton)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import (app_icon, make_header, make_cancel_button, autosave_path,
+                           clamp_on_screen)
 
 try:
     import hryc_scraper as _scraper
@@ -111,10 +112,43 @@ class HrycApp(QMainWindow):
         self._group_checks = []        # group (section) checkboxes
         self._build_ui()
         self._load()
+        self._fit()
+        from PySide6.QtCore import QTimer
+        for _ms in (0, 130):
+            QTimer.singleShot(_ms, self._fit)
+
+    def _fit(self):
+        """Grow the window to the form's content, capped to the screen — so the source
+        list gets as much room as the screen allows (and grows as you expand groups),
+        the form scrolls past the cap, and the fixed bottom Start/Cancel bar is always
+        visible. No move() — the launcher positions it (no jumping)."""
+        if not hasattr(self, "_content_scroll"):
+            return
+        sw = self.screen() or QApplication.primaryScreen()
+        scr = sw.availableGeometry()
+        max_w, max_h = scr.width() - 16, scr.height() - 48
+        self.setMinimumHeight(0); self.setMaximumHeight(16777215)
+        cw = self._content_scroll.widget()
+        cw.adjustSize()
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8
+        self.resize(min(max(self.width(), 860), max_w), min(hint, max_h))
+        self.setMaximumHeight(max_h)
+        clamp_on_screen(self)
 
     # ── build ─────────────────────────────────────────────────────────────── #
     def _build_ui(self):
-        root = QWidget(); self.setCentralWidget(root)
+        # Top-level scroll + fixed bottom bar (same pattern as MyHeritage / Ancestry):
+        # the whole form scrolls — so the long source list has all the room it needs and
+        # the window never exceeds the screen — while Start/Cancel stay ALWAYS visible.
+        outer_root = QWidget(); self.setCentralWidget(outer_root)
+        _ol = QVBoxLayout(outer_root); _ol.setContentsMargins(0, 0, 0, 0); _ol.setSpacing(0)
+        self._content_scroll = QScrollArea(); self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _ol.addWidget(self._content_scroll, 1)
+        self._ol = _ol
+        root = QWidget(); self._content_scroll.setWidget(root)
         outer = QVBoxLayout(root)
         outer.setContentsMargins(18, 12, 18, 12); outer.setSpacing(8)
         self._outer = outer
@@ -166,16 +200,12 @@ class HrycApp(QMainWindow):
         toprow.addWidget(self.lbl_count)
         wl.addLayout(toprow)
 
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.StyledPanel)
-        scroll.setMaximumHeight(int(self.screen().availableGeometry().height() * 0.42))
-        host = QWidget(); self._tree = QVBoxLayout(host)
+        host = QWidget()
+        self._tree = QVBoxLayout(host)
         self._tree.setContentsMargins(6, 4, 6, 4); self._tree.setSpacing(1)
         self._build_tree()
-        self._tree.addStretch()
-        scroll.setWidget(host)
-        wl.addWidget(scroll)
-        outer.addWidget(wg, 1)
+        wl.addWidget(host)                # inline — the top-level scroll handles overflow,
+        outer.addWidget(wg)               # so the source list shows in full (no empty box)
 
         # output
         og = QGroupBox("Output")
@@ -193,17 +223,20 @@ class HrycApp(QMainWindow):
         ol.addLayout(dr)
         outer.addWidget(og)
 
-        # progress + start/cancel
+        # ── fixed bottom bar (OUTSIDE the scroll → progress + Start/Cancel ALWAYS visible) ──
+        self._bottom = QWidget(); _bl = QVBoxLayout(self._bottom)
+        _bl.setContentsMargins(18, 4, 18, 8); _bl.setSpacing(6)
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        outer.addWidget(self.pbar); outer.addWidget(self.stlbl)
+        _bl.addWidget(self.pbar); _bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH"); self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br); br.addStretch()
-        outer.addLayout(br)
-        outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _bl.addLayout(br)
+        _bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        self._ol.addWidget(self._bottom, 0)
 
         for w in (self.f_email, self.f_pass, self.f_query, self.f_folder,
                   self.f_docx, self.f_xlsx, self.f_nostem, self.f_nofuzz, self.f_experts):
@@ -250,7 +283,7 @@ class HrycApp(QMainWindow):
         for child in node.get("children", []):
             kids += self._add_node(child, hb, depth + 1)
         arrow.toggled.connect(lambda on, a=arrow, h=holder:
-                              (a.setText("▼" if on else "▶"), h.setVisible(on)))
+                              (a.setText("▼" if on else "▶"), h.setVisible(on), self._fit()))
         # group checkbox ticks/unticks its whole subtree
         gcb.stateChanged.connect(
             lambda st, ks=kids: [c.setChecked(st == Qt.Checked.value) for c in ks])

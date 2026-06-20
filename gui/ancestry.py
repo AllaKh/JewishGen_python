@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox,
     QApplication, QGroupBox, QFrame, QGridLayout, QScrollArea,
 )
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path, clamp_on_screen
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QEvent, QTimer
 from PySide6.QtGui import QIcon, QStandardItem, QStandardItemModel
 
@@ -906,6 +906,7 @@ class AncestryApp(QMainWindow):
         w = min(self.width(), scr.width() - 16)
         self.resize(w, min(hint, scr.height() - 48))
         self.setMaximumHeight(scr.height() - 48)
+        clamp_on_screen(self)                            # keep on-screen after the resize
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _static_widgets(self) -> list:

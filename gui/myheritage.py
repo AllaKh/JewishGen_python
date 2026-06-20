@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction, QIntValidator
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path, clamp_on_screen
 
 
 class _YearSpin(QSpinBox):
@@ -734,6 +734,7 @@ class MyHeritageApp(QMainWindow):
         h = min(hint, max_h)                              # capped → form scrolls past this
         self.resize(w, h)
         self.setMaximumHeight(max_h)
+        clamp_on_screen(self)                            # keep on-screen after the resize
 
     def _record_type(self) -> str:
         for opt, rb in self._rt_buttons.items():

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QSizePolicy,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path, clamp_on_screen
 
 
 def _load_facets():
@@ -217,8 +217,9 @@ class GwarApp(QMainWindow):
         self._scroll.setMinimumHeight(scroll_h)
         self._scroll.setMaximumHeight(scroll_h)
         self.resize(target_w, target_h)
-        # positioning is handled once by the launcher (center_window) — _fit only
-        # RESIZES, never moves, so the window doesn't jerk on open.
+        # positioning is the launcher's job (center_window); _fit only RESIZES. But after a
+        # resize the bottom could fall off-screen → slide it back on (move-only, no jerk).
+        clamp_on_screen(self)
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
