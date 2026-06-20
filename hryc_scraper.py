@@ -25,7 +25,7 @@ except ImportError:
 
 try:
     from docx import Document
-    from docx.shared import Mm, Pt
+    from docx.shared import Mm, Pt, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
@@ -117,14 +117,20 @@ def parse_results(html: str, log) -> dict:
         # drop the «pay to open the document» note at the end of each block
         inner = re.sub(r'<span[^>]*>\s*(Для открытия|To open|Каб адкрыць).*$', '',
                        inner, flags=re.S)
-        inner = re.sub(r'<br\s*/?>', '\n', inner)
-        text = _strip_tags(inner)
+        inner = re.sub(r'<br\s*/?>', ' ', inner)
+        # keep the site's <b>…</b> match highlights as sentinels (\x02…\x03) so Word
+        # can render the searched word in bold; everything else → plain text
+        inner = re.sub(r'<\s*b\s*>', '\x02', inner, flags=re.I)
+        inner = re.sub(r'<\s*/\s*b\s*>', '\x03', inner, flags=re.I)
+        inner = re.sub(r'<[^>]+>', ' ', inner)
+        inner = re.sub(r'[ \t\r\n]+', ' ', _html.unescape(inner)).strip()
+        text = inner.replace('\x02', '').replace('\x03', '')        # plain (Excel/dedup)
         if not text or len(text) < 4:
             continue
         if text in seen:
             continue
         seen.add(text)
-        rows.append({"source": "", "text": text, "url": ""})
+        rows.append({"source": "", "text": text, "rich": inner, "url": ""})
 
     return {"rows": rows, "total": total}
 
@@ -142,19 +148,50 @@ def _add_link(para, text, url):
     hl.append(run); para._p.append(hl)
 
 
+# column widths (landscape A4 ≈ 10.5" usable): #, Источник, Ссылка narrow — Запись wide.
+# python-docx ignores table-level widths → set on EVERY cell per row.
+_COLW = [Inches(0.4), Inches(1.0), Inches(8.3), Inches(0.8)]
+
+
+def _set_widths(cells):
+    for c, w in zip(cells, _COLW):
+        c.width = w
+
+
+def _add_rich(cell, rich):
+    """Render the snippet into the cell, bolding the searched word(s) — the site marked
+    them with <b>…</b>, kept here as \\x02…\\x03 sentinels."""
+    para = cell.paragraphs[0]
+    plain = lambda s: s.replace("\x02", "").replace("\x03", "")
+    i = 0
+    for m in re.finditer(r'\x02(.*?)\x03', rich):
+        if m.start() > i:
+            para.add_run(plain(rich[i:m.start()])).font.size = Pt(8)
+        para.add_run(m.group(1)).bold = True
+        para.runs[-1].font.size = Pt(8)
+        i = m.end()
+    if i < len(rich):
+        para.add_run(plain(rich[i:])).font.size = Pt(8)
+
+
 def _docx_table(doc, rows):
     tbl = doc.add_table(rows=1, cols=4)
     tbl.style = "Light Grid Accent 1"
-    for c, h in zip(tbl.rows[0].cells, ("#", "Источник", "Запись", "Ссылка")):
+    tbl.autofit = False
+    tbl.allow_autofit = False
+    hdr = tbl.rows[0].cells
+    for c, h in zip(hdr, ("#", "Источник", "Запись", "Ссылка")):
         c.text = ""
         c.paragraphs[0].add_run(h).bold = True
+    _set_widths(hdr)
     for i, r in enumerate(rows, 1):
         cells = tbl.add_row().cells
         cells[0].text = str(i)
-        cells[1].text = r.get("source", "") or "—"
-        cells[2].text = r.get("text", "") or ""
+        cells[1].text = r.get("source", "") or ""
+        _add_rich(cells[2], r.get("rich") or r.get("text", "") or "")
         if r.get("url"):
             _add_link(cells[3].paragraphs[0], "Открыть", r["url"])
+        _set_widths(cells)
 
 
 def write_docx(path: Path, rows: list, qlines: list, append: bool = False):
@@ -199,8 +236,12 @@ def write_xlsx(path: Path, rows: list, qlines: list, append: bool = False):
             cell = ws.cell(row=ws.max_row, column=5)
             cell.hyperlink = r["url"]; cell.value = "Открыть"
             cell.font = Font(color="0563C1", underline="single")
-    for i, wd in enumerate([6, 12, 26, 70, 14], 1):
+    # #, База, Источник, URL narrow — Запись wide
+    for i, wd in enumerate([5, 10, 10, 120, 10], 1):
         ws.column_dimensions[get_column_letter(i)].width = wd
+    # wrap the long snippet column
+    for row in ws.iter_rows(min_row=2, min_col=4, max_col=4):
+        row[0].alignment = Alignment(wrap_text=True, vertical="top")
     ws.freeze_panes = "A2"
     wb.save(str(path))
 

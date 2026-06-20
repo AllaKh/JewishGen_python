@@ -321,6 +321,7 @@ class HrycApp(QMainWindow):
         try:
             _SAVE.write_text(json.dumps({
                 "email":  self.f_email.text(),
+                "password": self.f_pass.text(),
                 "query":  self.f_query.text(),
                 "folder": self.f_folder.text(),
                 "docx":   self.f_docx.isChecked(),
@@ -341,6 +342,7 @@ class HrycApp(QMainWindow):
         except Exception:
             return
         self.f_email.setText(str(d.get("email", "")))
+        self.f_pass.setText(str(d.get("password", "")))
         self.f_query.setText(str(d.get("query", "")))
         self.f_folder.setText(str(d.get("folder", _DEF_DIR)) or _DEF_DIR)
         self.f_docx.setChecked(bool(d.get("docx", True)))
