@@ -380,8 +380,16 @@ no_viewport=True, accept_downloads=True
 - **Только Word** (Excel не нужен — записи штучные). Заголовки скромные: **жирный 12–14pt, НЕ `Heading 0/2`** (те дают гигантские буквы). Полная инфа из источника таблицей «Поле/Значение» + фото; если источник битый — краткое из карточки.
 - Диалог конфликта файлов (overwrite/append/skip) — как в MH.
 
+### «ГДЕ ИЩЕМ?» (WHERE WE SEARCH) — выбор баз + поиск через URL
+- **Поиск memsearch — URL-based** (вытащил из JS-бандла, сайт **доступен через curl**, хоть и SPA): результаты = `/{lang}/search?query=…&page=N&entityTypes=0,1,2,3&searchSource=<коды баз через запятую>`. `entityTypes` = типы (0–3 = Люди/Места/Предметы/Документы), `searchSource` = выбранные базы.
+- **Фильтр баз = `_apply_sources`**: после того как форма-клик привела на `/search`, переписываю `searchSource`-параметр на выбранные коды и `goto` (server-side, без кликов). Все базы отмечены → `[]` (без фильтра, ищем везде).
+- **Список баз вытащен из Next.js flight-data + JS** (НЕ выдуман): в HTML `self.__next_f.push([n,"…"])` лежит RSC-пейлоад с `sourcesDictionary{basememo:{title,description}, stalin:…}` (23 базы) — декодировать СЫРОЙ UTF-8 (НЕ `unicode_escape` — он ломает кириллицу), снять JS-эскейпы `\"`/`\uXXXX`; коды + RU-тайтлы оттуда, EN-тайтлы — со страницы `/en`; дефолтный массив `searchSource:[...]` — в чанке `177-*.js`. Итог → `config/memsearch_sources.json` (`{key,en,ru}`, 23 базы).
+- **GUI**: группа «Where to search (databases)» = чекбоксы (EN-метка, RU-тултип) в `QScrollArea` + «Select all»; `_selected_sources()` → `[]` если все, иначе коды; автосейв выбора.
+- **«Кошмар» (пустой бокс «Advanced search (for the selected type)») убран**: per-type фильтры (people/place/object/docs — реальные `*_filter` сайта) показываются ТОЛЬКО для конкретного типа; на «All types» бокс СКРЫТ (`_update_adv`), не пустует.
+
 ### GUI
 - Поля расширенного поиска — `QStackedWidget` по табам; **схлопывать стек под текущую страницу** (`_shrink_stack`: не-текущим `QSizePolicy.Ignored` + `adjustSize`), иначе пустая полоса под мелкими табами.
+- Окно — **top-level QScrollArea + фиксированный нижний бар** (Start/Cancel всегда видны), `_fit` растит окно под контент с капом по экрану (паттерн MH/hryc). Проверено на 800px.
 
 ---
 
@@ -543,6 +551,8 @@ no_viewport=True, accept_downloads=True
 - **Результат = СНИППЕТ-блок, НЕ ссылка** (разобрано по залогиненному дампу): `<div style="margin: 1em"> …OCR-текст с <b>совпадениями</b>… <span>Для открытия документа необходимо оплатить тариф «Эксперт»…</span></div>` — **≈20 на страницу**, сверху «**Total: N**» (капается на **1000**). Сниппет (список) виден бесплатно; ОТКРЫТЬ документ — платный «Эксперт». `parse_results`: тянуть `<div style="margin: 1em">`-блоки (убрать payment-`<span>`), + число Total. **Старый парсер искал `<a href>` → находил 2 хром-ссылки вместо сниппетов** («найдено 2, а их миллион»). Пагинация — по Total (≈20/стр), не угадывать. Источник в бесплатной выдаче НЕ подписан (source="").
 - **СКОРОСТЬ: НЕ ждать `networkidle`** (пользователь: «подвисаешь на каждой странице, сократи»). Выдача server-rendered → хватает `wait_until="domcontentloaded"`; `networkidle` (таймаут 10с КАЖДУЮ страницу из-за yastatic-iframe'ов) = тот самый «подвис». Логин тоже domcontentloaded, без `networkidle(15с)` и без меж-страничных `sleep`. **`access-level-expert/pro`/`denied` на 164 чекбоксах — это ФОРМА (всегда есть), НЕ результаты.**
 - **GUI английский**: email+пароль (глаз), строка запроса + 3 чекбокса опций (No stemming/No fuzziness/Experts), дерево источников со сворачиваемыми группами + **«Select all»** сверху (на сайте такой кнопки НЕТ) + чекбокс группы тогглит поддерево; Word/Excel; конфликт файлов overwrite/append/skip; Cancel; автосейв `gui/.hryc_autosave.json`.
+- **Новые поля поиска (сверены с HTML сайта)**: `R.Fund` (Фонд), `R.Inventory` (Опись), `R.Record` (Дело), `R.DocDateRange` (Даты документов, плейсхолдер «1800;1800-1834»), `R.UpdateStartDate` (Дата добавления, YYYY-MM-DD). В GUI — в группе Search, автосейв; `build_search_url` шлёт их, если непустые.
+- **Открытие документов (аккаунт платный)**: у каждого сниппет-блока теперь `<a href="/document?id=…">Title</a>` (когда оплачен «Эксперт»). `parse_results` тянет ссылку+заголовок; `_open_document` навигирует на `/document?id=…`, сохраняет скан(ы) (самые крупные `<img>`, magic-check) в `results/images/<query>/`, пути → колонка **«Файл»** в Word+Excel. **ПЕРВЫЙ документ дампится** в `results/hryc_document_sample.html` (структуру `/document` офлайн не видел — экстракция best-effort, по дампу доточить). `open_documents=True`, `max_docs=60`.
 
 ---
 
@@ -636,6 +646,12 @@ no_viewport=True, accept_downloads=True
 - Лончер: лого `config/app_logo.png` (190px) у левого края, двуязычный заголовок по центру между лого и правым краем.
 - Логотипы баз: `config/<key>.png` (FSlogo, JGlogo, MHlogo, Skarblogo). Если нет — текстовая заглушка.
 - Копирайт везде: `© 2026 Alla Khananashvili`.
+
+### Позиционирование окон — выше + НИКОГДА за экран, кнопки всегда видны (требование)
+- **`center_window(window, screen)`** — кап по экрану (с учётом рамки `frameGeometry`), затем гориз. по центру + **вертикально В ВЕРХНЕЙ части** (`y = g.y()+max(8,(H-fh)//5)`, верхняя пятая), чтобы низ высокого окна (бар Start/Cancel) не уезжал вниз. Лончер зовёт её ДО show + один раз отложенно.
+- **`clamp_on_screen(window, screen)`** — ТОЛЬКО двигает (без resize/recenter → без «припадочного» дёрганья), сдвигает окно, если рамка вылезла за правый/нижний край. Зовётся в КОНЦЕ каждого `_fit` — после того как окно само себя ресайзит (раскрытие Advanced/фасетов), оно гарантированно остаётся на экране.
+- **Паттерн «scroll + фиксированный нижний бар»** для окон, что могут перерасти экран (MH, Ancestry, hryc, Memorial): корневой `QScrollArea(setWidgetResizable=True)` с формой + ОТДЕЛЬНЫЙ нижний `QWidget` (progress + Start/Cancel), оба в корневом `QVBoxLayout` (`_ol`). `_fit` растит окно под `content_scroll.widget().sizeHint() + bottom.sizeHint()`, кап `screen-48`; форма скроллится, кнопки всегда видны. **НЕ растягивать контент на всё окно** (был «гигантский пустой бокс» в hryc) — окно само под контент. Проверять offscreen-тестом на 800px: все 12 окон `onscreen=True`, `start/cancel visible=True`.
+- **Баг-капкан Qt**: `centralWidget().minimumSizeHint()` может быть БОЛЬШЕ экрана и «отбивает» окно назад вверх (hryc 899>800). Лечит либо `setMaximumHeight(screen-48)` после resize + scroll-паттерн, либо кап через `center_window` (понижает minimumSize до экрана).
 
 ### Окно лончера — НЕ открывать «полусвёрнутым»
 - Ширину брать с запасом (≥920) под крупный заголовок, иначе текст обрезается.
