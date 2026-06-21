@@ -675,12 +675,13 @@ async def _extract_page(dp, images_dir: Path, log) -> dict:
     return rec
 
 
-async def _open_card(ctx, page, idx: int, images_dir: Path, log):
-    """Open result card #idx's external source and scrape it. memsearch opens the source by
-    a JS click — USUALLY a new tab, but sometimes it navigates the SAME tab. Handle BOTH,
-    try several click targets, and ALWAYS attempt it even when the link looks broken (the
-    user: «есть карточка с битой ссылкой, но ты даже не пытаешься её открыть»). On a broken
-    link we still fall back to the cleaned card brief. Returns (source_url, extracted)."""
+async def _open_card(ctx, page, idx: int, images_dir: Path, log, dump_dir=None):
+    """Open result card #idx's external source and scrape it. memsearch opens the source by a
+    REACT click handler (no href, no onclick attribute) — so clicking a wrapper <div> won't
+    fire it; we must click the element whose computed cursor is 'pointer' with a REAL MOUSE
+    click at its centre. Handle a new tab OR same-tab navigation, and never abort on a broken
+    link (then fall back to the cleaned brief). The first card's HTML is dumped to
+    results/memsearch_card_sample.html so the open mechanism can be verified offline."""
     ext = {"fields": {}, "heading": "", "thumb_bytes": None}
     src_url = ""
     card = page.locator(f'[data-pw-card="{idx}"]').first
@@ -689,16 +690,44 @@ async def _open_card(ctx, page, idx: int, images_dir: Path, log):
     np = None
     same_tab = False
 
+    if dump_dir is not None:
+        try:
+            html = await page.evaluate(
+                "(i) => { const c = document.querySelector('[data-pw-card=\"'+i+'\"]');"
+                "         return c ? c.outerHTML : ''; }", str(idx))
+            (Path(dump_dir) / "memsearch_card_sample.html").write_text(html or "", encoding="utf-8")
+        except Exception:
+            pass
+
     async def _try_click():
-        # the card itself, then any clickable descendant, then the title — whichever fires
-        for loc in (card,
-                    card.locator('[onclick], [role="button"], a, button').first,
-                    card.locator('h4.Title').first):
-            try:
-                if await loc.count() == 0:
-                    continue
-                await loc.click(timeout=4000)
+        # REAL mouse click on the card's clickable (cursor:pointer) element — clicking a
+        # wrapper div with page.click won't trigger a child's React onClick.
+        try:
+            box = await page.evaluate(
+                """(i) => {
+                    const c = document.querySelector('[data-pw-card="'+i+'"]');
+                    if (!c) return null;
+                    c.scrollIntoView({block: 'center'});
+                    let t = null;
+                    for (const el of [c, ...c.querySelectorAll('*')]) {
+                        const cs = getComputedStyle(el);
+                        if (cs.cursor === 'pointer' && el.offsetParent !== null) { t = el; break; }
+                    }
+                    const r = (t || c).getBoundingClientRect();
+                    if (r.width < 2 || r.height < 2) return null;
+                    return {x: r.x + r.width / 2, y: r.y + Math.min(r.height / 2, 36)};
+                }""", str(idx))
+            if box:
+                await page.mouse.click(box["x"], box["y"])
                 return True
+        except Exception:
+            pass
+        # fallbacks: locator clicks (card, then its title)
+        for loc in (card, card.locator('h4.Title').first):
+            try:
+                if await loc.count():
+                    await loc.click(timeout=3000)
+                    return True
             except Exception:
                 continue
         return False
@@ -722,7 +751,34 @@ async def _open_card(ctx, page, idx: int, images_dir: Path, log):
             if page.url != before_url and "/search" not in page.url:
                 np, same_tab = page, True
         if np is None:
-            log("      !! карточка не открыла источник — беру краткое из карточки")
+            # last resort: a source URL hidden in the card's attributes (data-*, etc.).
+            # EXCLUDE the known traps: SVG xmlns (w3.org), memsearch itself, asset CDNs.
+            try:
+                cand = await page.evaluate(
+                    r"""(i) => {
+                        const c = document.querySelector('[data-pw-card="'+i+'"]');
+                        if (!c) return '';
+                        const bad = /w3\.org|memsearch\.org|\.svg|googleapis|gstatic|fonts|schema\.org/i;
+                        for (const el of [c, ...c.querySelectorAll('*')]) {
+                            for (const a of (el.attributes || [])) {
+                                const m = (a.value || '').match(/https?:\/\/[^\s"')]+/g);
+                                if (m) for (const u of m) if (!bad.test(u)) return u;
+                            }
+                        }
+                        return '';
+                    }""", str(idx))
+            except Exception:
+                cand = ""
+            if cand:
+                log(f"      ↪ ссылка из карточки: {cand[:70]}")
+                try:
+                    np = await ctx.new_page()
+                    await np.goto(cand, wait_until="domcontentloaded", timeout=30000)
+                except Exception:
+                    np = None
+        if np is None:
+            log("      !! карточка не открыла источник — беру краткое из карточки "
+                "(дамп: results/memsearch_card_sample.html)")
             return "", ext
 
         try:
@@ -921,7 +977,8 @@ async def run_scraper(*,
                     src_url, ext = "", {}
                     try:
                         src_url, ext = await _open_card(ctx, page, c["index"],
-                                                        images_dir, log)
+                                                        images_dir, log,
+                                                        dump_dir=(output_folder if total == 1 else None))
                     except Exception as _e:
                         log(f"      !! карточка пропущена ({type(_e).__name__}) "
                             f"— беру краткое из карточки")
