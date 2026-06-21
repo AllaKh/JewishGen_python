@@ -65,6 +65,13 @@ def _aid(url: str) -> str:
     return m.group(1) if m else ""
 
 
+def _base_haid(aid: str) -> str:
+    """Document id without the trailing `_<page>` — so all pages of ONE document share it,
+    and we can tell when ⟨/⟩ crossed into the NEXT document. E.g.
+    HAID2_17C8…D8_1 → HAID2_17C8…D8."""
+    return re.sub(r"_\d+$", "", aid or "")
+
+
 def _source_paths():
     """[(id, 'Group / Subgroup / Label')] for every leaf source — the full path so short
     leaf labels (three different «Могилевские»!) can be told apart by their group."""
@@ -140,51 +147,58 @@ async def _goto(page, url):
 
 
 async def _capture_folder(page, start_url, year, out_root, saved, log):
-    """Walk the folder that start_url belongs to: ⟨ to the start, then ⟩ to the end, saving
-    every scan. Returns the number of scans saved."""
+    """Capture the ONE document start_url belongs to: ⟪/⟨ to its first page, then ⟩ to its
+    last page, saving every scan. The walk is BOUNDED to this document — it stops the moment
+    an arrow points to a DIFFERENT base HAID (the next document), so we don't bleed into the
+    rest of the collection. Scans are saved under their ORIGINAL name (<aid>_<year>).
+    Returns the number of scans saved."""
     if not await _goto(page, start_url):
         return 0
-    # 1) jump to the START. If the «⟪» (to-first) arrow is present, click it once — straight
-    #    to page 1 (no stepping). Otherwise step back via «⟨».
+    doc = _base_haid(_aid(start_url) or _aid(page.url))     # this document's base id
+    same = lambda a: bool(a) and _base_haid(a) == doc
+
+    # 1) go to THIS document's first page: «⟪» in one jump if it points inside this doc,
+    #    else step back via «⟨» while staying inside this doc.
     nav = await _nav(page)
-    if nav.get("first"):
-        log("    ⟪ к началу папки (одним прыжком)")
+    if same(_aid(nav.get("first", ""))):
+        log("    ⟪ к началу документа (одним прыжком)")
         await _goto(page, nav["first"])
     else:
         walked = set()
         while True:
             nav = await _nav(page)
-            cur = _aid(nav["cur"])
-            if cur:
-                walked.add(cur)
+            walked.add(_aid(nav["cur"]))
             prev = nav["prev"]
-            if not prev or _aid(prev) in walked:       # at start / loop guard
+            if not same(_aid(prev)) or _aid(prev) in walked:
                 break
             if not await _goto(page, prev):
                 break
-    # 2) name the folder from the start page
-    name = await _title(page) or "hryc"
+
+    # 2) folder name = document title + year
+    name = await _title(page) or doc
     folder = out_root / H.safe_fn(f"{name}_{year}")
-    # 3) walk RIGHT (⟩) to the end, saving each scan
+
+    # 3) walk ⟩ forward to the last page of THIS document, saving each scan
     seq, fwd = 0, set()
     while True:
         nav = await _nav(page)
         cur = _aid(nav["cur"])
-        if cur and cur in fwd:                          # loop guard
+        if cur in fwd:                                     # loop guard
             break
-        if cur:
-            fwd.add(cur)
+        fwd.add(cur)
         if cur and cur not in saved:
             seq += 1
-            base = f"{H.safe_fn(name)}_{seq}_{year}"
-            files = await H._save_doc_scan(page, folder, base, log)
+            # ORIGINAL scan name (the aid, which already carries the page number) + year;
+            # if some aid lacks a trailing number, append the folder sequence number.
+            stem = cur if re.search(r"_\d+$", cur) else f"{cur}_{seq}"
+            files = await H._save_doc_scan(page, folder, f"{stem}_{year}", log)
             saved.add(cur)
             if not files:
                 log(f"    !! страница {seq}: скан не сохранён")
-        nxt = nav["next"]
-        if not nxt or _aid(nxt) in fwd:                 # at end / loop guard
+        nxt = _aid(nav["next"])
+        if not same(nxt) or nxt in fwd:                    # next document / end → stop
             break
-        if not await _goto(page, nxt):
+        if not await _goto(page, nav["next"]):
             break
     return seq
 
@@ -260,18 +274,22 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids)
                     break
             _log(f"  Результатов со ссылками: {len(urls)}")
 
-            # ── capture each NEW folder (skip results already saved) ──────────
-            saved, folders, n_scans = set(), 0, 0
-            for u in urls:
-                if _aid(u) in saved:
-                    _log(f"  · скан уже сохранён — пропускаю ({_aid(u)[-8:]})")
+            # ── go through results one by one; capture each NEW document once ──
+            # saved   = scan aids already written this run (within-folder dedup)
+            # done    = documents (base HAID) already captured → skip later results in them
+            saved, done, folders, n_scans = set(), set(), 0, 0
+            for i, u in enumerate(urls, 1):
+                base = _base_haid(_aid(u))
+                if base in done:
+                    _log(f"  [{i}/{len(urls)}] · документ уже сохранён — следующий результат")
                     continue
                 folders += 1
-                _log(f"  [{folders}] новая папка — иду к началу и сохраняю всё…")
+                _log(f"  [{i}/{len(urls)}] новый документ {base[-8:]} — иду к началу, сохраняю всё…")
                 n_scans += await _capture_folder(page, u, str(year), out_root, saved, _log)
+                done.add(base)
                 if max_folders and folders >= max_folders:
                     _log(f"  → достигнут лимит --max-folders {max_folders}"); break
-            _log(f"\nГотово. Папок: {folders}, сканов сохранено: {n_scans}.")
+            _log(f"\nГотово. Документов: {folders}, сканов сохранено: {n_scans}.")
             _log(f"Папка: {out_root}")
         finally:
             try: await ctx.close()
