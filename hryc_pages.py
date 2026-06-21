@@ -65,6 +65,40 @@ def _aid(url: str) -> str:
     return m.group(1) if m else ""
 
 
+def _source_paths():
+    """[(id, 'Group / Subgroup / Label')] for every leaf source — the full path so short
+    leaf labels (three different «Могилевские»!) can be told apart by their group."""
+    tree = json.loads(H.SRC_FILE.read_text("utf-8"))
+    out = []
+
+    def walk(ns, trail):
+        for n in ns:
+            if "idx" in n:                                  # leaf source
+                lbl = n.get("label") or n.get("en") or n.get("id")
+                out.append((n["id"], " / ".join(trail + [lbl])))
+            else:                                           # group
+                gl = n.get("name") or n.get("en") or ""
+                walk(n.get("children", []), trail + ([gl] if gl else []))
+
+    walk(tree, [])
+    return out
+
+
+def _resolve_sources(phrases):
+    """Return (ids, paths). A source matches a phrase when its full path contains ALL of the
+    phrase's words (case-insensitive, order-independent); multiple --source = union.
+    No phrases → all sources."""
+    paths = _source_paths()
+    if not phrases:
+        return [sid for sid, _ in paths], ["(все источники)"]
+    ids, chosen = [], []
+    for sid, path in paths:
+        pl = path.lower()
+        if any(all(w in pl for w in ph.lower().split()) for ph in phrases):
+            ids.append(sid); chosen.append(path)
+    return ids, chosen
+
+
 async def _title(page) -> str:
     try:
         t = await page.evaluate(
@@ -150,11 +184,12 @@ async def _capture_folder(page, start_url, year, out_root, saved, log):
     return seq
 
 
-async def run(query, year, out_root, max_pages, max_folders, shared):
+async def run(query, year, out_root, max_pages, max_folders, shared, source_ids):
     if not _PW_OK:
         _log("Playwright не установлен."); return
     out_root = Path(out_root); out_root.mkdir(parents=True, exist_ok=True)
-    _log(f"Запрос: {query!r}, год: {year}, складываю в: {out_root}")
+    _log(f"Запрос: {query!r}, год: {year}, источников: {len(source_ids)}, "
+         f"складываю в: {out_root}")
 
     profile = H.PROFILE_DIR if shared else PAGES_PROFILE
     profile.mkdir(parents=True, exist_ok=True)
@@ -203,7 +238,7 @@ async def run(query, year, out_root, max_pages, max_folders, shared):
                  else "  !! НЕ залогинен — документы будут недоступны")
 
             # ── collect result document urls across pages ────────────────────
-            sources = [s["id"] for s in H.load_sources()]
+            sources = source_ids
             urls, seen = [], set()
             for pno in range(1, max_pages + 1):
                 u = H.build_search_url(query, sources, pno, doc_dates=str(year))
@@ -245,16 +280,33 @@ def main():
     ap.add_argument("year", nargs="?", default="", help="year (Doc dates), e.g. 1859")
     ap.add_argument("--query", dest="query_opt", default="")
     ap.add_argument("--year", dest="year_opt", default="")
+    ap.add_argument("--source", action="append", default=[], metavar="PHRASE",
+                    help="limit to sources whose full path contains ALL these words, e.g. "
+                         "--source \"губернские могилевские\". Repeat for several. Omit = all.")
+    ap.add_argument("--list-sources", action="store_true",
+                    help="print every source path (optionally filtered by --source) and exit")
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--max-pages", type=int, default=25, help="result pages to scan")
     ap.add_argument("--max-folders", type=int, default=0, help="stop after N folders (0 = all)")
     ap.add_argument("--shared", action="store_true", help="reuse the app's .hryc_profile (close the app first)")
     a = ap.parse_args()
+
+    source_ids, chosen = _resolve_sources(a.source)
+    if a.list_sources:
+        for sid, path in _source_paths():
+            if not a.source or sid in source_ids:
+                print(f"{sid:24} {path}")
+        return
+    if a.source and not source_ids:
+        ap.error(f"no source matches {a.source!r}. Run --list-sources to see them.")
+    if a.source:
+        print("Источники:"); [print("  •", p) for p in chosen]
+
     query = a.query_opt or a.query
     year = a.year_opt or a.year
     if not query or not year:
         ap.error("give a search word and a year, e.g.:  python hryc_pages.py \"Шендерович\" 1859")
-    asyncio.run(run(query, year, a.out, a.max_pages, a.max_folders, a.shared))
+    asyncio.run(run(query, year, a.out, a.max_pages, a.max_folders, a.shared, source_ids))
 
 
 if __name__ == "__main__":
