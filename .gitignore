@@ -3,6 +3,7 @@
 .fs_profile/
 .ancestry_profile/
 .hryc_profile/
+.hryc_crawler_profile/
 .profile/
 profile/
 _probe_profile/

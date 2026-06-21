@@ -43,6 +43,9 @@ except Exception:
 
 DEFAULT_OUT = r"D:\Archives"
 START_URL   = H.BASE_URL + "/zakroma"
+# Own profile so the crawler NEVER clashes with the app's .hryc_profile (a Chrome
+# user-data-dir can be open in only ONE process at a time → TargetClosedError otherwise).
+CRAWLER_PROFILE = Path(__file__).resolve().parent / ".hryc_crawler_profile"
 
 # Links worth following into the document tree (skip site nav / account / external).
 _FOLLOW_RE = re.compile(r"(/zakroma|/documents?/|periodical\?|/document/HAID)", re.I)
@@ -157,6 +160,9 @@ async def crawl():
     ap.add_argument("--delay", type=float, default=4.0,
                     help="seconds between documents (+ random jitter). BIGGER = fewer CAPTCHAs; "
                          "try 15-30 if the site challenges every document.")
+    ap.add_argument("--shared", action="store_true",
+                    help="reuse the app's .hryc_profile (close the app first); default is the "
+                         "crawler's own .hryc_crawler_profile so it never clashes with the app.")
     args = ap.parse_args()
 
     if not _PW_OK:
@@ -166,16 +172,37 @@ async def crawl():
     out_root.mkdir(parents=True, exist_ok=True)
     _log(f"Складываю в: {out_root}")
 
-    H.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    H._clear_singleton_locks()
+    profile = H.PROFILE_DIR if args.shared else CRAWLER_PROFILE
+    profile.mkdir(parents=True, exist_ok=True)
+    _log(f"Профиль: {profile.name}")
+
+    def _clear_locks():
+        for n in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            try: (profile / n).unlink()
+            except Exception: pass
 
     seen_pages, seen_files = set(), set()
     n_docs = n_ok = 0
 
     async with async_playwright() as pw:
-        ctx = await pw.chromium.launch_persistent_context(
-            str(H.PROFILE_DIR), headless=False, accept_downloads=True, no_viewport=True,
-            args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
+        # The profile can be locked (the app or a previous/crashed Chrome still holds it →
+        # TargetClosedError). Clear stale locks and retry a few times; then explain.
+        ctx = None
+        for attempt in range(1, 4):
+            _clear_locks()
+            try:
+                ctx = await pw.chromium.launch_persistent_context(
+                    str(profile), headless=False, accept_downloads=True, no_viewport=True,
+                    args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
+                break
+            except Exception as e:
+                _log(f"  !! браузер не запустился (попытка {attempt}/3): {type(e).__name__}")
+                await asyncio.sleep(3)
+        if ctx is None:
+            _log("  !! Не удалось открыть браузер. Закрой ВСЕ окна Chrome этого приложения "
+                 f"(особенно использующие профиль «{profile.name}»), затем запусти снова. "
+                 "Можно также удалить папку профиля и войти заново.")
+            return
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         for extra in list(ctx.pages):
             if extra is not page:
