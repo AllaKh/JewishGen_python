@@ -68,7 +68,8 @@ TABS = ["All types", "People", "Places", "Objects", "Documents"]
 
 # Dropdown option sets (English labels ↔ the site's Russian values, from its bundle).
 REGION_TYPE  = ["", "Any", "Place of birth", "Place of living or arrest"]
-PLACE_AMONG  = ["", "Any", "Burial places", "Prisons and camps"]
+PLACE_AMONG  = ["", "Any", "Burial places", "Prisons and camps",
+                "Monuments and memorials"]
 OBJECT_AMONG = ["", "Any", "Photos", "Museum items", "Descriptive texts",
                 "Monuments and memorials"]
 
@@ -675,28 +676,62 @@ async def _extract_page(dp, images_dir: Path, log) -> dict:
 
 
 async def _open_card(ctx, page, idx: int, images_dir: Path, log):
-    """Click result card #idx → it opens the external source in a NEW TAB.
-    Capture that tab, scrape it, close it. Returns (source_url, extracted)."""
+    """Open result card #idx's external source and scrape it. memsearch opens the source by
+    a JS click — USUALLY a new tab, but sometimes it navigates the SAME tab. Handle BOTH,
+    try several click targets, and ALWAYS attempt it even when the link looks broken (the
+    user: «есть карточка с битой ссылкой, но ты даже не пытаешься её открыть»). On a broken
+    link we still fall back to the cleaned card brief. Returns (source_url, extracted)."""
     ext = {"fields": {}, "heading": "", "thumb_bytes": None}
     src_url = ""
     card = page.locator(f'[data-pw-card="{idx}"]').first
+    before_url = page.url
+    before = set(ctx.pages)
     np = None
-    try:
-        async with ctx.expect_page(timeout=12000) as info:
+    same_tab = False
+
+    async def _try_click():
+        # the card itself, then any clickable descendant, then the title — whichever fires
+        for loc in (card,
+                    card.locator('[onclick], [role="button"], a, button').first,
+                    card.locator('h4.Title').first):
             try:
-                await card.click(timeout=6000)
+                if await loc.count() == 0:
+                    continue
+                await loc.click(timeout=4000)
+                return True
             except Exception:
-                # fall back to clicking the title inside the card
-                await card.locator('h4.Title').first.click(timeout=4000)
-        np = await info.value
+                continue
+        return False
+
+    try:
+        try:
+            async with ctx.expect_page(timeout=9000) as info:
+                await _try_click()
+            np = await info.value
+        except Exception:
+            np = None
+        if np is None:                              # a tab that expect_page didn't catch
+            extra = [p for p in ctx.pages if p not in before]
+            if extra:
+                np = extra[-1]
+        if np is None:                              # maybe it navigated the SAME tab
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=3000)
+            except Exception:
+                pass
+            if page.url != before_url and "/search" not in page.url:
+                np, same_tab = page, True
+        if np is None:
+            log("      !! карточка не открыла источник — беру краткое из карточки")
+            return "", ext
+
         try:
             await np.wait_for_load_state("domcontentloaded", timeout=20000)
         except Exception:
             pass
         await asyncio.sleep(0.5)
         src_url = np.url or ""
-        # chrome-error may be a transient navigation hiccup — try one reload.
-        if src_url.startswith("chrome-error"):
+        if src_url.startswith("chrome-error"):      # often a transient hiccup → one reload
             await asyncio.sleep(1.5)
             try:
                 await np.reload(wait_until="domcontentloaded", timeout=15000)
@@ -705,21 +740,19 @@ async def _open_card(ctx, page, idx: int, images_dir: Path, log):
                 pass
             src_url = np.url or ""
         log(f"      ↪ источник: {src_url[:75]}")
-        # Broken link → chrome-error / blank page. Don't try to parse it; the
-        # caller keeps the card's own summary. (Was told from day one: do NOT
-        # fall over on empty pages.)
         if src_url.startswith(("chrome-error", "about:")) or not _host(src_url):
-            log("      !! ссылка-источник битая — пропускаю, беру краткое")
+            log("      !! ссылка-источник битая — беру краткое из карточки")
         else:
             ext = await _extract_page(np, images_dir, log)
     except Exception as e:
-        log(f"      !! карточка не открыла новый таб ({type(e).__name__})")
+        log(f"      !! карточка не открылась ({type(e).__name__}) — беру краткое")
     finally:
-        if np is not None:
-            try:
-                await np.close()
-            except Exception:
-                pass
+        if np is not None and not same_tab:
+            try: await np.close()
+            except Exception: pass
+        elif same_tab:                              # restore the results page for next cards
+            try: await page.go_back(wait_until="domcontentloaded", timeout=15000)
+            except Exception: pass
     return src_url, ext
 
 
