@@ -109,7 +109,7 @@ class HrycApp(QMainWindow):
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
         self._src_checks = []          # [(checkbox, source_id)] — leaf sources
-        self._group_checks = []        # group (section) checkboxes
+        self._section_alls = []        # [(all_cb, [leaf cbs])] — per-section «Все» toggles
         self._build_ui()
         self._load()
         self._fit()
@@ -270,8 +270,9 @@ class HrycApp(QMainWindow):
             self._add_node(node, self._tree, 0)
 
     def _add_node(self, node, parent_layout, depth):
-        """Recursive: a source → checkbox; a group → arrow that shows/hides its
-        children, plus a group checkbox that ticks the whole subtree."""
+        """Recursive: a source → checkbox; a group → arrow + bold label header, with a
+        dedicated «Все / All» toggle as the FIRST row of the section (mirrors the site,
+        where every section starts with a «Все» button), plus the global «Select all»."""
         if "idx" in node:                                  # leaf source
             cb = QCheckBox(self._dual(node))
             cb.stateChanged.connect(self._on_check)
@@ -281,14 +282,12 @@ class HrycApp(QMainWindow):
             parent_layout.addLayout(row)
             return [cb]
 
-        # group node
-        row = QHBoxLayout(); row.setContentsMargins(depth * 18, 0, 0, 0); row.setSpacing(2)
+        # group node: arrow + bold section LABEL (the select-all lives in the «Все» row)
+        row = QHBoxLayout(); row.setContentsMargins(depth * 18, 0, 0, 0); row.setSpacing(4)
         arrow = QToolButton(); arrow.setText("▶"); arrow.setCheckable(True)
         arrow.setFixedWidth(16)
-        gcb = QCheckBox(self._dual(node))
-        gcb.setStyleSheet("font-weight:bold;")
-        self._group_checks.append(gcb)
-        row.addWidget(arrow); row.addWidget(gcb); row.addStretch()
+        hdr = QLabel(self._dual(node)); hdr.setStyleSheet("font-weight:bold;")
+        row.addWidget(arrow); row.addWidget(hdr); row.addStretch()
         parent_layout.addLayout(row)
 
         holder = QWidget(); hb = QVBoxLayout(holder)
@@ -296,14 +295,22 @@ class HrycApp(QMainWindow):
         holder.setVisible(False)
         parent_layout.addWidget(holder)
 
+        # per-section «Все / All» — first row of the section (like the site's «Все» button)
+        all_cb = QCheckBox("Все / All")
+        all_cb.setStyleSheet("color:#1a7f37; font-weight:bold;")
+        ar = QHBoxLayout(); ar.setContentsMargins((depth + 1) * 18, 0, 0, 0)
+        ar.addWidget(all_cb); ar.addStretch()
+        hb.addLayout(ar)
+
         kids = []
         for child in node.get("children", []):
             kids += self._add_node(child, hb, depth + 1)
         arrow.toggled.connect(lambda on, a=arrow, h=holder:
                               (a.setText("▼" if on else "▶"), h.setVisible(on), self._fit()))
-        # group checkbox ticks/unticks its whole subtree
-        gcb.stateChanged.connect(
+        # «Все» ticks/unticks every source in this section
+        all_cb.stateChanged.connect(
             lambda st, ks=kids: [c.setChecked(st == Qt.Checked.value) for c in ks])
+        self._section_alls.append((all_cb, kids))
         return kids
 
     def _dual(self, node) -> str:
@@ -316,13 +323,20 @@ class HrycApp(QMainWindow):
         on = st == Qt.Checked.value
         for cb, _ in self._src_checks:
             cb.blockSignals(True); cb.setChecked(on); cb.blockSignals(False)
-        for gcb in self._group_checks:          # tick the section/group boxes too
-            gcb.blockSignals(True); gcb.setChecked(on); gcb.blockSignals(False)
-        self._on_check()
+        self._on_check()                        # also syncs the per-section «Все» boxes
 
     def _on_check(self, *_):
         n = sum(1 for cb, _ in self._src_checks if cb.isChecked())
         self.lbl_count.setText(f"{n} selected")
+        # reflect each section's «Все» state (checked only when ALL its sources are)
+        for all_cb, kids in getattr(self, "_section_alls", []):
+            on = bool(kids) and all(c.isChecked() for c in kids)
+            all_cb.blockSignals(True); all_cb.setChecked(on); all_cb.blockSignals(False)
+        # reflect the global «Select all sources» box too
+        if hasattr(self, "f_all"):
+            self.f_all.blockSignals(True)
+            self.f_all.setChecked(n == len(self._src_checks) and n > 0)
+            self.f_all.blockSignals(False)
         self._save()
 
     def _selected_ids(self) -> list:
