@@ -232,6 +232,42 @@ def _docx_table(doc, rows):
         _set_widths(cells)
 
 
+def _add_page_numbers(doc):
+    """Centered «Стр. PAGE из NUMPAGES» footer on every page. Idempotent — skips if a
+    page field already exists (so appending doesn't duplicate it)."""
+    for section in doc.sections:
+        footer = section.footer
+        if footer._element.findall('.//' + qn('w:fldChar')):
+            continue                                   # already numbered
+        footer.is_linked_to_previous = False
+        p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        def _field(instr):
+            b = OxmlElement('w:fldChar'); b.set(qn('w:fldCharType'), 'begin')
+            t = OxmlElement('w:instrText'); t.set(qn('xml:space'), 'preserve'); t.text = instr
+            e = OxmlElement('w:fldChar'); e.set(qn('w:fldCharType'), 'end')
+            run = p.add_run(); run._r.append(b); run._r.append(t); run._r.append(e)
+
+        p.add_run("Стр. "); _field("PAGE"); p.add_run(" из "); _field("NUMPAGES")
+
+
+def _doc_preview(fp):
+    """A small JPEG (BytesIO) of a saved scan for embedding — the FULL file stays on disk;
+    only a downscaled preview goes into the Word so it doesn't bloat to hundreds of MB."""
+    try:
+        from PIL import Image
+        import io
+        im = Image.open(fp)
+        im.thumbnail((1100, 1500))
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        buf = io.BytesIO(); im.save(buf, "JPEG", quality=80); buf.seek(0)
+        return buf
+    except Exception:
+        return None
+
+
 def write_docx(path: Path, rows: list, qlines: list, append: bool = False):
     if not _DOCX_OK:
         return
@@ -251,6 +287,25 @@ def write_docx(path: Path, rows: list, qlines: list, append: bool = False):
             doc.add_paragraph(q)
         doc.add_paragraph(f"Найдено записей: {len(rows)}")
     _docx_table(doc, rows)
+    # Embed each saved scan with its FULL path beside it, so «где находится файл» is
+    # unmissable (the per-row «Файл» column stays too, for quick reference).
+    saved = [(r, fp) for r in rows for fp in (r.get("files") or [])]
+    if saved:
+        doc.add_paragraph()
+        doc.add_paragraph().add_run(f"Документы (сканов: {len(saved)}):").bold = True
+        for r, fp in saved:
+            cap = r.get("source") or ""
+            if cap:
+                doc.add_paragraph().add_run(cap).bold = True
+            prev = _doc_preview(fp)
+            if prev is not None:
+                try:
+                    doc.add_picture(prev, width=Inches(4.2))
+                except Exception:
+                    pass
+            doc.add_paragraph().add_run("Файл: " + str(fp)).font.size = Pt(8)
+            doc.add_paragraph()
+    _add_page_numbers(doc)
     doc.save(str(path))
 
 
@@ -626,7 +681,9 @@ async def run_scraper(
 
             # ── 3. SAVE ──────────────────────────────────────────────── #
             _prog(88, "Сохранение файлов…")
-            base   = safe_fn(f"hryc_{query}") or "hryc_results"
+            # year (Doc dates) goes into the file names too, like the scans folder
+            year_tag = "_" + safe_fn(doc_dates) if doc_dates else ""
+            base   = (safe_fn(f"hryc_{query}") or "hryc_results") + year_tag
             docx_p = output_folder / f"{base}.docx"
             xlsx_p = output_folder / f"{base}.xlsx"
             existing = [p.name for p, want in ((docx_p, want_docx), (xlsx_p, want_xlsx))
