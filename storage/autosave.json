@@ -10,9 +10,9 @@
       "text": "VYAZOVSKIY"
     },
     {
-      "data_type": "Given Name",
+      "data_type": "Town",
       "search_type": "Phonetically Like",
-      "text": "Avrum"
+      "text": "Cherkass"
     }
   ],
   "output_folder": "I:/Python Projects/JewishGen_python/results",
