@@ -186,9 +186,10 @@ def _clean_brief(text: str) -> str:
 
 _BRIEF_LABELS = [
     "Дата осуждения", "Дата реабилитации", "Дата ареста", "Дата рождения",
-    "Дата смерти", "Дата репрессии", "Место рождения", "Место смерти",
-    "Место репрессии", "Место жительства", "Место ареста", "Национальность",
-    "Образование", "Профессия", "Приговор", "Статья", "Возраст", "Пол",
+    "Дата смерти", "Дата репрессии", "Место репрессии/жительства", "Место рождения",
+    "Место смерти", "Место репрессии", "Место жительства", "Место ареста",
+    "Национальность", "Образование", "Профессия", "Приговор", "Статья",
+    "Возраст", "Пол",
 ]
 
 def _brief_to_fields(text: str) -> dict:
@@ -527,29 +528,26 @@ async def _tag_cards(page) -> list:
                 .forEach(e => e.removeAttribute('data-pw-card'));
         const out = [];
         let idx = 0;
-        for (const h of document.querySelectorAll('h4.Title')) {
-            // Card = the LARGEST ancestor that STILL contains exactly ONE h4.Title —
-            // the single result box. BUT stop before the page shell: when there's only
-            // ONE result the body also has a single h4.Title, so the old loop grew the
-            // "card" up to <body>. Then clicking it clicked the page (not the card) → no
-            // source tab opened, and the summary swallowed the nav/footer. So stop as soon
-            // as the parent also holds the search box / type tabs / header / footer.
-            const SHELL = '.SearchInput, .EntityTypeMenuItem, header, nav, footer, form';
-            let card = h;
-            while (card.parentElement &&
-                   card.parentElement.querySelectorAll('h4.Title').length === 1 &&
-                   !card.parentElement.querySelector(SHELL)) {
-                card = card.parentElement;
-            }
+        // The real result card is the <button class="…Card…"> that holds the h4.Title —
+        // clicking IT opens the source. (Do NOT walk up to a wrapper: that wrapper also
+        // contains the advanced-search form, so clicking it hit «Показать», not the card —
+        // which is exactly why a single result never opened while two did.)
+        let cards = [...document.querySelectorAll('button.Card')]
+                        .filter(c => c.querySelector('h4.Title'));
+        if (!cards.length)
+            cards = [...document.querySelectorAll('.Card, [class*="Card"]')]
+                        .filter(c => c.querySelector('h4.Title') &&
+                                     !c.querySelector('input, .SearchInput'));
+        for (const card of cards) {
+            const h = card.querySelector('h4.Title');
             card.setAttribute('data-pw-card', String(idx));
             const name = norm(h.textContent);
-            // Source domain shown on the card (red text) — for display only.
-            let source = '';
-            const t = norm(card.innerText || '');
-            const m = t.match(/([a-z0-9.-]+\.(?:ru|org|wiki|com|by|cz|il|net))/i);
-            if (m) source = m[1];
-            let summary = t;
+            const link = card.querySelector('.Link');           // source domain (red text)
+            const source = link ? norm(link.textContent) : '';
+            const desc = card.querySelector('.Description, p');  // the person/record text
+            let summary = norm(desc ? (desc.innerText || desc.textContent) : (card.innerText || ''));
             if (name) summary = summary.split(name).join(' ');
+            if (source) summary = summary.split(source).join(' ');
             summary = norm(summary);
             out.push({index: idx, name, source, summary: summary.slice(0, 700)});
             idx++;
