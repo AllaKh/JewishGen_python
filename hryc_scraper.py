@@ -12,7 +12,7 @@ R.S[i].Chk/.Id source toggles + R.Page + the option flags) and walk every page.
 For now results are plain lists → Word + Excel. Opening/saving the actual
 documents needs a paid account and will be added later.
 """
-import sys, re, json, time, asyncio
+import sys, re, json, time, asyncio, base64
 import html as _html
 from pathlib import Path
 from urllib import parse as _up
@@ -353,10 +353,68 @@ def _looks_image(b: bytes) -> bool:
             or (b[:4] == b"RIFF" and b[8:12] == b"WEBP"))
 
 
+async def _save_doc_scan(page, images_dir, base, log):
+    """Save the document's scanned page image. On hryc the scan is
+    `<img id="mainCanvas" src="https://downloader.disk.yandex.ru/…">` inside #mainCanvasDiv
+    (the src is a no-referrer, token-signed Yandex Disk URL). Strategy:
+      1. wait for #mainCanvas to actually finish loading;
+      2. fetch the bytes IN-PAGE with referrerPolicy:'no-referrer' (full resolution — same
+         as the user's «save the page, grab the scan locally» idea, done in one step);
+      3. fall back to an element screenshot of the rendered scan (always works).
+    """
+    saved = []
+    # wait for the scan <img> to load (Yandex Disk image, loads after domcontentloaded)
+    try:
+        await page.wait_for_function(
+            "() => { const c = document.querySelector('#mainCanvas');"
+            "        return c && c.complete && (c.naturalWidth || 0) > 50; }",
+            timeout=15000)
+    except Exception:
+        pass
+    src = await page.evaluate(
+        "() => { const c = document.querySelector('#mainCanvas');"
+        "        return c ? (c.currentSrc || c.src || '') : ''; }")
+    img_bytes = None
+    if src:
+        try:
+            data = await page.evaluate(
+                """async (u) => {
+                    try {
+                        const r = await fetch(u, {referrerPolicy: 'no-referrer'});
+                        if (!r.ok) return '';
+                        const a = new Uint8Array(await r.arrayBuffer());
+                        let s = ''; const CH = 0x8000;
+                        for (let i = 0; i < a.length; i += CH)
+                            s += String.fromCharCode.apply(null, a.subarray(i, i + CH));
+                        return btoa(s);
+                    } catch (e) { return ''; }
+                }""", src)
+            if data:
+                img_bytes = base64.b64decode(data)
+        except Exception:
+            img_bytes = None
+    if not (img_bytes and len(img_bytes) > 3000 and _looks_image(img_bytes)):
+        # fallback: screenshot the rendered scan element
+        try:
+            el = page.locator("#mainCanvas").first
+            if await el.count():
+                img_bytes = await el.screenshot(timeout=12000)
+        except Exception:
+            img_bytes = None
+    if img_bytes and len(img_bytes) > 3000 and _looks_image(img_bytes):
+        images_dir.mkdir(parents=True, exist_ok=True)
+        ext = ".png" if img_bytes[:4] == b"\x89PNG" else ".jpg"
+        fp = images_dir / f"{base}{ext}"
+        fp.write_bytes(img_bytes)
+        saved.append(str(fp.resolve()))
+        log(f"    ✓ скан сохранён: {fp.name} ({len(img_bytes)//1024} КБ)")
+    else:
+        log("    !! скан не сохранён (нет #mainCanvas или не картинка)")
+    return saved
+
+
 async def _open_document(page, url, images_dir, base, dump, log):
-    """Open a document page (/document?id=…) and save its scanned page image(s).
-    The exact /document markup wasn't available offline, so this is best-effort + the
-    FIRST document's HTML is dumped (results/hryc_document_sample.html) to refine later.
+    """Open a document page (/document?id=…) and save its scanned page image.
     Returns (saved_file_paths, page_text)."""
     saved, text = [], ""
     try:
@@ -364,41 +422,13 @@ async def _open_document(page, url, images_dir, base, dump, log):
     except Exception as e:
         log(f"    !! документ не открылся: {e}")
         return saved, text
-    try:
-        html = await page.content()
-    except Exception:
-        html = ""
     if dump is not False:
         try:
-            (Path(dump) / "hryc_document_sample.html").write_text(html, encoding="utf-8")
+            (Path(dump) / "hryc_document_sample.html").write_text(
+                await page.content(), encoding="utf-8")
         except Exception:
             pass
-    text = _strip_tags(re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.S))[:6000]
-    # largest images on the page = the scanned document page(s)
-    try:
-        srcs = await page.evaluate(r"""() => {
-            const out = [];
-            for (const im of document.querySelectorAll('img')) {
-                const s = im.currentSrc || im.src || '';
-                const a = (im.naturalWidth || 0) * (im.naturalHeight || 0);
-                if (s && a > 40000 && !/logo|icon|avatar|sprite|\.svg/i.test(s)) out.push([s, a]);
-            }
-            return out.sort((x, y) => y[1] - x[1]).map(z => z[0]).slice(0, 25);
-        }""")
-    except Exception:
-        srcs = []
-    for i, src in enumerate(srcs, 1):
-        try:
-            resp = await page.request.get(src, timeout=30000)
-            b = await resp.body()
-            if len(b) > 3000 and _looks_image(b):
-                images_dir.mkdir(parents=True, exist_ok=True)
-                ext = ".png" if b[:4] == b"\x89PNG" else (".webp" if b[8:12] == b"WEBP" else ".jpg")
-                fp = images_dir / f"{base}_{i}{ext}"
-                fp.write_bytes(b)
-                saved.append(str(fp.resolve()))
-        except Exception:
-            continue
+    saved = await _save_doc_scan(page, images_dir, base, log)
     return saved, text
 
 
@@ -534,9 +564,12 @@ async def run_scraper(
                 for i, r in enumerate(todo, 1):
                     if _cancelled():
                         break
+                    # unique base per document (results often share the same title, e.g.
+                    # several pages of the same newspaper → don't overwrite each other)
+                    nm = safe_fn(r.get("source") or query) or "doc"
+                    base = f"{nm}_{i}"
                     files, dtext = await _open_document(
-                        page, r["url"], images_dir,
-                        safe_fn(r.get("source") or f"{query}_{i}"),
+                        page, r["url"], images_dir, base,
                         dump=(output_folder if i == 1 else False), log=log)
                     if files:
                         r["files"] = files; n_docs += 1
