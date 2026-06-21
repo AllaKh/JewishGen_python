@@ -203,12 +203,17 @@ async def _capture_folder(page, start_url, year, out_root, saved, log):
     return seq
 
 
-async def run(query, year, out_root, max_pages, max_folders, shared, source_ids):
+async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
+              no_stemming, no_fuzziness, show_experts):
     if not _PW_OK:
         _log("Playwright не установлен."); return
     out_root = Path(out_root); out_root.mkdir(parents=True, exist_ok=True)
     _log(f"Запрос: {query!r}, год: {year}, источников: {len(source_ids)}, "
          f"складываю в: {out_root}")
+    _log(f"Параметры: стемминг={'ВЫКЛ' if no_stemming else 'ВКЛ'}, "
+         f"нечёткий поиск={'ВЫКЛ' if no_fuzziness else 'ВКЛ'}, "
+         f"эксперты={'ВКЛ' if show_experts else 'ВЫКЛ'}  "
+         f"(для МАКСИМУМА результатов: стемминг ВКЛ + нечёткий ВКЛ + эксперты ВКЛ)")
 
     profile = H.PROFILE_DIR if shared else PAGES_PROFILE
     profile.mkdir(parents=True, exist_ok=True)
@@ -260,7 +265,9 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids)
             sources = source_ids
             urls, seen = [], set()
             for pno in range(1, max_pages + 1):
-                u = H.build_search_url(query, sources, pno, doc_dates=str(year))
+                u = H.build_search_url(query, sources, pno, doc_dates=str(year),
+                                       no_stemming=no_stemming, no_fuzziness=no_fuzziness,
+                                       show_experts=show_experts)
                 if not await _goto(page, u):
                     break
                 res = H.parse_results(await page.content(), _log)
@@ -312,6 +319,11 @@ def main():
     ap.add_argument("--max-pages", type=int, default=25, help="result pages to scan")
     ap.add_argument("--max-folders", type=int, default=0, help="stop after N folders (0 = all)")
     ap.add_argument("--shared", action="store_true", help="reuse the app's .hryc_profile (close the app first)")
+    # Search precision. DEFAULT = MAXIMUM results: stemming ON, fuzzy ON, experts ON.
+    # Use these flags to narrow it (fewer, more exact hits).
+    ap.add_argument("--no-stemming",  action="store_true", help="«Без стемминга» — exact word form only")
+    ap.add_argument("--no-fuzziness", action="store_true", help="«Без ошибок» — no typo tolerance")
+    ap.add_argument("--no-experts",   action="store_true", help="«Эксперты» OFF (default ON → more results)")
     a = ap.parse_args()
 
     source_ids, chosen = _resolve_sources(a.source)
@@ -329,7 +341,8 @@ def main():
     year = a.year_opt or a.year
     if not query or not year:
         ap.error("give a search word and a year, e.g.:  python hryc_pages.py \"Шендерович\" 1859")
-    asyncio.run(run(query, year, a.out, a.max_pages, a.max_folders, a.shared, source_ids))
+    asyncio.run(run(query, year, a.out, a.max_pages, a.max_folders, a.shared, source_ids,
+                    a.no_stemming, a.no_fuzziness, not a.no_experts))
 
 
 if __name__ == "__main__":
