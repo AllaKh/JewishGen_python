@@ -12,7 +12,7 @@ R.S[i].Chk/.Id source toggles + R.Page + the option flags) and walk every page.
 For now results are plain lists → Word + Excel. Opening/saving the actual
 documents needs a paid account and will be added later.
 """
-import sys, re, json, time, asyncio, base64
+import sys, re, json, time, asyncio, base64, hashlib
 import html as _html
 from pathlib import Path
 from urllib import parse as _up
@@ -448,7 +448,7 @@ def _looks_image(b: bytes) -> bool:
             or (b[:4] == b"RIFF" and b[8:12] == b"WEBP"))
 
 
-async def _save_doc_scan(page, images_dir, base, log):
+async def _save_doc_scan(page, images_dir, base, log, seen_hashes=None):
     """Save the document's scanned page image. On hryc the scan is
     `<img id="mainCanvas" src="https://downloader.disk.yandex.ru/…">` inside #mainCanvasDiv
     (the src is a no-referrer, token-signed Yandex Disk URL). Strategy:
@@ -497,18 +497,28 @@ async def _save_doc_scan(page, images_dir, base, log):
         except Exception:
             img_bytes = None
     if img_bytes and len(img_bytes) > 3000 and _looks_image(img_bytes):
+        # content dedup: never save the SAME scan twice in one run (a broad query returns
+        # the same page in many result rows → otherwise we'd write identical files)
+        if seen_hashes is not None:
+            h = hashlib.md5(img_bytes).hexdigest()
+            if h in seen_hashes:
+                log(f"    ⏩ дубликат скана — уже сохранён как {Path(seen_hashes[h]).name}")
+                return [seen_hashes[h]]
         images_dir.mkdir(parents=True, exist_ok=True)
         ext = ".png" if img_bytes[:4] == b"\x89PNG" else ".jpg"
         fp = images_dir / f"{base}{ext}"
         fp.write_bytes(img_bytes)
-        saved.append(str(fp.resolve()))
+        full = str(fp.resolve())
+        saved.append(full)
+        if seen_hashes is not None:
+            seen_hashes[h] = full
         log(f"    ✓ скан сохранён: {fp.name} ({len(img_bytes)//1024} КБ)")
     else:
         log("    !! скан не сохранён (нет #mainCanvas или не картинка)")
     return saved
 
 
-async def _open_document(page, url, images_dir, base, dump, log):
+async def _open_document(page, url, images_dir, base, dump, log, seen_hashes=None):
     """Open a document page (/document?id=…) and save its scanned page image.
     Returns (saved_file_paths, page_text)."""
     saved, text = [], ""
@@ -523,7 +533,7 @@ async def _open_document(page, url, images_dir, base, dump, log):
                 await page.content(), encoding="utf-8")
         except Exception:
             pass
-    saved = await _save_doc_scan(page, images_dir, base, log)
+    saved = await _save_doc_scan(page, images_dir, base, log, seen_hashes)
     return saved, text
 
 
@@ -659,25 +669,43 @@ async def run_scraper(
                 # put the search YEAR (Doc dates) in the folder name when given
                 year_tag = "_" + safe_fn(doc_dates) if doc_dates else ""
                 images_dir = output_folder / "images" / (safe_fn(query) + year_tag)
-                todo = doc_rows[:max_docs]
-                _prog(85, f"Открываю документы: {len(todo)} из {len(doc_rows)}…")
-                for i, r in enumerate(todo, 1):
+                # A broad query (*а* + year) returns the SAME /document?id= in many snippet
+                # rows. Open each UNIQUE url ONCE, and dedup by image content too — so the
+                # folder never gets duplicate scans. Duplicate rows reuse the same saved path.
+                rep, uniq_urls = {}, []
+                for r in doc_rows:
+                    u = r["url"]
+                    if u not in rep:
+                        rep[u] = r; uniq_urls.append(u)
+                uniq_urls = uniq_urls[:max_docs]
+                seen_hashes, url_files = {}, {}
+                _prog(85, f"Открываю документы: {len(uniq_urls)} уникальных "
+                          f"(из {len(doc_rows)} ссылок)…")
+                for i, u in enumerate(uniq_urls, 1):
                     if _cancelled():
                         break
-                    # unique base per document (results often share the same title, e.g.
-                    # several pages of the same newspaper → don't overwrite each other)
-                    nm = safe_fn(r.get("source") or query) or "doc"
-                    base = f"{nm}_{i}"
+                    r0 = rep[u]
+                    nm = safe_fn(r0.get("source") or query) or "doc"
+                    m = re.search(r"id=(HAID[\w]+)", u)        # stable, unique per document
+                    base = f"{nm}_{m.group(1)[-10:]}" if m else f"{nm}_{i}"
                     files, dtext = await _open_document(
-                        page, r["url"], images_dir, base,
-                        dump=(output_folder if i == 1 else False), log=log)
+                        page, u, images_dir, base,
+                        dump=(output_folder if i == 1 else False), log=log,
+                        seen_hashes=seen_hashes)
+                    url_files[u] = files
                     if files:
-                        r["files"] = files; n_docs += 1
-                    if dtext and len(dtext) > len(r.get("text", "")):
-                        r["text"] = dtext        # richer text from the opened document
-                    _prog(85 + min(8, i * 8 // max(len(todo), 1)),
-                          f"  документ {i}/{len(todo)}: {len(files)} скан(ов)")
-                log(f"  → Открыто документов со сканами: {n_docs}")
+                        n_docs += 1
+                    if dtext and len(dtext) > len(r0.get("text", "")):
+                        r0["text"] = dtext       # richer text from the opened document
+                    _prog(85 + min(8, i * 8 // max(len(uniq_urls), 1)),
+                          f"  документ {i}/{len(uniq_urls)}: {len(files)} скан(ов)")
+                # attach the saved path(s) to EVERY row sharing that url (no re-download)
+                for r in doc_rows:
+                    f = url_files.get(r["url"])
+                    if f:
+                        r["files"] = f
+                log(f"  → Уникальных документов со сканами: {n_docs} "
+                    f"(сканов на диске: {len(seen_hashes)})")
 
             # ── 3. SAVE ──────────────────────────────────────────────── #
             _prog(88, "Сохранение файлов…")
