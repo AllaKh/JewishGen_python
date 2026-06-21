@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QApplication, QGroupBox,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import (app_icon, make_header, make_cancel_button, autosave_path,
+                           clamp_on_screen)
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -131,8 +132,17 @@ class YadVashemApp(QMainWindow):
 
     def _build_ui(self):
         central = QWidget(); self.setCentralWidget(central)
-        self._outer = QVBoxLayout(central)
+        self._ol = QVBoxLayout(central)
+        self._ol.setContentsMargins(0, 0, 0, 0); self._ol.setSpacing(0)
+        # Whole form scrolls; the bottom Start/Cancel bar is fixed and ALWAYS visible.
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _cw = QWidget(); self._outer = QVBoxLayout(_cw)
         self._outer.setContentsMargins(16, 10, 16, 10); self._outer.setSpacing(9)
+        self._content_scroll.setWidget(_cw)
+        self._ol.addWidget(self._content_scroll, 1)
 
         self._outer.addLayout(make_header(
             "Yadvashemlogo.png", "Yad Vashem — Shoah Victims' Names", color="#1f4e79"))
@@ -206,12 +216,10 @@ class YadVashemApp(QMainWindow):
         self.f_global = QLineEdit(); ggl.addWidget(self.f_global, 0, 1, 1, 2)
         av.addWidget(gg)
 
-        self._adv_scroll = QScrollArea(); self._adv_scroll.setWidgetResizable(True)
-        self._adv_scroll.setFrameShape(QFrame.NoFrame)
-        self._adv_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._adv_scroll.setWidget(self._adv)
-        self._adv_scroll.setVisible(False)
-        self._outer.addWidget(self._adv_scroll, 1)
+        # Advanced panel is inline + hidden; the top-level content scroll handles overflow
+        # (no nested scroll), and the toggle just shows/hides it.
+        self._adv.setVisible(False)
+        self._outer.addWidget(self._adv)
 
         # ── Output ───────────────────────────────────────────────────────────
         og = QGroupBox("Output (Word)"); ol = QHBoxLayout(og); ol.setSpacing(6)
@@ -220,17 +228,22 @@ class YadVashemApp(QMainWindow):
         ol.addWidget(QLabel("Save to:")); ol.addWidget(self.f_folder, 1); ol.addWidget(bb)
         self._outer.addWidget(og)
 
+        # ── Fixed bottom bar (progress + Start/Cancel) — ALWAYS visible ─────
+        self._bottom = QWidget()
+        bl = QVBoxLayout(self._bottom)
+        bl.setContentsMargins(16, 6, 16, 8); bl.setSpacing(6)
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        self._outer.addWidget(self.pbar); self._outer.addWidget(self.stlbl)
+        bl.addWidget(self.pbar); bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH"); self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        self._outer.addLayout(br)
-        self._outer.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        bl.addLayout(br)
+        bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        self._ol.addWidget(self._bottom, 0)
 
         for ed, combo in self._fields.values():
             ed.textChanged.connect(self._save)
@@ -241,25 +254,32 @@ class YadVashemApp(QMainWindow):
         self.rb_byfield.toggled.connect(self._save)
         self.f_lang.currentTextChanged.connect(self._save)
 
-        self.setFixedWidth(960)
+        scr0 = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        self.setMinimumWidth(min(900, scr0.width() - 16))
         self._fit()
 
     # ── Advanced toggle + height fit (never taller than the screen) ──────────
     def _toggle_adv(self, on):
-        self._adv_scroll.setVisible(on)
+        self._adv.setVisible(on)
         self._adv_btn.setText(("▼" if on else "▶")
                               + "   Advanced search  (Place · Family members · Submitter · Global)")
         self._fit()
 
     def _fit(self):
+        """Grow the window to the form's content (capped to the screen) so the form
+        SCROLLS past the cap and the fixed bottom Start/Cancel bar is ALWAYS visible on
+        any resolution. No move — the launcher positions it."""
+        if not hasattr(self, "_content_scroll"):
+            return
+        scr = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        max_w, max_h = scr.width() - 16, scr.height() - 48
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
-        avail = QApplication.primaryScreen().availableGeometry().height()
-        if self._adv_scroll.isVisible():
-            self._adv_scroll.setMaximumHeight(max(160, int(avail * 0.5)))
-        self._outer.invalidate(); self._outer.activate()
-        h = min(self.sizeHint().height(), avail - 48)   # stay on-screen
-        self.resize(self.width(), h)
-        self.setFixedHeight(h)
+        cw = self._content_scroll.widget(); cw.adjustSize()
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8
+        self.resize(min(max(self.width(), self.minimumWidth()), max_w), min(hint, max_h))
+        self.setMaximumHeight(max_h)
+        clamp_on_screen(self)
 
     def _browse(self):
         p = QFileDialog.getExistingDirectory(self, "Output folder",

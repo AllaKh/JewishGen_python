@@ -179,52 +179,45 @@ class GwarApp(QMainWindow):
             QTimer.singleShot(_ms, self._fit)
 
     def _fit(self):
-        """Dynamic sizing — same pattern as Pamyat: window grows to the form's
-        natural size when the screen has room (no scroll), vertical scroll
-        appears when it doesn't, horizontal scroll is NEVER shown."""
-        if not hasattr(self, "_body"):
+        """Grow the window to the form's content (capped to the screen) so the form
+        SCROLLS past the cap and the fixed bottom Start/Cancel bar is ALWAYS visible on
+        any resolution (the bug: on a short screen the buttons vanished with no scroll).
+        No move — the launcher positions it."""
+        if not hasattr(self, "_content_scroll"):
             return
-        scr = QApplication.primaryScreen().availableGeometry()
-        max_w = scr.width() - 16
-        # On a screen narrower than the 820 design width, the window MUST be allowed to
-        # shrink below 820 — otherwise it sticks out past the screen edge and a horizontal
-        # scrollbar appears (the "never a horizontal scrollbar" rule). So cap the minimum
-        # width by the screen.
+        scr = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        max_w, max_h = scr.width() - 16, scr.height() - 48
+        # On a screen narrower than the 820 design width the window must shrink below 820
+        # (the "never a horizontal scrollbar" rule).
         self.setMinimumWidth(min(820, max_w))
-        # facet columns: 3 equal columns that FILL the available width on a big screen and
-        # SHRINK on a low-res one, sized so 3×colw + chrome never exceeds the usable width
-        # (so they never force a horizontal scrollbar).
+        # facet columns: 3 equal columns that FILL the width on a big screen and SHRINK on
+        # a low-res one (so 3×colw + chrome never forces a horizontal scrollbar).
         if hasattr(self, "_facet_grid"):
-            usable = min(max_w - 48, 1232)         # minus outer margins/frame/spacing
+            usable = min(max_w - 48, 1232)
             colw = max(130, usable // 3)
             for _c in (0, 1, 2):
                 self._facet_grid.setColumnMinimumWidth(_c, colw)
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
-        self._scroll.setMinimumHeight(0); self._scroll.setMaximumHeight(16777215)
-        self._body.adjustSize()
-        body_w = self._body.sizeHint().width()
-        body_h = self._body.sizeHint().height()
-        self.adjustSize()
-        chrome_h = max(150, self.height() - self._scroll.height())
-        target_w = min(max(self.minimumWidth(), body_w + 24), scr.width() - 16)
-        avail_h  = scr.height() - 16
-        if chrome_h + body_h <= avail_h:
-            scroll_h = body_h + 4
-            target_h = chrome_h + scroll_h
-        else:
-            target_h = avail_h
-            scroll_h = max(120, target_h - chrome_h)
-        self._scroll.setMinimumHeight(scroll_h)
-        self._scroll.setMaximumHeight(scroll_h)
-        self.resize(target_w, target_h)
-        # positioning is the launcher's job (center_window); _fit only RESIZES. But after a
-        # resize the bottom could fall off-screen → slide it back on (move-only, no jerk).
+        cw = self._content_scroll.widget(); cw.adjustSize()
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8
+        self.resize(min(max(self.width(), self.minimumWidth()), max_w), min(hint, max_h))
+        self.setMaximumHeight(max_h)
         clamp_on_screen(self)
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
-        main = QVBoxLayout(root)
+        self._ol = QVBoxLayout(root)
+        self._ol.setContentsMargins(0, 0, 0, 0); self._ol.setSpacing(0)
+        # Whole form scrolls; the bottom Start/Cancel bar is fixed and ALWAYS visible.
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _cw = QWidget(); main = QVBoxLayout(_cw)
         main.setContentsMargins(16, 12, 16, 12); main.setSpacing(8)
+        self._content_scroll.setWidget(_cw)
+        self._ol.addWidget(self._content_scroll, 1)
 
         main.addLayout(make_header("Voinalogo.png", "Heroes of the Great War",
                                    color="#8a6d1f"))
@@ -330,18 +323,9 @@ class GwarApp(QMainWindow):
         dgl.addWidget(QLabel("Inventory/Cabinet:"), 0, 2); dgl.addWidget(self.f_inv, 0, 3)
         dgl.addWidget(QLabel("File/Box:"), 1, 0);          dgl.addWidget(self.f_file, 1, 1)
         outer.addWidget(dg)
-        outer.addStretch()
 
-        # Dynamic scroll area: no horizontal scrollbar ever, vertical only when the
-        # screen can't fit the form. Sized by _fit() based on the screen.
-        self._body   = body
-        self._scroll = QScrollArea()
-        self._scroll.setWidget(body)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        main.addWidget(self._scroll, 1)
+        self._body = body
+        main.addWidget(body)               # form lives in the top-level content scroll
 
         # Output ─────────────────────────────────────────────────────────────
         og = QGroupBox("Output (Word)")
@@ -351,18 +335,22 @@ class GwarApp(QMainWindow):
         ol.addWidget(QLabel("Save to:")); ol.addWidget(self.f_folder, 1); ol.addWidget(bb)
         main.addWidget(og)
 
+        # ── Fixed bottom bar (progress + Start/Cancel) — ALWAYS visible ─────
+        self._bottom = QWidget()
+        bl = QVBoxLayout(self._bottom)
+        bl.setContentsMargins(16, 6, 16, 8); bl.setSpacing(6)
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        main.addWidget(self.pbar); main.addWidget(self.stlbl)
-
+        bl.addWidget(self.pbar); bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH"); self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        main.addLayout(br)
-        main.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        bl.addLayout(br)
+        bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        self._ol.addWidget(self._bottom, 0)
 
         for w in (self.f_last, self.f_first, self.f_mid, self.f_birth,
                   self.f_gub, self.f_uezd, self.f_vol, self.f_set,

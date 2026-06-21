@@ -133,42 +133,35 @@ class PamyatApp(QMainWindow):
             QTimer.singleShot(_ms, self._fit)
 
     def _fit(self):
-        """Dynamic sizing. Window grows to the form's natural width/height when the
-        screen has room (no scroll). When the screen is too short, height is capped
-        and the vertical scroll bar appears. Horizontal scroll is NEVER shown:
-        the window widens to the form's natural width, capped to the screen."""
-        if not hasattr(self, "_body"):
+        """Grow the window to the form's content (capped to the screen) so the form
+        SCROLLS past the cap and the fixed bottom Start/Cancel bar is ALWAYS visible —
+        on any resolution (the bug: on a short screen the buttons vanished with no scroll).
+        No move — the launcher positions it (no jerk)."""
+        if not hasattr(self, "_content_scroll"):
             return
-        scr = QApplication.primaryScreen().availableGeometry()
-        # Unlock everything so the layout reports honest hints.
+        scr = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        max_w, max_h = scr.width() - 16, scr.height() - 48
         self.setMinimumHeight(0); self.setMaximumHeight(16777215)
-        self._scroll.setMinimumHeight(0); self._scroll.setMaximumHeight(16777215)
-        self._body.adjustSize()
-        body_w = self._body.sizeHint().width()
-        body_h = self._body.sizeHint().height()
-        # Settle the layout once to measure non-scroll chrome (header + groupboxes
-        # + buttons + footer + margins).
-        self.adjustSize()
-        chrome_h = max(150, self.height() - self._scroll.height())
-        target_w = min(max(self.minimumWidth(), body_w + 24), scr.width() - 16)
-        avail_h  = scr.height() - 16
-        if chrome_h + body_h <= avail_h:                  # everything fits
-            scroll_h = body_h + 4
-            target_h = chrome_h + scroll_h
-        else:                                             # need vertical scroll
-            target_h = avail_h
-            scroll_h = max(120, target_h - chrome_h)
-        self._scroll.setMinimumHeight(scroll_h)
-        self._scroll.setMaximumHeight(scroll_h)
-        self.resize(target_w, target_h)
-        # positioning is the launcher's job (center_window); _fit only RESIZES. But after a
-        # resize the bottom could fall off-screen → slide it back on (move-only, no jerk).
+        cw = self._content_scroll.widget(); cw.adjustSize()
+        bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
+        hint = cw.sizeHint().height() + bottom_h + 8
+        self.resize(min(max(self.width(), self.minimumWidth()), max_w), min(hint, max_h))
+        self.setMaximumHeight(max_h)
         clamp_on_screen(self)
 
     def _build_ui(self):
         root = QWidget(); self.setCentralWidget(root)
-        main = QVBoxLayout(root)
+        self._ol = QVBoxLayout(root)
+        self._ol.setContentsMargins(0, 0, 0, 0); self._ol.setSpacing(0)
+        # Whole form scrolls; the bottom Start/Cancel bar is fixed and ALWAYS visible.
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        _cw = QWidget(); main = QVBoxLayout(_cw)
         main.setContentsMargins(16, 12, 16, 12); main.setSpacing(8)
+        self._content_scroll.setWidget(_cw)
+        self._ol.addWidget(self._content_scroll, 1)
 
         main.addLayout(make_header("Pamatlogo.png", "Pamyat Naroda", color="#b71c1c"))
         main.addWidget(QLabel("WWII participant records (pamyat-naroda.ru) — "
@@ -299,19 +292,8 @@ class PamyatApp(QMainWindow):
         sbox.addWidget(srow)
         self._src_box.setVisible(False)
         outer.addWidget(self._src_box)
-        outer.addStretch()
-
-        self._body   = body
-        self._scroll = QScrollArea()
-        self._scroll.setWidget(body)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.NoFrame)
-        # Horizontal scroll is strictly forbidden — NEVER show it. The window resizes
-        # horizontally to the form's natural width (capped to the screen).
-        # Vertical scroll appears ONLY when the screen is too short to fit it.
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        main.addWidget(self._scroll, 1)
+        self._body = body
+        main.addWidget(body)               # form lives in the top-level content scroll
 
         og = QGroupBox("Output (Word)")
         ol = QHBoxLayout(og); ol.setSpacing(6)
@@ -320,18 +302,22 @@ class PamyatApp(QMainWindow):
         ol.addWidget(QLabel("Save to:")); ol.addWidget(self.f_folder, 1); ol.addWidget(bb)
         main.addWidget(og)
 
+        # ── Fixed bottom bar (progress + Start/Cancel) — ALWAYS visible ─────
+        self._bottom = QWidget()
+        bl = QVBoxLayout(self._bottom)
+        bl.setContentsMargins(16, 6, 16, 8); bl.setSpacing(6)
         self.pbar = QProgressBar(); self.pbar.setValue(0)
         self.stlbl = QLabel("Ready")
-        main.addWidget(self.pbar); main.addWidget(self.stlbl)
-
+        bl.addWidget(self.pbar); bl.addWidget(self.stlbl)
         br = QHBoxLayout()
         self.start_btn = QPushButton("START SEARCH"); self.start_btn.setObjectName("startBtn")
         self.start_btn.clicked.connect(self._start)
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
-        main.addLayout(br)
-        main.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        bl.addLayout(br)
+        bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        self._ol.addWidget(self._bottom, 0)
 
         for w in (self.f_last, self.f_first, self.f_mid, self.f_byf, self.f_byt,
                   self.f_bplace, self.f_rank, self.f_service, self.f_call, self.f_ids,
