@@ -98,23 +98,36 @@ $DistApp = Join-Path $Root "dist\JewishGenealogySearch"
 if (-not (Test-Path (Join-Path $DistApp "JewishGenealogySearch.exe"))) { throw "Build produced no JewishGenealogySearch.exe" }
 Ok "built dist\JewishGenealogySearch\JewishGenealogySearch.exe"
 
-# ── 4. bundle Playwright Chromium next to the exe ────────────────────────────
-Info "Bundling Playwright Chromium"
+# ── 4. bundle the ACTIVE Playwright Chromium next to the exe ──────────────────
+# Pack the Chromium that Playwright ACTUALLY uses (the user already has it — don't
+# download another; her older/incomplete chromium-* folders must NOT be shipped).
+Info "Bundling the Chromium Playwright actually uses"
 $pwCache = Join-Path $env:LOCALAPPDATA "ms-playwright"
-if (-not (Test-Path $pwCache)) {
-    Warn "no Playwright cache at $pwCache — installing it now…"
+$activeExe = & $py -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()" 2>$null |
+             Select-Object -Last 1
+$activeDir = $null
+if ($activeExe -and (Test-Path $activeExe)) {
+    # …\ms-playwright\chromium-1194\chrome-win\chrome.exe → …\chromium-1194
+    $activeDir = Split-Path (Split-Path $activeExe -Parent) -Parent
+    Ok "active Chromium: $(Split-Path $activeDir -Leaf)"
+} elseif (-not (Test-Path $pwCache)) {
+    Warn "no Playwright Chromium found — installing it now…"
     & $py -m playwright install chromium
 }
 $dest = Join-Path $DistApp "ms-playwright"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 $copied = 0
 foreach ($d in Get-ChildItem $pwCache -Directory -ErrorAction SilentlyContinue |
-                 Where-Object { $_.Name -match '^(chromium|ffmpeg|winldd)' }) {
+                 Where-Object {
+                     ($_.Name -match '^(ffmpeg|winldd)') -or
+                     ($activeDir -and ($_.FullName -ieq $activeDir)) -or
+                     ((-not $activeDir) -and ($_.Name -match '^chromium'))
+                 }) {
     Copy-Item $d.FullName (Join-Path $dest $d.Name) -Recurse -Force
     $copied++
 }
 if ($copied -eq 0) { Warn "no chromium folder copied — the packaged app may fail to open a browser" }
-else { Ok "copied $copied Playwright component(s)" }
+else { Ok "copied $copied Playwright component(s) (active Chromium only)" }
 
 # ── 5. find signtool + sign helper ───────────────────────────────────────────
 $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
