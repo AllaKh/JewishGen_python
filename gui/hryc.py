@@ -211,10 +211,15 @@ class HrycApp(QMainWindow):
         toprow = QHBoxLayout()
         self.f_all = QCheckBox("Select all sources")
         self.f_all.stateChanged.connect(self._toggle_all)
-        toprow.addWidget(self.f_all); toprow.addStretch()
+        toprow.addWidget(self.f_all)
+        collapse = QPushButton("Collapse all / Свернуть все")
+        collapse.setFixedHeight(24); collapse.clicked.connect(self._collapse_all)
+        toprow.addWidget(collapse)
+        toprow.addStretch()
         self.lbl_count = QLabel("0 selected")
         toprow.addWidget(self.lbl_count)
         wl.addLayout(toprow)
+        self._arrows = []                  # group expand/collapse toggles
 
         host = QWidget()
         self._tree = QVBoxLayout(host)
@@ -307,11 +312,19 @@ class HrycApp(QMainWindow):
             kids += self._add_node(child, hb, depth + 1)
         arrow.toggled.connect(lambda on, a=arrow, h=holder:
                               (a.setText("▼" if on else "▶"), h.setVisible(on), self._fit()))
+        self._arrows.append(arrow)
         # «Все» ticks/unticks every source in this section
         all_cb.stateChanged.connect(
             lambda st, ks=kids: [c.setChecked(st == Qt.Checked.value) for c in ks])
         self._section_alls.append((all_cb, kids))
         return kids
+
+    def _collapse_all(self):
+        """Collapse every source group (mirrors a «свернуть все» on the site)."""
+        for a in getattr(self, "_arrows", []):
+            if a.isChecked():
+                a.setChecked(False)            # toggled handler hides the holder
+        self._fit()
 
     def _dual(self, node) -> str:
         en = (node.get("en") or "").strip()
