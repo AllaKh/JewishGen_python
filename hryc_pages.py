@@ -110,22 +110,21 @@ async def _title(page) -> str:
 
 
 async def _nav(page) -> dict:
-    """Resolved absolute URLs of the prev («⟨», toward the start) and next («⟩», toward the
-    end) page-nav arrows, plus the current url. Uses the parent div classes, with an arrow-
-    glyph fallback."""
+    """Resolved absolute URLs of the page-nav arrows + the current url:
+      first «⟪» (jump straight to page 1), prev «⟨», next «⟩», last «⟫».
+    Detected by glyph (unambiguous), with parent-div-class fallback."""
     return await page.evaluate(r"""() => {
-        const r = {prev: '', next: '', cur: location.href};
-        let p = document.querySelector('.collab-page-nav-prev a.collab-page-nav');
-        let n = document.querySelector('.collab-page-nav-next a.collab-page-nav');
-        if (!p || !n) {                                   // fallback: by arrow glyph
-            for (const a of document.querySelectorAll('a.collab-page-nav')) {
-                const t = (a.textContent || '').trim();
-                if (!p && t.indexOf('⟨') >= 0) p = a;     // ⟨
-                if (!n && t.indexOf('⟩') >= 0) n = a;     // ⟩
-            }
+        const r = {first: '', prev: '', next: '', last: '', cur: location.href};
+        for (const a of document.querySelectorAll('a.collab-page-nav')) {
+            const t = (a.textContent || '').trim();
+            if      (t.indexOf('⟪') >= 0) r.first = a.href;   // ⟪ to first
+            else if (t.indexOf('⟨') >= 0) r.prev  = a.href;   // ⟨ one back
+            else if (t.indexOf('⟩') >= 0) r.next  = a.href;   // ⟩ one forward
+            else if (t.indexOf('⟫') >= 0) r.last  = a.href;   // ⟫ to last
         }
-        if (p) r.prev = p.href;
-        if (n) r.next = n.href;
+        if (!r.prev)  { const p = document.querySelector('.collab-page-nav-prev a.collab-page-nav');  if (p) r.prev  = p.href; }
+        if (!r.next)  { const n = document.querySelector('.collab-page-nav-next a.collab-page-nav');  if (n) r.next  = n.href; }
+        if (!r.first) { const f = document.querySelector('.collab-page-nav-first a.collab-page-nav'); if (f) r.first = f.href; }
         return r;
     }""")
 
@@ -145,18 +144,24 @@ async def _capture_folder(page, start_url, year, out_root, saved, log):
     every scan. Returns the number of scans saved."""
     if not await _goto(page, start_url):
         return 0
-    # 1) walk LEFT (⟨) to the start of the folder
-    walked = set()
-    while True:
-        nav = await _nav(page)
-        cur = _aid(nav["cur"])
-        if cur:
-            walked.add(cur)
-        prev = nav["prev"]
-        if not prev or _aid(prev) in walked:           # at start / loop guard
-            break
-        if not await _goto(page, prev):
-            break
+    # 1) jump to the START. If the «⟪» (to-first) arrow is present, click it once — straight
+    #    to page 1 (no stepping). Otherwise step back via «⟨».
+    nav = await _nav(page)
+    if nav.get("first"):
+        log("    ⟪ к началу папки (одним прыжком)")
+        await _goto(page, nav["first"])
+    else:
+        walked = set()
+        while True:
+            nav = await _nav(page)
+            cur = _aid(nav["cur"])
+            if cur:
+                walked.add(cur)
+            prev = nav["prev"]
+            if not prev or _aid(prev) in walked:       # at start / loop guard
+                break
+            if not await _goto(page, prev):
+                break
     # 2) name the folder from the start page
     name = await _title(page) or "hryc"
     folder = out_root / H.safe_fn(f"{name}_{year}")
