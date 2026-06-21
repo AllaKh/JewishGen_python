@@ -154,6 +154,60 @@ def _host(u: str) -> str:
         return ""
 
 
+# memsearch chrome (header menu / type tabs / filter labels / footer) that must be
+# stripped from a card's brief when a result can't be opened — the user pasted these
+# exact strings («приведи его в нормальный вид: отформатируй и убери …»).
+_MS_NAV = [
+    "О проекте", "Обратная связь", "Источники", "Помощь", "Memsearch",
+    "ВСЕ ТИПЫ", "ЛЮДИ", "МЕСТА", "ПРЕДМЕТЫ", "ДОКУМЕНТЫ", "Тип региона",
+    "Дата репрессии", "ПОКАЗАТЬ",
+    "About the project", "About", "Feedback", "Sources", "Help",
+    "ALL TYPES", "PEOPLE", "PLACES", "OBJECTS", "DOCUMENTS",
+    "Type of region", "Date of repression", "SHOW",
+]
+
+def _clean_brief(text: str) -> str:
+    """Strip the memsearch page chrome from a card brief and tidy it, so a result that
+    couldn't be opened still reads cleanly (instead of «Memsearch О проекте … ВСЕ ТИПЫ
+    ЛЮДИ … Техническая реализация:»)."""
+    t = re.sub(r"\s+", " ", text or "")
+    # drop the footer and everything after it
+    t = re.split(r"Техническ\w*\s+реализаци|Technical implementation", t)[0]
+    # drop the "(Люди/Места/…) найдено N" / "… found N" hit counter
+    t = re.sub(r"(Люд\w+|Мест|Предмет\w+|Документ\w+|Запис\w+|People|Places|Objects|"
+               r"Documents|Records?)?\s*(найдено|found)\s*\d+", " ", t, flags=re.I)
+    t = re.sub(r"\b(EN\s+RU|RU\s+EN)\b", " ", t)        # language toggle
+    for j in _MS_NAV:
+        t = re.sub(r"(?<![\wА-Яа-яЁё])" + re.escape(j) + r"(?![\wА-Яа-яЁё])", " ",
+                   t, flags=re.I)
+    return re.sub(r"\s+", " ", t).strip(" .,;:—-")
+
+
+_BRIEF_LABELS = [
+    "Дата осуждения", "Дата реабилитации", "Дата ареста", "Дата рождения",
+    "Дата смерти", "Дата репрессии", "Место рождения", "Место смерти",
+    "Место репрессии", "Место жительства", "Место ареста", "Национальность",
+    "Образование", "Профессия", "Приговор", "Статья", "Возраст", "Пол",
+]
+
+def _brief_to_fields(text: str) -> dict:
+    """Split a cleaned card brief («Дата ареста: 23.8.1937 Место рождения: г. Могилев …»)
+    into Label→value pairs so it renders as a tidy table, not one run-on line. Best-effort,
+    Russian labels (the user's site language)."""
+    if not text:
+        return {}
+    pat = "|".join(re.escape(l) for l in sorted(_BRIEF_LABELS, key=len, reverse=True))
+    ms = list(re.finditer(r"(" + pat + r")\s*:?\s*", text))
+    out = {}
+    for i, mt in enumerate(ms):
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
+        val = text[mt.end():end].strip(" .,;:")
+        val = re.sub(r"\s*[a-z0-9.-]+\.(?:ru|org|com|by|cz|il|net)\s*$", "", val).strip(" .,;:")
+        if val:
+            out[mt.group(1)] = val
+    return out
+
+
 def _to_png(data: bytes):
     """Convert any image (incl. WEBP) to PNG for python-docx; pass JPEG/PNG/GIF/BMP."""
     if not data:
@@ -203,7 +257,13 @@ async def _apply_sources(page, sources, log) -> None:
         new = urlunparse(pr._replace(query=urlencode(qs, doseq=True)))
         if new != u:
             await page.goto(new, wait_until="domcontentloaded", timeout=40000)
-            await asyncio.sleep(2)
+            # wait for the filtered result cards to render + hydrate, otherwise the card
+            # click won't open the source tab (the «filtered result not opened» bug).
+            try:
+                await page.wait_for_selector("h4.Title", timeout=15000)
+            except Exception:
+                pass
+            await asyncio.sleep(2.5)
         log(f"  ✓ Ограничил поиск базами: {len(sources)}")
     except Exception as e:
         log(f"  !! Фильтр источников не применён: {e}")
@@ -425,11 +485,17 @@ async def _tag_cards(page) -> list:
         const out = [];
         let idx = 0;
         for (const h of document.querySelectorAll('h4.Title')) {
-            // Card = the LARGEST ancestor that STILL contains exactly ONE
-            // h4.Title — the single result box (not the whole results area).
+            // Card = the LARGEST ancestor that STILL contains exactly ONE h4.Title —
+            // the single result box. BUT stop before the page shell: when there's only
+            // ONE result the body also has a single h4.Title, so the old loop grew the
+            // "card" up to <body>. Then clicking it clicked the page (not the card) → no
+            // source tab opened, and the summary swallowed the nav/footer. So stop as soon
+            // as the parent also holds the search box / type tabs / header / footer.
+            const SHELL = '.SearchInput, .EntityTypeMenuItem, header, nav, footer, form';
             let card = h;
             while (card.parentElement &&
-                   card.parentElement.querySelectorAll('h4.Title').length === 1) {
+                   card.parentElement.querySelectorAll('h4.Title').length === 1 &&
+                   !card.parentElement.querySelector(SHELL)) {
                 card = card.parentElement;
             }
             card.setAttribute('data-pw-card', String(idx));
@@ -828,16 +894,20 @@ async def run_scraper(*,
                             f"— беру краткое из карточки")
                     ext = ext or {}
                     fields = ext.get("fields") or {}
+                    cleaned = _clean_brief(c.get("summary", ""))
                     if fields:
                         log(f"      Полей: {len(fields)}")
                     else:
-                        log("      (полей нет — источник пуст/битый, краткое из карточки)")
+                        # source page empty/blocked → parse the cleaned card brief into
+                        # fields so the record still reads as a tidy table, not nav junk.
+                        fields = _brief_to_fields(cleaned)
+                        log(f"      (источник пуст/битый → краткое из карточки, полей: {len(fields)})")
                     rec = {"name": c["name"] or ext.get("heading", ""),
                            "url": ("" if (not src_url
                                           or src_url.startswith("chrome-error")
                                           or src_url.startswith("about:")) else src_url),
                            "source": _host(src_url) or c.get("source", ""),
-                           "summary": c.get("summary", ""),
+                           "summary": cleaned,
                            "fields": fields,
                            "thumb_bytes": ext.get("thumb_bytes"),
                            "photo": ext.get("photo")}
