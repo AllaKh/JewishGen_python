@@ -558,7 +558,9 @@ async def run_scraper(
             doc_rows = [r for r in rows if r.get("url")]
             n_docs = 0
             if open_documents and doc_rows:
-                images_dir = output_folder / "images" / safe_fn(query)
+                # put the search YEAR (Doc dates) in the folder name when given
+                year_tag = "_" + safe_fn(doc_dates) if doc_dates else ""
+                images_dir = output_folder / "images" / (safe_fn(query) + year_tag)
                 todo = doc_rows[:max_docs]
                 _prog(85, f"Открываю документы: {len(todo)} из {len(doc_rows)}…")
                 for i, r in enumerate(todo, 1):
