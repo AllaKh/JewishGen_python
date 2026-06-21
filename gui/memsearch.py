@@ -143,7 +143,8 @@ class MemsearchApp(QMainWindow):
         cw = self._content_scroll.widget(); cw.adjustSize()
         bottom_h = self._bottom.sizeHint().height() if hasattr(self, "_bottom") else 0
         hint = cw.sizeHint().height() + bottom_h + 8
-        self.resize(min(max(self.width(), self.minimumWidth()), max_w), min(hint, max_h))
+        want_w = max(self.minimumWidth(), cw.sizeHint().width() + 4)  # grow to form width
+        self.resize(min(want_w, max_w), min(hint, max_h))
         self.setMaximumHeight(max_h)
         clamp_on_screen(self)
 
