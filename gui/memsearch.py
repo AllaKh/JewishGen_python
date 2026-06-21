@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QScrollArea, QFrame,
 )
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
+from PySide6.QtGui import QIntValidator
 from gui._app_icon import (app_icon, make_header, make_cancel_button, autosave_path,
                            clamp_on_screen)
 
@@ -274,9 +275,9 @@ class MemsearchApp(QMainWindow):
         # Autosave wiring
         for w in (self.f_query, self.f_last, self.f_first, self.f_patr,
                   self.f_region, self.f_place, self.f_object, self.f_doc,
-                  self.f_folder):
+                  self.f_folder, self.f_byear, self.f_repr_from, self.f_repr_to,
+                  self.f_doc_from, self.f_doc_to):
             w.textChanged.connect(self._save)
-        self.f_byear.valueChanged.connect(self._save)
         for cb in (self.f_lang, self.f_rtype, self.f_pamong, self.f_oamong):
             cb.currentTextChanged.connect(self._save)
         for rb in self._tab_buttons.values():
@@ -288,18 +289,34 @@ class MemsearchApp(QMainWindow):
                            "specific type above."))
         return w
 
+    def _year_edit(self):
+        """A clearable year field (plain text — a QSpinBox can't be emptied, which is why
+        the year «reappeared» when the user tried to delete it)."""
+        e = QLineEdit(); e.setPlaceholderText("year")
+        e.setMaxLength(4); e.setFixedWidth(72)
+        e.setValidator(QIntValidator(0, 2026, self))
+        return e
+
+    def _wrap(self, layout):
+        c = QWidget(); layout.setContentsMargins(0, 0, 0, 0); c.setLayout(layout); return c
+
     def _page_people(self):
         w = QWidget(); f = QFormLayout(w)
         self.f_last = QLineEdit(); self.f_first = QLineEdit(); self.f_patr = QLineEdit()
-        self.f_byear = QSpinBox(); self.f_byear.setRange(0, 2026); self.f_byear.setSpecialValueText(" ")
+        self.f_byear = self._year_edit()
         self.f_region = QLineEdit()
         self.f_rtype = QComboBox(); self.f_rtype.addItems(REGION_TYPE)
+        self.f_repr_from = self._year_edit(); self.f_repr_to = self._year_edit()
         f.addRow("Surname:", self.f_last)
-        f.addRow("Name:", self.f_first)
+        f.addRow("First name:", self.f_first)
         f.addRow("Patronymic:", self.f_patr)
         f.addRow("Year of birth:", self.f_byear)
         f.addRow("Region:", self.f_region)
-        f.addRow("Region type:", self.f_rtype)
+        f.addRow("Type of region:", self.f_rtype)
+        rr = QHBoxLayout()
+        rr.addWidget(self.f_repr_from); rr.addWidget(QLabel("–"))
+        rr.addWidget(self.f_repr_to); rr.addStretch()
+        f.addRow("Date of repression:", self._wrap(rr))
         return w
 
     def _page_places(self):
@@ -321,7 +338,12 @@ class MemsearchApp(QMainWindow):
     def _page_docs(self):
         w = QWidget(); f = QFormLayout(w)
         self.f_doc = QLineEdit()
-        f.addRow("Document name:", self.f_doc)
+        self.f_doc_from = self._year_edit(); self.f_doc_to = self._year_edit()
+        f.addRow("Title of document:", self.f_doc)
+        dr = QHBoxLayout()
+        dr.addWidget(self.f_doc_from); dr.addWidget(QLabel("–"))
+        dr.addWidget(self.f_doc_to); dr.addStretch()
+        f.addRow("Date of issue:", self._wrap(dr))
         return w
 
     def _shrink_stack(self, idx):
@@ -375,7 +397,6 @@ class MemsearchApp(QMainWindow):
         return TABS[0]
 
     def _payload(self):
-        by = self.f_byear.value()
         return {
             "query":       self.f_query.text().strip(),
             "lang":        SITE_LANG.get(self.f_lang.currentText(), "ru"),
@@ -384,14 +405,18 @@ class MemsearchApp(QMainWindow):
             "last_name":   self.f_last.text().strip(),
             "first_name":  self.f_first.text().strip(),
             "patronymic":  self.f_patr.text().strip(),
-            "birth_year":  str(by) if by else "",
+            "birth_year":  self.f_byear.text().strip(),
             "region":      self.f_region.text().strip(),
             "region_type": self.f_rtype.currentText().strip(),
+            "repress_from": self.f_repr_from.text().strip(),
+            "repress_to":  self.f_repr_to.text().strip(),
             "place_name":  self.f_place.text().strip(),
             "place_among": self.f_pamong.currentText().strip(),
             "object_name": self.f_object.text().strip(),
             "object_among": self.f_oamong.currentText().strip(),
             "doc_name":    self.f_doc.text().strip(),
+            "doc_from":    self.f_doc_from.text().strip(),
+            "doc_to":      self.f_doc_to.text().strip(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":         print,
             "cancel_event": getattr(self, "_cancel_ev", None),
@@ -462,11 +487,13 @@ class MemsearchApp(QMainWindow):
                 "query": self.f_query.text(), "lang": self.f_lang.currentText(),
                 "tab": self._tab(),
                 "last": self.f_last.text(), "first": self.f_first.text(),
-                "patr": self.f_patr.text(), "byear": self.f_byear.value(),
+                "patr": self.f_patr.text(), "byear": self.f_byear.text(),
                 "region": self.f_region.text(), "rtype": self.f_rtype.currentText(),
+                "repr_from": self.f_repr_from.text(), "repr_to": self.f_repr_to.text(),
                 "place": self.f_place.text(), "pamong": self.f_pamong.currentText(),
                 "object": self.f_object.text(), "oamong": self.f_oamong.currentText(),
                 "doc": self.f_doc.text(), "folder": self.f_folder.text(),
+                "doc_from": self.f_doc_from.text(), "doc_to": self.f_doc_to.text(),
                 "sources": [k for cb, k in self._src_checks if cb.isChecked()],
             }
             _SAVE.write_text(json.dumps(d, ensure_ascii=False, indent=2),
@@ -483,7 +510,11 @@ class MemsearchApp(QMainWindow):
             return
         self.f_query.setText(d.get("query", ""))
         self.f_last.setText(d.get("last", "")); self.f_first.setText(d.get("first", ""))
-        self.f_patr.setText(d.get("patr", "")); self.f_byear.setValue(int(d.get("byear", 0) or 0))
+        self.f_patr.setText(d.get("patr", "")); self.f_byear.setText(str(d.get("byear", "") or ""))
+        self.f_repr_from.setText(str(d.get("repr_from", "") or ""))
+        self.f_repr_to.setText(str(d.get("repr_to", "") or ""))
+        self.f_doc_from.setText(str(d.get("doc_from", "") or ""))
+        self.f_doc_to.setText(str(d.get("doc_to", "") or ""))
         self.f_region.setText(d.get("region", ""))
         self.f_place.setText(d.get("place", "")); self.f_object.setText(d.get("object", ""))
         self.f_doc.setText(d.get("doc", "")); self.f_folder.setText(d.get("folder", _DEF_DIR))

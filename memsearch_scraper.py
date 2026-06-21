@@ -66,12 +66,11 @@ HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
 # scraper translates them to the SITE language (ru/en) chosen in the GUI.
 TABS = ["All types", "People", "Places", "Objects", "Documents"]
 
-# Dropdown option sets (canonical English) — exposed to the GUI.
-REGION_TYPE  = ["", "Any", "Place of birth", "Place of residence/repression"]
-PLACE_AMONG  = ["", "Everywhere", "Burial places", "Places of imprisonment",
-                "Monuments"]
-OBJECT_AMONG = ["", "Everywhere", "Photographs", "Museum objects",
-                "Accompanying texts", "Monuments"]
+# Dropdown option sets (English labels ↔ the site's Russian values, from its bundle).
+REGION_TYPE  = ["", "Any", "Place of birth", "Place of living or arrest"]
+PLACE_AMONG  = ["", "Any", "Burial places", "Prisons and camps"]
+OBJECT_AMONG = ["", "Any", "Photos", "Museum items", "Descriptive texts",
+                "Monuments and memorials"]
 
 # ── Multi-language UI strings (the memsearch site exists in ru AND en) ──────── #
 # concept (canonical EN) → {ru, en}. We match page text by trying BOTH variants:
@@ -94,17 +93,25 @@ _I18N = {
     "Object name": {"ru": "Название предмета", "en": "Object name"},
     "Document name": {"ru": "Название документа", "en": "Document name"},
     "Search among": {"ru": "Искать среди", "en": "Search among"},
-    "Any":        {"ru": "Любой",      "en": "Any"},
+    "Type of region": {"ru": "Тип региона", "en": "Type of region"},
+    "Date of repression": {"ru": "Дата репрессии", "en": "Date of repression"},
+    "First name": {"ru": "Имя", "en": "First name"},
+    "Title of document": {"ru": "Название документа", "en": "Title of document"},
+    "Date of issue": {"ru": "Дата создания", "en": "Date of issue"},
+    "From (year)": {"ru": "От (год)", "en": "From (year)"},
+    "Till (year)": {"ru": "До (год)", "en": "Till (year)"},
+    # dropdown option values (English label ↔ the site's Russian value, from its bundle)
+    "Any":        {"ru": "Любой",      "en": "Any"},          # region type
+    "Any place":  {"ru": "Везде",      "en": "Any"},          # place/object "search among"
     "Place of birth": {"ru": "Место рождения", "en": "Place of birth"},
-    "Place of residence/repression":
-        {"ru": "Место жительства/репрессий", "en": "Place of residence/repression"},
-    "Everywhere": {"ru": "Везде",      "en": "Everywhere"},
+    "Place of living or arrest":
+        {"ru": "Место жительства/репрессий", "en": "Place of living or arrest"},
     "Burial places": {"ru": "Места захоронений", "en": "Burial places"},
-    "Places of imprisonment": {"ru": "Места заключений", "en": "Places of imprisonment"},
-    "Monuments":  {"ru": "Памятники",  "en": "Monuments"},
-    "Photographs": {"ru": "Фотографий", "en": "Photographs"},
-    "Museum objects": {"ru": "Музейных предметов", "en": "Museum objects"},
-    "Accompanying texts": {"ru": "Сопроводительных текстов", "en": "Accompanying texts"},
+    "Prisons and camps": {"ru": "Места заключений", "en": "Prisons and camps"},
+    "Photos": {"ru": "Фотографий", "en": "Photos"},
+    "Museum items": {"ru": "Музейных предметов", "en": "Museum items"},
+    "Descriptive texts": {"ru": "Сопроводительных текстов", "en": "Descriptive texts"},
+    "Monuments and memorials": {"ru": "Памятников", "en": "Monuments and memorials"},
 }
 
 def _t(concept, lang):
@@ -727,12 +734,12 @@ async def run_scraper(*,
     sources=None,                    # source keys to limit to (None/[] = all databases)
     # People
     last_name="", first_name="", patronymic="", birth_year="",
-    region="", region_type="",
+    region="", region_type="", repress_from="", repress_to="",
     # Places / Objects
     place_name="", place_among="",
     object_name="", object_among="",
     # Documents
-    doc_name="",
+    doc_name="", doc_from="", doc_to="",
     output_folder=Path("."),
     log=print,
     progress=None,
@@ -752,9 +759,10 @@ async def run_scraper(*,
     params = dict(last_name=last_name, first_name=first_name,
                   patronymic=patronymic, birth_year=birth_year,
                   region=region, region_type=region_type,
+                  repress_from=repress_from, repress_to=repress_to,
                   place_name=place_name, place_among=place_among,
                   object_name=object_name, object_among=object_among,
-                  doc_name=doc_name)
+                  doc_name=doc_name, doc_from=doc_from, doc_to=doc_to)
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     images_dir = output_folder / "images" / (safe_fn(query) or "memsearch")
