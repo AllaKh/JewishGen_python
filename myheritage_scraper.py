@@ -43,6 +43,8 @@ try:
 except ImportError:
     _DOCX_OK = False
 
+from docx_util import add_page_numbers
+
 try:
     from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
@@ -3366,6 +3368,7 @@ def write_docx(path, records, qlines, append=False):
         doc.add_paragraph("")
     for i, rec in enumerate(records, 1):
         _docx_add_record(doc, i, rec)
+    add_page_numbers(doc)
     doc.save(path)
 
 def write_xlsx(path, records, qlines, append=False):

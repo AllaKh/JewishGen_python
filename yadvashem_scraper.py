@@ -24,7 +24,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from docx_util import set_cell_lines
+from docx_util import set_cell_lines, add_page_numbers
 from urllib.parse import urlencode, urlparse, urljoin
 
 if getattr(sys, "frozen", False):
@@ -579,6 +579,7 @@ def write_docx(path, records, qlines, append=False):
         doc.add_paragraph("")
     for i, rec in enumerate(records, 1):
         _docx_add_record(doc, i, rec)
+    add_page_numbers(doc)
     doc.save(str(path))
 
 

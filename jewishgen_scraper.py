@@ -44,6 +44,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, Mm, Inches
 from docx.enum.section import WD_ORIENT
+from docx_util import add_page_numbers
 
 # Fix Playwright browser path inside PyInstaller bundle
 if getattr(sys, "frozen", False):
@@ -371,6 +372,7 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
     doc.add_paragraph()
 
     if not rows:
+        add_page_numbers(doc)
         doc.save(out_path)
         return
 
@@ -393,6 +395,7 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
     while rows and row_text_len(rows[-1]) == 0:
         rows.pop()
     if not rows:
+        add_page_numbers(doc)
         doc.save(out_path)
         return
 
@@ -470,6 +473,7 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
         for cell in col.cells:
             cell.width = w
 
+    add_page_numbers(doc)
     doc.save(out_path)
 
 

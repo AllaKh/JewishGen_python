@@ -42,6 +42,8 @@ try:
 except Exception:
     _DOCX_OK = False
 
+from docx_util import add_page_numbers
+
 # ── Constants ───────────────────────────────────────────────────────────────
 UA = "JewishGenealogySearch/1.0 (genealogy research)"
 WS_API = "https://uk.wikisource.org/w/api.php"
@@ -507,6 +509,7 @@ def write_docx(path, recs, qlines, append=False):
         _add_hyperlink(cells[3].paragraphs[0], "Commons", r.get("page", ""))
         for cell, wd in zip(cells, widths):
             cell.width = wd
+    add_page_numbers(doc)
     doc.save(str(path))
 
 

@@ -25,7 +25,7 @@ familysearch_scraper.py
 
 import asyncio, difflib, io, json, os, re, shutil, sys, time
 from pathlib import Path
-from docx_util import set_cell_lines
+from docx_util import set_cell_lines, add_page_numbers
 
 if getattr(sys, "frozen", False):
     bd = Path(sys.executable).resolve().parent / "ms-playwright"
@@ -1338,6 +1338,7 @@ def write_docx(path: Path, records: list, qlines: list, append: bool = False):
 
     for i, rec in enumerate(records, 1):
         _docx_add_record(doc, i, rec)
+    add_page_numbers(doc)
     doc.save(path)
 
 

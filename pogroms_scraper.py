@@ -23,7 +23,7 @@ Flow:
 import json, re, sys, time
 from pathlib import Path
 from urllib import request as _rq, parse as _up
-from docx_util import set_cell_lines
+from docx_util import set_cell_lines, add_page_numbers
 
 try:
     from docx import Document
@@ -314,6 +314,7 @@ def write_docx(path: Path, rows: list, qlines: list, append: bool = False):
     # one section per person — the card data goes ONLY to Word
     for i, rec in enumerate(rows, 1):
         _docx_add_person(doc, i, rec)
+    add_page_numbers(doc)
     doc.save(path)
 
 

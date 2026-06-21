@@ -17,7 +17,7 @@ import io
 import re
 import sys
 from pathlib import Path
-from docx_util import set_cell_lines
+from docx_util import set_cell_lines, add_page_numbers
 from urllib.parse import urljoin, urlencode, quote
 
 if getattr(sys, "frozen", False):
@@ -402,6 +402,7 @@ def write_docx(path: Path, records: list, query_info: dict):
 
         doc.add_paragraph("")
 
+    add_page_numbers(doc)
     doc.save(str(path))
 
 
