@@ -289,6 +289,46 @@ def write_xlsx(path: Path, rows: list, qlines: list, append: bool = False):
 
 
 # ── browser: cookies / login ────────────────────────────────────────────────── #
+async def _wait_if_captcha(page, log, timeout=300) -> None:
+    """If an «I'm not a robot» / reCAPTCHA challenge appears, PAUSE and let the USER solve it
+    in the visible window (we never click/solve a CAPTCHA ourselves). Polls until it's gone."""
+    async def _present():
+        try:
+            return await page.evaluate(r"""() => {
+                const vis = el => el && el.offsetParent !== null
+                                  && el.getBoundingClientRect().width > 20
+                                  && el.getBoundingClientRect().height > 20;
+                for (const f of document.querySelectorAll('iframe')) {
+                    const s = (f.src || '') + ' ' + (f.title || '');
+                    if (/recaptcha|hcaptcha|captcha|challenge|turnstile/i.test(s) && vis(f))
+                        return true;
+                }
+                if (document.querySelector('#cf-challenge-running, .g-recaptcha:not(:empty)'))
+                    return true;
+                const t = (document.body && document.body.innerText) || '';
+                return /я\s*не\s*робот|i'?m not a robot|подтвердите.{0,4}что вы не робот|verify you are human|are you a robot/i.test(t);
+            }""")
+        except Exception:
+            return False
+    if not await _present():
+        return
+    log("  ⛔ КАПЧА «Я не робот» — РЕШИ ЕЁ В ОКНЕ БРАУЗЕРА. Скрипт ждёт, не торопит.")
+    try:
+        await page.bring_to_front()
+    except Exception:
+        pass
+    waited = 0
+    while waited < timeout:
+        await asyncio.sleep(2); waited += 2
+        if not await _present():
+            log("  ✓ Капча решена — продолжаю.")
+            await asyncio.sleep(1)
+            return
+        if waited % 20 == 0:
+            log(f"  … жду капчу ({waited}/{timeout}s) — нажми «Я не робот» в окне.")
+    log("  !! капча не решена за отведённое время — продолжаю как есть.")
+
+
 async def _accept_cookies(page, log):
     """Click the «Принять» cookie-consent banner (#accept-cookies) so the session
     sticks — «сначала прими куки, потом войти»."""
@@ -508,6 +548,7 @@ async def run_scraper(
             logged = await _is_logged_in(page)
             log("  → Статус: залогинен" if logged else
                 "  → Статус: гость (большинство источников будут недоступны)")
+            await _wait_if_captcha(page, log)        # pause for «я не робот» if shown
 
             # ── 2. SEARCH (walk every page) ──────────────────────────── #
             # Results are server-rendered in the page (≈20 snippet blocks per page),
@@ -524,6 +565,8 @@ async def run_scraper(
                                        inventory=inventory, record=record,
                                        doc_dates=doc_dates, added_since=added_since)
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                if pno == 1:
+                    await _wait_if_captcha(page, log)    # search may trigger «я не робот»
                 html = await page.content()
                 if pno == 1:
                     try:

@@ -270,6 +270,48 @@ async def _apply_sources(page, sources, log) -> None:
         log(f"  !! Фильтр источников не применён: {e}")
 
 
+async def _wait_if_captcha(page, log, timeout=300) -> None:
+    """If an «I'm not a robot» / reCAPTCHA challenge appears, PAUSE and let the USER solve it
+    in the visible browser window (we never click or solve a CAPTCHA ourselves — that's
+    bot-detection bypass). Polls until the challenge is gone, so the run waits for the user
+    instead of rushing past it («мельтешишь, я не успеваю»)."""
+    async def _present():
+        try:
+            return await page.evaluate(r"""() => {
+                const vis = el => el && el.offsetParent !== null
+                                  && el.getBoundingClientRect().width > 20
+                                  && el.getBoundingClientRect().height > 20;
+                for (const f of document.querySelectorAll('iframe')) {
+                    const s = (f.src || '') + ' ' + (f.title || '');
+                    if (/recaptcha|hcaptcha|captcha|challenge|turnstile/i.test(s) && vis(f))
+                        return true;
+                }
+                if (document.querySelector('#cf-challenge-running, .g-recaptcha:not(:empty)'))
+                    return true;
+                const t = (document.body && document.body.innerText) || '';
+                return /я\s*не\s*робот|i'?m not a robot|подтвердите.{0,4}что вы не робот|verify you are human|are you a robot/i.test(t);
+            }""")
+        except Exception:
+            return False
+    if not await _present():
+        return
+    log("  ⛔ КАПЧА «Я не робот» — РЕШИ ЕЁ В ОКНЕ БРАУЗЕРА. Скрипт ждёт, не торопит.")
+    try:
+        await page.bring_to_front()
+    except Exception:
+        pass
+    waited = 0
+    while waited < timeout:
+        await asyncio.sleep(2); waited += 2
+        if not await _present():
+            log("  ✓ Капча решена — продолжаю.")
+            await asyncio.sleep(1)
+            return
+        if waited % 20 == 0:
+            log(f"  … жду капчу ({waited}/{timeout}s) — нажми «Я не робот» в окне.")
+    log("  !! капча не решена за отведённое время — продолжаю как есть.")
+
+
 async def _do_search(page, query: str, lang: str, log) -> bool:
     """Open the LANGUAGE-specific home page, type the query, click the search
     button. True if results show."""
@@ -945,12 +987,14 @@ async def run_scraper(*,
             if not await _do_search(page, query, lang, log):
                 summary["message"] = "Не удалось выполнить поиск."
                 return summary
+            await _wait_if_captcha(page, log)          # search may trigger «я не робот»
             if _done():
                 return summary
 
             await _select_tab(page, entity_tab, log)
             await _fill_advanced(page, entity_tab, params, log)
             await _apply_sources(page, sources, log)   # limit to chosen databases
+            await _wait_if_captcha(page, log)          # filtering navigates → may trigger it
             await asyncio.sleep(1.0)
 
             # ── Collect + OPEN each card (click → new tab) page by page ── #
@@ -958,6 +1002,7 @@ async def run_scraper(*,
             records, seen = [], set()
             total, page_no = 0, 1
             while page_no <= max_pages and not _done():
+                await _wait_if_captcha(page, log)       # pause for a challenge on any page
                 cards = await _tag_cards(page)
                 log(f"  → Страница {page_no}: карточек {len(cards)}")
                 if page_no == 1 and not cards:

@@ -142,6 +142,7 @@ async def _save_scan(page, doc_href, out_root, name, year, label, seen_files, lo
     except Exception as e:
         log(f"      !! не открыть документ: {e}")
         return False
+    await H._wait_if_captcha(page, log)                 # pause for a challenge before the scan
     saved = await H._save_doc_scan(page, folder, base, log)
     return bool(saved)
 
@@ -192,6 +193,7 @@ async def crawl():
                     await asyncio.sleep(1)
         _log("  → Статус: залогинен" if await H._is_logged_in(page)
              else "  !! НЕ залогинен — большинство документов будут недоступны")
+        await H._wait_if_captcha(page, _log)
 
         # ── DFS over the «Закрома» tree ──────────────────────────────────────
         stack = [(args.start, {"name": "", "year": "", "label": ""}, 0)]
@@ -205,6 +207,7 @@ async def crawl():
             except Exception as e:
                 _log(f"  !! пропускаю {url[:70]} ({type(e).__name__})")
                 continue
+            await H._wait_if_captcha(page, _log)        # pause for «я не робот» if it appears
             title = await _title(page)
             name = _clean_name(title) or c["name"]
             year = _year(title) or c["year"]
