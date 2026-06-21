@@ -27,6 +27,7 @@ profile (.hryc_profile), so if you've logged in once in the app, it's already lo
 
 import argparse
 import asyncio
+import random
 import re
 import sys
 import json
@@ -153,6 +154,9 @@ async def crawl():
     ap.add_argument("--start", default=START_URL)
     ap.add_argument("--max", type=int, default=0, help="stop after N documents (0 = no limit)")
     ap.add_argument("--depth", type=int, default=10)
+    ap.add_argument("--delay", type=float, default=4.0,
+                    help="seconds between documents (+ random jitter). BIGGER = fewer CAPTCHAs; "
+                         "try 15-30 if the site challenges every document.")
     args = ap.parse_args()
 
     if not _PW_OK:
@@ -223,7 +227,9 @@ async def crawl():
                 ok = await _save_scan(page, doc_href, out_root, name, year, c["label"],
                                       seen_files, _log)
                 n_ok += 1 if ok else 0
-                await asyncio.sleep(0.6)
+                # human-like pause — bigger --delay = fewer CAPTCHAs (the only honest lever;
+                # we never bypass the challenge, only space out requests).
+                await asyncio.sleep(args.delay + random.uniform(0, args.delay))
                 if args.max and n_docs >= args.max:
                     _log(f"  → достигнут лимit --max {args.max}"); break
                 continue
