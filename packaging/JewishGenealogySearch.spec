@@ -39,7 +39,7 @@ for f in glob.glob(_p("gui", "*.py")):
 for f in glob.glob(_p("*.py")):
     base = os.path.splitext(os.path.basename(f))[0]
     if base.endswith("_scraper") or base in ("docx_util", "unified_search",
-                                             "mh_add_english", "paths_util"):
+                                             "mh_add_english", "paths_util", "browser_util"):
         hidden.append(base)
 
 # ── Playwright python package (browser binaries handled by the build script) ──

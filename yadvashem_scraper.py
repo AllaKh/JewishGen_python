@@ -34,6 +34,7 @@ if getattr(sys, "frozen", False):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(bd)
 
 try:
+    import browser_util
     from playwright.async_api import async_playwright
 except ImportError:
     sys.stderr.write("pip install playwright && playwright install chromium\n")
@@ -616,7 +617,7 @@ async def run_scraper(*,
 
     _prog(0, "Запускаю браузер…")
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
+        browser = await browser_util.launch(pw, 
             headless=False,
             args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
         ctx = await browser.new_context(no_viewport=True, accept_downloads=True,

@@ -55,6 +55,7 @@ if getattr(sys, "frozen", False):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browser_dir)
 
 try:
+    import browser_util
     from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 except ImportError:
     sys.stderr.write(
@@ -2099,7 +2100,7 @@ async def _do_fhl_download(fs_url, img_num, dest, fs_email, fs_password, log):
 
     async with _apw() as pw:
         # Exact same browser setup as familysearch_scraper.py
-        browser = await pw.chromium.launch(
+        browser = await browser_util.launch(pw, 
             headless=False,
             args=["--start-maximized",
                   "--disable-blink-features=AutomationControlled"],
@@ -2480,7 +2481,7 @@ async def run_scraper(
         # Persistent context: cookies + storage live in PROFILE_DIR, so once
         # you've logged in to JewishGen the next runs are already authenticated.
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-        context = await p.chromium.launch_persistent_context(
+        context = await browser_util.launch_persistent(p, 
             str(PROFILE_DIR),
             headless=False,
             accept_downloads=True,

@@ -33,6 +33,7 @@ if getattr(sys, "frozen", False):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(bd)
 
 try:
+    import browser_util
     from playwright.async_api import async_playwright
 except ImportError:
     sys.stderr.write("pip install playwright && playwright install chromium\n")
@@ -1481,7 +1482,7 @@ async def run_scraper(
             try: (FS_PROFILE_DIR / _lk).unlink()
             except Exception: pass
         FS_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-        ctx = await pw.chromium.launch_persistent_context(
+        ctx = await browser_util.launch_persistent(pw, 
             str(FS_PROFILE_DIR),
             headless=False,
             no_viewport=True,

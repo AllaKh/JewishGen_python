@@ -28,6 +28,7 @@ if getattr(sys, "frozen", False):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(bd)
 
 try:
+    import browser_util
     from playwright.async_api import async_playwright
 except ImportError:
     sys.stderr.write("pip install playwright && playwright install chromium\n")
@@ -3503,7 +3504,7 @@ async def make_browser_context(pw):
         except Exception:
             pass
     MH_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    ctx = await pw.chromium.launch_persistent_context(
+    ctx = await browser_util.launch_persistent(pw, 
         str(MH_PROFILE_DIR),
         headless=False, accept_downloads=True, no_viewport=True,
         args=["--start-maximized", "--disable-blink-features=AutomationControlled",
@@ -3633,7 +3634,7 @@ async def run_scraper(*,
         # claims 124 while the engine exposes 141's APIs is a textbook bot tell —
         # that mismatch is exactly why MyHeritage started flagging «ты скрипт».
         # Headed Chromium already reports a correct, matching «Chrome/<ver>» UA.
-        ctx = await pw.chromium.launch_persistent_context(
+        ctx = await browser_util.launch_persistent(pw, 
             str(MH_PROFILE_DIR),
             headless=False,
             accept_downloads=True,
