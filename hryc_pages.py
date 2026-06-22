@@ -288,19 +288,31 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
                     except Exception:
                         pass
                     _log(f"  Total на сайте: {res.get('total', 0)}, блоков на стр.1: {len(res['rows'])}")
-                    # diagnostic: 0 with a year? check whether the YEAR filter is the cause
-                    if not res["rows"] and year:
-                        u0 = H.build_search_url(query, sources, 1, no_stemming=no_stemming,
-                                                no_fuzziness=no_fuzziness, show_experts=show_experts)
-                        if await _goto(page, u0):
-                            r0 = H.parse_results(await page.content(), _log)
-                            _log(f"  ДИАГНОСТИКА: тот же запрос БЕЗ года → Total {r0.get('total', 0)}, "
-                                 f"блоков {len(r0['rows'])}.")
-                            if r0["rows"]:
-                                _log(f"  ⇒ фильтр года «{year}» (R.DocDateRange) обнуляет выдачу — "
-                                     f"даты документов в этой базе записаны иначе. Дамп: "
-                                     f"{out_root / 'hryc_pages_last.html'}. Пришли свой рабочий URL "
-                                     f"из браузера для «{query}» {year} — сверю по нему формат даты.")
+                    # diagnostic: nothing found → which parameter kills it? Try variants.
+                    if not res["rows"]:
+                        async def _total(label, uu):
+                            if await _goto(page, uu):
+                                t = H.parse_results(await page.content(), _log).get("total", 0)
+                                _log(f"  ДИАГ [{label}]: Total {t}")
+                                return t
+                            return -1
+                        kw = dict(no_stemming=no_stemming, no_fuzziness=no_fuzziness)
+                        b = H.build_search_url
+                        await _total("без года", b(query, sources, 1, show_experts=show_experts, **kw))
+                        await _total("без года, Эксперты OFF",
+                                     b(query, sources, 1, show_experts=False, **kw))
+                        await _total("без года, «в записях» OFF",
+                                     b(query, sources, 1, show_experts=show_experts, **kw)
+                                       .replace("R.SearchInRecords=True", "R.SearchInRecords=False"))
+                        if query.strip("*") != query:
+                            await _total("запрос без звёздочек",
+                                         b(query.strip("*"), sources, 1, show_experts=show_experts, **kw))
+                        await _total("ВСЕ источники, без года",
+                                     b(query, [s["id"] for s in H.load_sources()], 1,
+                                       show_experts=show_experts, **kw))
+                        _log("  ⇒ если у какого-то варианта Total>0 — этот параметр и мешает; скажи мне, "
+                             "какой. Иначе пришли D:\\Archives\\hryc_pages_last.html + свой URL из браузера "
+                             f"для «{query}» {year} (где видно 576) — сверю.")
                         break
                 new = 0
                 for r in res["rows"]:
