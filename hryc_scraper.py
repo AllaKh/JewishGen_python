@@ -595,15 +595,23 @@ async def run_scraper(
         ctx = None
         for _attempt in range(1, 4):
             _clear_singleton_locks()
-            try:
-                ctx = await pw.chromium.launch_persistent_context(
-                    str(PROFILE_DIR),
-                    headless=False, accept_downloads=True, no_viewport=True,
-                    args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
+            # Use REAL Google Chrome (channel="chrome"); fall back to the bundled Chromium
+            # only if Chrome isn't installed (so a distributed copy still works).
+            for _channel in ("chrome", None):
+                try:
+                    kw = dict(headless=False, accept_downloads=True, no_viewport=True,
+                              args=["--start-maximized",
+                                    "--disable-blink-features=AutomationControlled"])
+                    if _channel:
+                        kw["channel"] = _channel
+                    ctx = await pw.chromium.launch_persistent_context(str(PROFILE_DIR), **kw)
+                    log(f"  → браузер: {'Google Chrome' if _channel else 'Chromium (Chrome не найден)'}")
+                    break
+                except Exception as e:
+                    log(f"  !! {_channel or 'chromium'}: {type(e).__name__}")
+            if ctx:
                 break
-            except Exception as e:
-                log(f"  !! браузер не запустился (попытка {_attempt}/3): {type(e).__name__}")
-                await asyncio.sleep(3)
+            await asyncio.sleep(3)
         if ctx is None:
             summary.update({"error": "browser", "message":
                             "Не удалось открыть браузер. Закрой другие окна этого приложения "

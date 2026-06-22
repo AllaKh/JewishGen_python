@@ -227,14 +227,22 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
         ctx = None
         for attempt in range(1, 4):
             _clear_locks()
-            try:
-                ctx = await pw.chromium.launch_persistent_context(
-                    str(profile), headless=False, accept_downloads=True, no_viewport=True,
-                    args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
+            # REAL Google Chrome (channel="chrome"); fall back to bundled Chromium if absent.
+            for _channel in ("chrome", None):
+                try:
+                    kw = dict(headless=False, accept_downloads=True, no_viewport=True,
+                              args=["--start-maximized",
+                                    "--disable-blink-features=AutomationControlled"])
+                    if _channel:
+                        kw["channel"] = _channel
+                    ctx = await pw.chromium.launch_persistent_context(str(profile), **kw)
+                    _log(f"  → браузер: {'Google Chrome' if _channel else 'Chromium (Chrome не найден)'}")
+                    break
+                except Exception as e:
+                    _log(f"  !! {_channel or 'chromium'}: {type(e).__name__}")
+            if ctx:
                 break
-            except Exception as e:
-                _log(f"  !! браузер не запустился (попытка {attempt}/3): {type(e).__name__}")
-                await asyncio.sleep(3)
+            await asyncio.sleep(3)
         if ctx is None:
             _log("  !! Не удалось открыть браузер. Закрой окна Chrome этого приложения "
                  f"(профиль «{profile.name}») и запусти снова."); return
