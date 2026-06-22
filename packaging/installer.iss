@@ -1,4 +1,4 @@
-; installer.iss — Inno Setup script for JewishGenealogySearch.
+; installer.iss - Inno Setup script for JewishGenealogySearch.
 ; Compiled by build_installer.ps1 via ISCC.exe. The app version is passed on the command
 ; line:  ISCC.exe /DMyAppVersion=1.0.0 packaging\installer.iss
 ; The produced setup .exe is Authenticode-signed afterwards by build_installer.ps1.
@@ -17,7 +17,7 @@ AppId={{6F3A9C1E-1B2D-4E7A-9C44-JEWISHGENSEARCH}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-; per-user install → no admin / UAC prompt, fewer antivirus and SmartScreen issues
+; per-user install -> no admin / UAC prompt, fewer antivirus and SmartScreen issues
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
