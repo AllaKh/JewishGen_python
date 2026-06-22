@@ -48,6 +48,9 @@ def main():
                     help="run SEVERAL copies at once: give each a different N (1, 2, 3…). Each "
                          "gets its own Chrome profile copied from the master (already logged in). "
                          "0 = master profile (log in here first). Practical max ~3-4.")
+    ap.add_argument("--show", action="store_true",
+                    help="show the browser window (default = headless, logs only). Use it for "
+                         "the FIRST login and for solving a CAPTCHA.")
     ap.add_argument("--no-stemming",  action="store_true", help="«Без стемминга» — exact word form only")
     ap.add_argument("--no-fuzziness", action="store_true", help="«Без ошибок» — no typo tolerance")
     ap.add_argument("--no-experts",   action="store_true", help="«Эксперты» OFF (default ON → more results)")
@@ -71,7 +74,7 @@ def main():
     # skip_saved=True is the ONLY difference from hryc_pages.py — same battle-tested run().
     asyncio.run(P.run(query, year, a.out, a.max_pages, a.max_folders, a.shared, source_ids,
                       a.no_stemming, a.no_fuzziness, not a.no_experts,
-                      instance=a.instance, skip_saved=True))
+                      instance=a.instance, skip_saved=True, headless=not a.show))
 
 
 if __name__ == "__main__":

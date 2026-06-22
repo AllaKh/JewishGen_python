@@ -55,6 +55,10 @@ DEFAULT_OUT = r"D:\Archives"
 # open in only one process at a time → TargetClosedError otherwise)
 PAGES_PROFILE = Path(__file__).resolve().parent / ".hryc_pages_profile"
 
+# Headless by default (you want logs only, no visible browser). --show flips it for the two
+# cases that NEED a window: first-time login and solving a CAPTCHA. Set at the start of run().
+_HEADLESS = True
+
 
 def _log(m):
     print(m, flush=True)
@@ -202,7 +206,9 @@ async def _goto(page, url):
     except Exception as e:
         _log(f"    !! не открыть {url[:70]} ({type(e).__name__})")
         return False
-    await H._wait_if_captcha(page, _log)
+    # headless can't show the captcha to solve → wait only briefly, then move on (logged);
+    # visible (--show) → full 5-min wait so you can solve it.
+    await H._wait_if_captcha(page, _log, timeout=(6 if _HEADLESS else 300))
     return True
 
 
@@ -264,9 +270,12 @@ async def _capture_folder(page, start_url, year, out_root, saved, log):
 
 
 async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
-              no_stemming, no_fuzziness, show_experts, instance=0, skip_saved=False):
+              no_stemming, no_fuzziness, show_experts, instance=0, skip_saved=False,
+              headless=True):
     if not _PW_OK:
         _log("Playwright не установлен."); return
+    global _HEADLESS
+    _HEADLESS = headless
     out_root = Path(out_root); out_root.mkdir(parents=True, exist_ok=True)
     _log(f"Запрос: {query!r}, год: {year}, источников: {len(source_ids)}, "
          f"складываю в: {out_root}")
@@ -290,13 +299,14 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
             # REAL Google Chrome (channel="chrome"); fall back to bundled Chromium if absent.
             for _channel in ("chrome", None):
                 try:
-                    kw = dict(headless=False, accept_downloads=True, no_viewport=True,
-                              args=["--start-maximized",
-                                    "--disable-blink-features=AutomationControlled"])
+                    kw = dict(headless=headless, accept_downloads=True, no_viewport=True,
+                              args=["--disable-blink-features=AutomationControlled",
+                                    "--window-size=1680,1050" if headless else "--start-maximized"])
                     if _channel:
                         kw["channel"] = _channel
                     ctx = await pw.chromium.launch_persistent_context(str(profile), **kw)
-                    _log(f"  → браузер: {'Google Chrome' if _channel else 'Chromium (Chrome не найден)'}")
+                    _log(f"  → браузер: {'Google Chrome' if _channel else 'Chromium (Chrome не найден)'}"
+                         f" — {'СКРЫТЫЙ (headless)' if headless else 'видимый (--show)'}")
                     break
                 except Exception as e:
                     _log(f"  !! {_channel or 'chromium'}: {type(e).__name__}")
@@ -321,11 +331,16 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
                 if email and password:
                     await H._login(page, email, password, _log)
                 if not await H._is_logged_in(page):
-                    _log("  → Войди в открытом окне вручную (жду до 3 минут)…")
-                    for _ in range(180):
-                        if await H._is_logged_in(page):
-                            break
-                        await asyncio.sleep(1)
+                    if headless:
+                        _log("  !! НЕ залогинен, а браузер скрытый — вручную войти нельзя. "
+                             "Запусти ОДИН раз с --show и войди; профиль запомнит, дальше "
+                             "работай без --show (headless).")
+                    else:
+                        _log("  → Войди в открытом окне вручную (жду до 3 минут)…")
+                        for _ in range(180):
+                            if await H._is_logged_in(page):
+                                break
+                            await asyncio.sleep(1)
             _log("  → Статус: залогинен" if await H._is_logged_in(page)
                  else "  !! НЕ залогинен — документы будут недоступны")
 
@@ -435,6 +450,9 @@ def main():
                          "gets its own Chrome profile copied from the master (already logged in). "
                          "0 = master profile (log in here first). Practical max ~3-4 (captcha + "
                          "one account + RAM).")
+    ap.add_argument("--show", action="store_true",
+                    help="show the browser window (default = headless, logs only). Use it for "
+                         "the FIRST login and for solving a CAPTCHA.")
     # Search precision. DEFAULT = MAXIMUM results: stemming ON, fuzzy ON, experts ON.
     # Use these flags to narrow it (fewer, more exact hits).
     ap.add_argument("--no-stemming",  action="store_true", help="«Без стемминга» — exact word form only")
@@ -458,7 +476,8 @@ def main():
     if not query or not year:
         ap.error("give a search word and a year, e.g.:  python hryc_pages.py \"Шендерович\" 1859")
     asyncio.run(run(query, year, a.out, a.max_pages, a.max_folders, a.shared, source_ids,
-                    a.no_stemming, a.no_fuzziness, not a.no_experts, instance=a.instance))
+                    a.no_stemming, a.no_fuzziness, not a.no_experts, instance=a.instance,
+                    headless=not a.show))
 
 
 if __name__ == "__main__":
