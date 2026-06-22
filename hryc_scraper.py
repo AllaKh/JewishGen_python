@@ -96,35 +96,31 @@ def build_search_url(query: str, selected_ids, page: int = 1, *,
                      no_stemming: bool = False, no_fuzziness: bool = False,
                      show_experts: bool = False, fund: str = "", inventory: str = "",
                      record: str = "", doc_dates: str = "", added_since: str = "") -> str:
-    """Replicate the site form (verified against the user's live URLs): R.Q + every
-    source's R.S[i].Chk / .Id (Chk=true only for ticked sources; indices must be
-    contiguous, so ALL 164 are sent in order), plus R.Page, R.SearchInRecords, the three
-    option flags (Без стемминга / Без ошибок / Эксперты) and the archive-reference /
-    date fields (R.Fund / R.Inventory / R.Record / R.DocDateRange / R.UpdateStartDate)."""
-    sel = set(selected_ids or [])
-    params = [("R.Q", query)]
-    for s in load_sources():
-        params.append((f"R.S[{s['idx']}].Chk", "true" if s["id"] in sel else "false"))
-        params.append((f"R.S[{s['idx']}].Id", s["id"]))
-    params += [
+    """Build the results URL EXACTLY like the site's CURRENT search (verified against the
+    user's live working URL). The site switched the source filter from the old per-index
+    array (R.S[i].Chk/.Id for all 164) to a SINGLE «R.Sources=<comma-joined ids>» param — the
+    old array is ignored now and returns 0. Other params: R.Q, R.Page, R.SearchInRecords, the
+    option flags, R.MustBeInPlace/R.MustBeInSurname, and the archive-reference / date fields."""
+    sel = [s for s in (selected_ids or []) if s]
+    params = [
+        ("R.Q", query),
         ("R.Page", str(page)),
+        ("R.Sources", ",".join(sel)),                  # comma-joined ticked source ids
+        ("R.ShowExperts", "true" if show_experts else "false"),
         ("R.SearchInRecords", "True"),
         ("R.NoStemming",  "true" if no_stemming  else "false"),
         ("R.NoFuzziness", "true" if no_fuzziness else "false"),
-        ("R.ShowExperts", "true" if show_experts else "false"),
-    ]
-    # Mirror the real form submission EXACTLY (verified against the user's live URL):
-    # these five fields are ALWAYS present, even when empty. R.UpdateStartDate is
-    # data-val-required, so it must be sent — empty = the form's «0001-01-01» sentinel
-    # (= no «added since» filter). An empty R.DocDateRange means no document-date filter.
-    params += [
+        ("R.MustBeInPlace", "false"),
+        ("R.MustBeInSurname", "false"),
+        # always present (empty = no filter); R.UpdateStartDate empty = «0001-01-01» sentinel.
         ("R.Fund", fund),
         ("R.Inventory", inventory),
         ("R.Record", record),
         ("R.DocDateRange", doc_dates),
         ("R.UpdateStartDate", added_since or "0001-01-01"),
     ]
-    return SEARCH_URL + "?" + _up.urlencode(params)
+    # keep «*» literal in R.Q (the site uses raw * for wildcards, not %2A)
+    return SEARCH_URL + "?" + _up.urlencode(params, safe="*,")
 
 
 def parse_results(html: str, log) -> dict:
