@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QApplication, QGroupBox, QComboBox,
     QFrame, QGridLayout, QScrollArea,
 )
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, app_version, make_header, make_cancel_button, autosave_path
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray
 from PySide6.QtGui import QPixmap, QIcon
 
@@ -426,7 +426,7 @@ class FamilySearchApp(QMainWindow):
         br.addStretch()
         self._outer.addLayout(br)
         self._outer.addWidget(
-            QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+            QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
 
         # Wire autosave to every interactive widget
         for w in self._all_widgets():

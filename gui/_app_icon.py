@@ -28,6 +28,20 @@ from PySide6.QtWidgets import (QLabel, QHBoxLayout, QPushButton, QApplication,
 
 _CONFIG = Path(__file__).resolve().parent.parent / "config"
 
+_VERSION_CACHE = None
+
+
+def app_version() -> str:
+    """Current app version for the footer. Read from config/version.txt, which
+    build_installer.ps1 writes with the -Version passed at build time; falls back to «dev»."""
+    global _VERSION_CACHE
+    if _VERSION_CACHE is None:
+        try:
+            _VERSION_CACHE = (_CONFIG / "version.txt").read_text("utf-8").strip() or "dev"
+        except Exception:
+            _VERSION_CACHE = "dev"
+    return _VERSION_CACHE
+
 
 # ── Mouse-wheel guard ──────────────────────────────────────────────────────── #
 # Scrolling the mouse over a dropdown / spin-box must NOT change its value — you

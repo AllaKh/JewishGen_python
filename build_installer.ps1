@@ -88,6 +88,10 @@ VSVersionInfo(
 "@ | Out-File -FilePath "packaging\version_info.txt" -Encoding utf8
 Ok "version resource written"
 
+# version string the running app shows in its footer (bundled via config/)
+Set-Content -Path "config\version.txt" -Value $Version -NoNewline -Encoding utf8
+Ok "config\version.txt = $Version"
+
 # -- 3. PyInstaller -----------------------------------------------------------
 if ($Clean -and (Test-Path "build")) { Remove-Item "build" -Recurse -Force }
 if (Test-Path "dist\JewishGenealogySearch") { Remove-Item "dist\JewishGenealogySearch" -Recurse -Force }

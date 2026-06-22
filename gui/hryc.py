@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QScrollArea, QFrame, QToolButton)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from gui._app_icon import (app_icon, make_header, make_cancel_button, autosave_path,
+from gui._app_icon import (app_icon, app_version, make_header, make_cancel_button, autosave_path,
                            clamp_on_screen)
 
 try:
@@ -256,7 +256,7 @@ class HrycApp(QMainWindow):
         br.addStretch(); br.addWidget(self.start_btn)
         self.cancel_btn = make_cancel_button(self, br); br.addStretch()
         _bl.addLayout(br)
-        _bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _bl.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
         self._ol.addWidget(self._bottom, 0)
 
         for w in (self.f_email, self.f_pass, self.f_query, self.f_folder,

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QValidator, QAction, QIntValidator
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path, clamp_on_screen
+from gui._app_icon import app_icon, app_version, make_header, make_cancel_button, autosave_path, clamp_on_screen
 
 
 class _YearSpin(QSpinBox):
@@ -604,7 +604,7 @@ class MyHeritageApp(QMainWindow):
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
         _bl.addLayout(br)
-        _bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        _bl.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
         _ol.addWidget(self._bottom, 0)                 # fixed (no stretch) at the bottom
 
         # Autosave wiring

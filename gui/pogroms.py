@@ -21,7 +21,7 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtCore import QRegularExpression
 
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, app_version, make_header, make_cancel_button, autosave_path
 
 # ── Paths ─────────────────────────────────────────────────────────────────── #
 _HERE    = Path(__file__).resolve().parent
@@ -215,7 +215,7 @@ class PogromsApp(QMainWindow):
         br.addStretch()
         self._outer.addLayout(br)
         self._outer.addWidget(
-            QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+            QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
 
         for w in self._all_widgets():
             if   isinstance(w, QLineEdit): w.textChanged.connect(self._save)

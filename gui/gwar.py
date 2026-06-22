@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QSizePolicy,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, make_header, make_cancel_button, autosave_path, clamp_on_screen
+from gui._app_icon import app_icon, app_version, make_header, make_cancel_button, autosave_path, clamp_on_screen
 
 
 def _load_facets():
@@ -350,7 +350,7 @@ class GwarApp(QMainWindow):
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
         bl.addLayout(br)
-        bl.addWidget(QLabel("© 2026 Alla Khananashvili", alignment=Qt.AlignRight))
+        bl.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
         self._ol.addWidget(self._bottom, 0)
 
         for w in (self.f_last, self.f_first, self.f_mid, self.f_birth,
