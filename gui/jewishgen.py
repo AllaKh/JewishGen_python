@@ -25,7 +25,7 @@ import sys
 import asyncio
 import threading
 from pathlib import Path
-from gui._app_icon import app_icon, app_version, make_header, make_cancel_button
+from gui._app_icon import app_icon, app_version, make_footer, make_header, make_cancel_button
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -381,7 +381,7 @@ class JewishGenApp(QMainWindow):
         btn_row.addStretch()
         outer.addLayout(btn_row)
 
-        outer.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
+        outer.addWidget(make_footer())
 
     # ── AUTOSAVE / PROFILES ──────────────────────────────────────────────── #
 

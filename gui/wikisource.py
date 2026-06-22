@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QApplication,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import app_icon, app_version, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, app_version, make_footer, make_header, make_cancel_button, autosave_path
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -184,7 +184,7 @@ class WikisourceApp(QMainWindow):
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
         self._outer.addLayout(br)
-        self._outer.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
+        self._outer.addWidget(make_footer())
 
         self.rb_place.toggled.connect(self._update_mode)
         for w in (self.f_gub, self.f_place, self.f_code, self.f_folder):

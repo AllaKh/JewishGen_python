@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QPixmap
-from gui._app_icon import app_icon, app_version, make_header, make_cancel_button, autosave_path
+from gui._app_icon import app_icon, app_version, make_footer, make_header, make_cancel_button, autosave_path
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent
@@ -173,8 +173,7 @@ class SkarbApp(QMainWindow):
         br.addStretch()
         outer.addLayout(br)
 
-        outer.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}",
-                               alignment=Qt.AlignRight))
+        outer.addWidget(make_footer())
 
         # Wire autosave
         for w in (self.f_surnames, self.f_kw1, self.f_kw2, self.f_kw3, self.f_folder):

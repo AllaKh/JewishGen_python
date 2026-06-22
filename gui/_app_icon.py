@@ -43,6 +43,26 @@ def app_version() -> str:
     return _VERSION_CACHE
 
 
+def make_footer(style: str = ""):
+    """Footer row: version on the LEFT, copyright (with «All rights reserved») on the RIGHT."""
+    from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel
+    from PySide6.QtCore import Qt
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    ver = QLabel(f"v{app_version()}")
+    cop = QLabel("© 2026 Alla Khananashvili. All rights reserved.")
+    ver.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    cop.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    if style:
+        ver.setStyleSheet(style)
+        cop.setStyleSheet(style)
+    lay.addWidget(ver)
+    lay.addStretch(1)
+    lay.addWidget(cop)
+    return w
+
+
 # ── Mouse-wheel guard ──────────────────────────────────────────────────────── #
 # Scrolling the mouse over a dropdown / spin-box must NOT change its value — you
 # could silently change settings you never meant to. The combo opens only by click;

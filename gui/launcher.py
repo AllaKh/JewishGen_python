@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap
 
-from gui._app_icon import app_icon, app_version
+from gui._app_icon import app_icon, app_version, make_footer
 
 # ---------------------------------------------------------------------------
 _HERE   = Path(__file__).resolve().parent   # …/gui/
@@ -277,9 +277,7 @@ class LauncherWindow(QMainWindow):
         self._outer.addWidget(self._scroll)
 
         # Footer
-        self._footer = QLabel(f"© 2026 Alla Khananashvili    v{app_version()}")
-        self._footer.setAlignment(Qt.AlignRight)
-        self._footer.setStyleSheet(STYLES["footer"])
+        self._footer = make_footer(STYLES["footer"])
         self._outer.addWidget(self._footer)
 
     # ------------------------------------------------------------------

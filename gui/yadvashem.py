@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressBar, QMessageBox, QApplication, QGroupBox,
 )
 from PySide6.QtCore import QThread, Signal, Qt
-from gui._app_icon import (app_icon, app_version, make_header, make_cancel_button, autosave_path,
+from gui._app_icon import (app_icon, app_version, make_footer, make_header, make_cancel_button, autosave_path,
                            clamp_on_screen)
 
 _HERE   = Path(__file__).resolve().parent
@@ -242,7 +242,7 @@ class YadVashemApp(QMainWindow):
         self.cancel_btn = make_cancel_button(self, br)
         br.addStretch()
         bl.addLayout(br)
-        bl.addWidget(QLabel(f"© 2026 Alla Khananashvili    v{app_version()}", alignment=Qt.AlignRight))
+        bl.addWidget(make_footer())
         self._ol.addWidget(self._bottom, 0)
 
         for ed, combo in self._fields.values():
