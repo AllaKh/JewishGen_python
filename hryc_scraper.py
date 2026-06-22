@@ -46,7 +46,8 @@ LOGIN_URL   = BASE_URL + "/Identity/Account/Login"
 SEARCH_URL  = BASE_URL + "/search"
 SITE_NAME   = "hryc.by"
 SRC_FILE    = Path(__file__).resolve().parent / "config" / "hryc_sources.json"
-PROFILE_DIR = Path(__file__).resolve().parent / ".hryc_profile"
+from paths_util import user_data_dir
+PROFILE_DIR = user_data_dir() / ".hryc_profile"   # writable even in a packaged install
 
 HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
                  "officeDocument/2006/relationships/hyperlink")
@@ -588,10 +589,26 @@ async def run_scraper(
 
     _prog(2, "Запускаю браузер…")
     async with async_playwright() as pw:
-        ctx = await pw.chromium.launch_persistent_context(
-            str(PROFILE_DIR),
-            headless=False, accept_downloads=True, no_viewport=True,
-            args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
+        # The profile can be locked (another window of this app, or a previous/crashed Chrome,
+        # still holds .hryc_profile → TargetClosedError). Clear stale locks and retry a few
+        # times; then give a clear message instead of a raw crash.
+        ctx = None
+        for _attempt in range(1, 4):
+            _clear_singleton_locks()
+            try:
+                ctx = await pw.chromium.launch_persistent_context(
+                    str(PROFILE_DIR),
+                    headless=False, accept_downloads=True, no_viewport=True,
+                    args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
+                break
+            except Exception as e:
+                log(f"  !! браузер не запустился (попытка {_attempt}/3): {type(e).__name__}")
+                await asyncio.sleep(3)
+        if ctx is None:
+            summary.update({"error": "browser", "message":
+                            "Не удалось открыть браузер. Закрой другие окна этого приложения "
+                            "и любые окна Chrome, использующие профиль hryc, затем повтори."})
+            return summary
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         for extra in list(ctx.pages):
             if extra is not page:

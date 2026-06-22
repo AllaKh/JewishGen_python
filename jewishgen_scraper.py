@@ -164,7 +164,8 @@ HERE = Path(__file__).resolve().parent
 OUTPUT_DOCX = HERE / "jewishgen_results.docx"
 # Persistent Chromium profile so JewishGen cookies live between runs — you
 # log in once, the next runs are already authenticated.
-PROFILE_DIR = HERE / ".profile"
+from paths_util import user_data_dir
+PROFILE_DIR = user_data_dir() / ".profile"   # writable even in a packaged install
 
 DATA_TYPES = ["Surname", "Given Name", "Town", "Any Field"]
 # JewishGen's dropdown uses "GivenName" without a space — translate when

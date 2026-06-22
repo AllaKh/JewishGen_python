@@ -71,7 +71,8 @@ BAD_PATHS     = ["/records/images", "/search/linker", "/linker",
                  "/catalog", "/wiki", "/books", "/films"]
 _dl           = _CFG.get("downloads_dir", "")
 DOWNLOADS_DIR = Path(_dl) if _dl else Path.home() / "Downloads"
-FS_PROFILE_DIR = _HERE / ".fs_profile"     # persistent login/cookies between runs
+from paths_util import user_data_dir
+FS_PROFILE_DIR = user_data_dir() / ".fs_profile"   # persistent login/cookies (writable when frozen)
 HYPERLINK_REL = ("http://schemas.openxmlformats.org/"
                  "officeDocument/2006/relationships/hyperlink")
 _IMG_SKIP     = ("icon", "logo", "sprite", "avatar", "pixel", "placeholder",

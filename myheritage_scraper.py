@@ -85,7 +85,8 @@ HYPERLINK_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relations
 
 # Persistent Chromium profile — keeps MyHeritage cookies/session between runs
 # so the anti-bot stops flagging the login as suspicious.
-MH_PROFILE_DIR = Path(__file__).resolve().parent / ".mh_profile"
+from paths_util import user_data_dir
+MH_PROFILE_DIR = user_data_dir() / ".mh_profile"   # writable even in a packaged install
 
 # Site presets — key → (login_url, search_url, has_cookie_banner)
 SITE_PRESETS = {

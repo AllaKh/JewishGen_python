@@ -143,7 +143,8 @@ def _load_filter_codes() -> dict:
 
 CATEGORY_CODES = _load_filter_codes()
 LOCATION_CODES = _CFG.get("location_codes", {}) or {}
-ANC_PROFILE_DIR = _HERE / ".ancestry_profile"  # persistent login/cookies
+from paths_util import user_data_dir
+ANC_PROFILE_DIR = user_data_dir() / ".ancestry_profile"  # persistent login/cookies (writable when frozen)
 _dl           = _CFG.get("downloads_dir", "")
 DOWNLOADS_DIR = Path(_dl) if _dl else Path.home() / "Downloads"
 HYPERLINK_REL = ("http://schemas.openxmlformats.org/"

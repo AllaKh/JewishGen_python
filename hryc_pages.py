@@ -268,11 +268,32 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
                 u = H.build_search_url(query, sources, pno, doc_dates=str(year),
                                        no_stemming=no_stemming, no_fuzziness=no_fuzziness,
                                        show_experts=show_experts)
+                if pno == 1:
+                    _log(f"  URL: {u}")
                 if not await _goto(page, u):
                     break
-                res = H.parse_results(await page.content(), _log)
+                html = await page.content()
+                res = H.parse_results(html, _log)
                 if pno == 1:
-                    _log(f"  Total на сайте: {res.get('total', 0)}")
+                    try:
+                        (out_root / "hryc_pages_last.html").write_text(html, encoding="utf-8")
+                    except Exception:
+                        pass
+                    _log(f"  Total на сайте: {res.get('total', 0)}, блоков на стр.1: {len(res['rows'])}")
+                    # diagnostic: 0 with a year? check whether the YEAR filter is the cause
+                    if not res["rows"] and year:
+                        u0 = H.build_search_url(query, sources, 1, no_stemming=no_stemming,
+                                                no_fuzziness=no_fuzziness, show_experts=show_experts)
+                        if await _goto(page, u0):
+                            r0 = H.parse_results(await page.content(), _log)
+                            _log(f"  ДИАГНОСТИКА: тот же запрос БЕЗ года → Total {r0.get('total', 0)}, "
+                                 f"блоков {len(r0['rows'])}.")
+                            if r0["rows"]:
+                                _log(f"  ⇒ фильтр года «{year}» (R.DocDateRange) обнуляет выдачу — "
+                                     f"даты документов в этой базе записаны иначе. Дамп: "
+                                     f"{out_root / 'hryc_pages_last.html'}. Пришли свой рабочий URL "
+                                     f"из браузера для «{query}» {year} — сверю по нему формат даты.")
+                        break
                 new = 0
                 for r in res["rows"]:
                     if r.get("url") and r["url"] not in seen:
