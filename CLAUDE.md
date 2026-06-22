@@ -700,6 +700,7 @@ no_viewport=True, accept_downloads=True
 
 - **Chromium НЕ скачивать — паковать тот, что у неё РАБОТАЕТ** (её запрет: «другой не качай, всё отрубится»). `build_installer.ps1` спрашивает `p.chromium.executable_path` → пакует ТОЛЬКО эту `chromium-NNNN` (+ ffmpeg/winldd), НЕ все из кэша (старые/неполные ломают). `playwright install` НЕ нужен. Рантайм-путь: каждый скрапер ставит `PLAYWRIGHT_BROWSERS_PATH = <exe-dir>/ms-playwright`.
 - **Сертификат — без дорогого EV**: лучший дешёвый «настоящий» = **Azure Trusted Signing** (~$10/мес, Microsoft подписывает в облаке, SmartScreen сразу доверяет); дешёвый OV (~$50–120/год); или **без подписи** + инструкция «Подробнее → Выполнить в любом случае». Самоподписанный для раздачи НЕ годится (на чужих ПК не доверенный). Сборка без подписи и так работает (`CODESIGN_PFX` не задан → UNSIGNED). Детали — `packaging/BUILD.md` §4.1а.
+- **`build_installer.ps1` и `installer.iss` держать ЧИСТЫМ ASCII** (без `—`/`→`/`•`/`─`/`…`). Windows PowerShell 5.1 читает .ps1 без BOM в системной кодировке (cp1251 у неё) → UTF-8 em-dash `—` ломается на `вЂ"`, кавычка `"` рвёт строку → «string is missing the terminator», сборка не стартует. Edit/Write-инструменты СНИМАЮТ BOM — поэтому любой не-ASCII в этих файлах вернёт баг. Правил → проверять `[Parser]::ParseFile` и что файл pure-ASCII.
 
 ---
 
