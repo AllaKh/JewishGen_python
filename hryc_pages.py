@@ -35,6 +35,15 @@ from pathlib import Path
 
 import hryc_scraper as H
 
+# The Windows console may be cp1251, and output may be piped/redirected to a file → printing
+# our →/⟪/⟨/⟩/⏭/«» characters would crash. Force UTF-8 with a safe fallback (covers this
+# module AND hryc_pages_resume.py, which imports it).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 try:
     from playwright.async_api import async_playwright
     _PW_OK = True
@@ -70,6 +79,57 @@ def _base_haid(aid: str) -> str:
     and we can tell when ⟨/⟩ crossed into the NEXT document. E.g.
     HAID2_17C8…D8_1 → HAID2_17C8…D8."""
     return re.sub(r"_\d+$", "", aid or "")
+
+
+def _instance_profile(instance: int, shared: bool = False) -> Path:
+    """Chrome user-data-dir for THIS run. SEVERAL copies of the script can run at once only if
+    each uses its OWN profile (a Chrome user-data-dir is open in one process at a time).
+      • instance 0 (default) → the master profile («.hryc_pages_profile»). Log in here ONCE.
+      • instance N≥1        → a PRIVATE copy «.hryc_pages_profile_N», seeded from the master
+                              on first use so it's already logged in. Each N is independent →
+                              you can run them in parallel."""
+    master = H.PROFILE_DIR if shared else PAGES_PROFILE
+    if instance <= 0:
+        master.mkdir(parents=True, exist_ok=True)
+        return master
+    p = master.parent / f"{master.name}_{instance}"
+    if not p.exists():
+        if master.exists() and any(master.iterdir()):
+            import shutil
+            ig = shutil.ignore_patterns(
+                "Singleton*", "*.lock", "lockfile",
+                "Cache", "Code Cache", "GPUCache", "ShaderCache", "DawnCache",
+                "GraphiteDawnCache", "Service Worker", "CacheStorage")
+            try:
+                shutil.copytree(master, p, ignore=ig, dirs_exist_ok=True)
+                _log(f"  → профиль #{instance} создан из «{master.name}» (логин скопирован)")
+            except Exception as e:
+                _log(f"  !! копия профиля не удалась ({type(e).__name__}) — войдёшь в окне вручную")
+                p.mkdir(parents=True, exist_ok=True)
+        else:
+            p.mkdir(parents=True, exist_ok=True)
+            _log(f"  → профиль #{instance} новый (master пуст) — войдёшь в окне вручную")
+    return p
+
+
+def _saved_bases(out_root: Path, year: str) -> set:
+    """Base HAIDs of documents whose scans are ALREADY on disk for this year — read straight
+    from the scan filenames («<aid>_<year>.<ext>»). Keyed on the document id (unique), so a
+    re-run with another query skips exactly the documents already downloaded; a folder you
+    DELETE is re-fetched (self-correcting — no stale index, no title-collision)."""
+    bases, suffix = set(), f"_{year}"
+    try:
+        for f in out_root.rglob(f"*{suffix}.*"):
+            if not f.is_file():
+                continue
+            stem = f.stem
+            if stem.endswith(suffix):
+                aid = stem[:-len(suffix)]
+                if aid.startswith("HAID"):
+                    bases.add(_base_haid(aid))
+    except Exception:
+        pass
+    return bases
 
 
 def _source_paths():
@@ -204,7 +264,7 @@ async def _capture_folder(page, start_url, year, out_root, saved, log):
 
 
 async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
-              no_stemming, no_fuzziness, show_experts):
+              no_stemming, no_fuzziness, show_experts, instance=0, skip_saved=False):
     if not _PW_OK:
         _log("Playwright не установлен."); return
     out_root = Path(out_root); out_root.mkdir(parents=True, exist_ok=True)
@@ -215,8 +275,8 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
          f"эксперты={'ВКЛ' if show_experts else 'ВЫКЛ'}  "
          f"(для МАКСИМУМА результатов: стемминг ВКЛ + нечёткий ВКЛ + эксперты ВКЛ)")
 
-    profile = H.PROFILE_DIR if shared else PAGES_PROFILE
-    profile.mkdir(parents=True, exist_ok=True)
+    profile = _instance_profile(instance, shared)
+    _log(f"  Профиль: {profile.name}" + (f"  (экземпляр #{instance})" if instance else ""))
 
     def _clear_locks():
         for n in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
@@ -325,11 +385,20 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
             # ── go through results one by one; capture each NEW document once ──
             # saved   = scan aids already written this run (within-folder dedup)
             # done    = documents (base HAID) already captured → skip later results in them
-            saved, done, folders, n_scans = set(), set(), 0, 0
+            # disk    = documents already on disk for this year (skip_saved → skip whole doc
+            #           BEFORE opening). Keyed on base HAID (unique), NOT folder title.
+            disk = _saved_bases(out_root, str(year)) if skip_saved else set()
+            if skip_saved:
+                _log(f"  Пропуск уже скачанного ВКЛ: на диске за {year} уже {len(disk)} документов.")
+            saved, done, folders, n_scans, skipped = set(), set(), 0, 0, 0
             for i, u in enumerate(urls, 1):
                 base = _base_haid(_aid(u))
                 if base in done:
-                    _log(f"  [{i}/{len(urls)}] · документ уже сохранён — следующий результат")
+                    _log(f"  [{i}/{len(urls)}] · документ уже встречался в прогоне — дальше")
+                    continue
+                if base in disk:
+                    done.add(base); skipped += 1
+                    _log(f"  [{i}/{len(urls)}] ⏭ {base[-8:]} уже на диске — пропускаю целиком")
                     continue
                 folders += 1
                 _log(f"  [{i}/{len(urls)}] новый документ {base[-8:]} — иду к началу, сохраняю всё…")
@@ -337,7 +406,8 @@ async def run(query, year, out_root, max_pages, max_folders, shared, source_ids,
                 done.add(base)
                 if max_folders and folders >= max_folders:
                     _log(f"  → достигнут лимит --max-folders {max_folders}"); break
-            _log(f"\nГотово. Документов: {folders}, сканов сохранено: {n_scans}.")
+            tail = f", пропущено (уже на диске): {skipped}" if skip_saved else ""
+            _log(f"\nГотово. Документов: {folders}, сканов сохранено: {n_scans}{tail}.")
             _log(f"Папка: {out_root}")
         finally:
             try: await ctx.close()
@@ -360,6 +430,11 @@ def main():
     ap.add_argument("--max-pages", type=int, default=25, help="result pages to scan")
     ap.add_argument("--max-folders", type=int, default=0, help="stop after N folders (0 = all)")
     ap.add_argument("--shared", action="store_true", help="reuse the app's .hryc_profile (close the app first)")
+    ap.add_argument("--instance", type=int, default=0, metavar="N",
+                    help="run SEVERAL copies at once: give each a different N (1, 2, 3…). Each "
+                         "gets its own Chrome profile copied from the master (already logged in). "
+                         "0 = master profile (log in here first). Practical max ~3-4 (captcha + "
+                         "one account + RAM).")
     # Search precision. DEFAULT = MAXIMUM results: stemming ON, fuzzy ON, experts ON.
     # Use these flags to narrow it (fewer, more exact hits).
     ap.add_argument("--no-stemming",  action="store_true", help="«Без стемминга» — exact word form only")
@@ -383,7 +458,7 @@ def main():
     if not query or not year:
         ap.error("give a search word and a year, e.g.:  python hryc_pages.py \"Шендерович\" 1859")
     asyncio.run(run(query, year, a.out, a.max_pages, a.max_folders, a.shared, source_ids,
-                    a.no_stemming, a.no_fuzziness, not a.no_experts))
+                    a.no_stemming, a.no_fuzziness, not a.no_experts, instance=a.instance))
 
 
 if __name__ == "__main__":
