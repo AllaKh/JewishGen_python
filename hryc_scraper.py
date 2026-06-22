@@ -134,18 +134,23 @@ def parse_results(html: str, log) -> dict:
     m = re.search(r'Total:.{0,60}?(\d[\d\s ,]*)', html, re.S)
     total = int(re.sub(r'\D', '', m.group(1))) if m else 0
 
-    for bm in re.finditer(r'<div style="margin: ?1em">(.*?)</div>', html, re.S):
-        inner = bm.group(1)
+    # Each result is  <div style="margin:1em"><div>SNIPPET</div><a href="/document?id=…">
+    # TITLE</a></div>.  Split on the block marker (a non-greedy «…</div>» would stop at the
+    # INNER </div> and miss the link → that was the «0 ссылок» bug). Take the inner <div> as
+    # the OCR snippet and the first /document?id= link as the document.
+    for chunk in re.split(r'<div style="margin: ?1em">', html)[1:]:
         # document link (paid account): <a href="/document?id=…">Title</a>
         doc_url, doc_title = "", ""
-        dm = re.search(r'<a[^>]+href="(/document\?id=[^"]+)"[^>]*>(.*?)</a>', inner, re.S)
+        dm = re.search(r'<a[^>]+href="(/document\?id=[^"]+)"[^>]*>(.*?)</a>', chunk, re.S)
         if dm:
             doc_url = BASE_URL + _html.unescape(dm.group(1))
             doc_title = _strip_tags(dm.group(2))
-        # drop the «pay to open» note and the document-link anchor from the snippet text
+        # snippet = the inner OCR <div> (fall back to everything before the link)
+        sm = re.search(r'<div\b[^>]*>(.*?)</div>', chunk, re.S)
+        inner = sm.group(1) if sm else (chunk[:dm.start()] if dm else chunk)
+        # drop the «pay to open» note (free tier) from the snippet text
         inner = re.sub(r'<span[^>]*>\s*(Для открытия|To open|Каб адкрыць).*$', '',
                        inner, flags=re.S)
-        inner = re.sub(r'<a[^>]+href="/document[^"]*"[^>]*>.*?</a>', '', inner, flags=re.S)
         inner = re.sub(r'<br\s*/?>', ' ', inner)
         # keep the site's <b>…</b> match highlights as sentinels (\x02…\x03) so Word
         # can render the searched word in bold; everything else → plain text
@@ -155,7 +160,7 @@ def parse_results(html: str, log) -> dict:
         inner = re.sub(r'[ \t\r\n]+', ' ', _html.unescape(inner)).strip()
         inner = _CTRL_KEEP.sub('', inner)                           # drop XML-illegal ctrl chars
         text = inner.replace('\x02', '').replace('\x03', '')        # plain (Excel/dedup)
-        if not text or len(text) < 4:
+        if (not text or len(text) < 4) and not doc_url:
             continue
         key = text + "|" + doc_url
         if key in seen:
