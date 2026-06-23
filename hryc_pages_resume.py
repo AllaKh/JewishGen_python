@@ -10,7 +10,7 @@ What it does, unattended
 * Every NEW document's scans are saved; documents already on disk are SKIPPED (keyed on the
   document id / base HAID read from the result URL — NOT the folder title, so different
   documents that share a title are never confused).
-* It keeps querying a year until FIVE queries in a row return 0 new scans, then moves to the
+* It keeps querying a year until TEN queries in a row return 0 new scans, then moves to the
   next year. One login, one browser, headless by default.
 
 Run it
@@ -44,26 +44,34 @@ except Exception:
     _PW_OK = False
 
 YEAR_HI, YEAR_LO = 1914, 1838     # default span (descending): 1914 → 1838
-ZERO_STOP        = 5              # stop a year after this many 0-new-scan queries in a row
+ZERO_STOP        = 10             # stop a year after this many 0-new-scan queries in a row
 MAX_Q_PER_YEAR   = 600           # safety cap so a year can never loop forever
 
 # The most common Russian 2- and 3-letter substrings (+ digits). Searching these OCR fragments
 # surfaces the bulk of a year's documents; cycling them + the on-disk skip covers the year.
+# Ordered MOST-COMMON FIRST (ст, но, на, по, …) — these appear in almost every document, so a
+# year that has ANYTHING gets hits right away and can't be falsely declared empty. The user's
+# examples (ке, си, ад) and rarer fragments come later; surname-friendly endings (вич, ова,
+# ский, …) help in this genealogy corpus.
 COMBOS = [
-    # user's examples first
-    "ке", "си", "ро", "ад", "про", "при",
-    # frequent bigrams (consonant+vowel / vowel+consonant)
-    "ст", "но", "то", "на", "по", "ен", "ов", "ни", "ра", "во", "ко", "не", "ли", "ка",
-    "ер", "ет", "ал", "ри", "ан", "ом", "ос", "ор", "ва", "ле", "ть", "ре", "ме", "де",
-    "те", "се", "ла", "ло", "ил", "им", "ин", "ит", "ес", "од", "ой", "он", "от", "об",
-    "из", "ис", "ас", "ат", "ач", "ел", "ед", "ек", "бе", "ве", "ге", "же", "пе", "че",
-    "ши", "жи", "ци", "ди", "ги", "би", "ви", "ки", "пр", "тр", "ск", "сл", "кр", "гр",
-    "бр", "сн", "зн", "дн", "тв", "мн",
-    # frequent trigrams
-    "пре", "пер", "ста", "сто", "сте", "стр", "ост", "ого", "ова", "ние", "ени", "ный",
-    "ной", "ров", "тор", "ско", "ска", "ные", "ест", "тра", "ива", "ани", "енн", "нос",
-    "ред", "раз", "под", "пол", "кон", "ком", "гор", "дер", "нов", "ник", "тел", "тер",
-    "чес", "пра",
+    # most common Russian bigrams — broadest coverage, tried first
+    "ст", "но", "то", "на", "по", "ен", "ов", "ни", "ра", "ко", "ро", "не", "ли", "во",
+    "ка", "ер", "ет", "ал", "ор", "ри", "ан", "ос", "ом", "ва", "ла", "ле", "та", "ре",
+    "ес", "ил", "де", "те", "се", "ме", "ть", "ин", "ит", "им", "од", "ой", "он", "от",
+    "об", "ед", "ел", "ек", "ис", "из", "ас", "ат", "ач", "ам", "ум", "ия", "ые", "ых",
+    # consonant clusters
+    "пр", "тр", "ск", "сл", "кр", "гр", "бр", "сн", "зн", "дн", "тв", "мн", "кв", "пл",
+    "гл", "бл", "вл", "сп", "нн", "ль",
+    # softer / less frequent bigrams + the user's examples (ке, си, ад)
+    "бе", "ве", "ге", "же", "пе", "че", "ши", "жи", "ци", "ди", "ги", "би", "ви", "ки",
+    "ке", "си", "ад", "лю", "ня", "тя", "дя", "ча", "ща", "ло", "лы", "мы", "ры", "ты",
+    # common trigrams
+    "про", "при", "пре", "пер", "ста", "сто", "сте", "стр", "ост", "ого", "ова", "ние",
+    "ени", "ный", "ной", "ров", "тор", "ско", "ска", "ные", "ест", "тра", "ива", "ани",
+    "енн", "нос", "ред", "раз", "под", "пол", "кон", "ком", "гор", "дер", "нов", "ник",
+    "тел", "тер", "чес", "пра", "ход", "мер", "вер", "лен",
+    # surname-friendly fragments (genealogy corpus)
+    "вич", "ева", "ина", "ций", "ский", "цкий", "енко", "ман", "берг", "штейн",
     # digits
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ]
@@ -198,7 +206,7 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO):
     ap = argparse.ArgumentParser(
         description="hryc.by AUTO bulk downloader: walks years (default 1914→1838), fires the most "
                     "common Russian 2-3 letter substrings + digits, saves every NEW document's "
-                    "scans (skips ones already on disk), stops a year after 5 zero-result queries.")
+                    "scans (skips ones already on disk), stops a year after 10 zero-result queries.")
     ap.add_argument("--from", dest="y_from", type=int, default=default_from,
                     help=f"first year (default {default_from})")
     ap.add_argument("--to",   dest="y_to",   type=int, default=default_to,
@@ -211,7 +219,7 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO):
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--max-pages", type=int, default=25, help="result pages per query")
     ap.add_argument("--zero-stop", type=int, default=ZERO_STOP,
-                    help="stop a year after this many 0-new-scan queries in a row (default 5)")
+                    help=f"stop a year after this many 0-new-scan queries in a row (default {ZERO_STOP})")
     ap.add_argument("--shared", action="store_true",
                     help="reuse the app's .hryc_profile (close the app first)")
     ap.add_argument("--instance", type=int, default=0, metavar="N",
