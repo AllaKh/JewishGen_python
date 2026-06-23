@@ -212,12 +212,13 @@ async def _goto(page, url):
     return True
 
 
-async def _capture_folder(page, start_url, year, out_root, saved, log):
+async def _capture_folder(page, start_url, year, out_root, saved, log, folder=None):
     """Capture the ONE document start_url belongs to: ⟪/⟨ to its first page, then ⟩ to its
     last page, saving every scan. The walk is BOUNDED to this document — it stops the moment
     an arrow points to a DIFFERENT base HAID (the next document), so we don't bleed into the
     rest of the collection. Scans are saved under their ORIGINAL name (<aid>_<year>).
-    Returns the number of scans saved."""
+    `folder` overrides the output directory (e.g. one «<gazette> <year>» dir for the whole
+    year); None → a per-document «<title>_<year>» dir. Returns the number of scans saved."""
     if not await _goto(page, start_url):
         return 0
     doc = _base_haid(_aid(start_url) or _aid(page.url))     # this document's base id
@@ -240,9 +241,10 @@ async def _capture_folder(page, start_url, year, out_root, saved, log):
             if not await _goto(page, prev):
                 break
 
-    # 2) folder name = document title + year
-    name = await _title(page) or doc
-    folder = out_root / H.safe_fn(f"{name}_{year}")
+    # 2) folder: caller-supplied «<gazette> <year>» dir, else per-document «<title>_<year>»
+    if folder is None:
+        name = await _title(page) or doc
+        folder = out_root / H.safe_fn(f"{name}_{year}")
 
     # 3) walk ⟩ forward to the last page of THIS document, saving each scan
     seq, fwd = 0, set()

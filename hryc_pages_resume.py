@@ -3,31 +3,33 @@ hryc_pages_resume.py — AUTOMATIC bulk downloader for hryc.by (no GUI, headless
 
 What it does, unattended
 ------------------------
-* Walks YEARS by itself: from 1914 down to 1838 (1914, 1913, … 1838).
-* For each year it fires a long list of the most common Russian 2- and 3-letter substrings
-  (ке, си, ро, ад, про, при, ст, но, …) plus digits as search queries — these OCR fragments
-  appear in almost every document, so cycling them surfaces the whole year.
+* Walks YEARS by itself: from 1914 down to 1838 by default (override with --from / --to).
+* For each year it fires ~500 DIFFERENT common Russian 2- and 3-letter substrings (ст, но, на,
+  по, … then rarer ones and digits) as search queries — these OCR fragments appear in almost
+  every document, so many of them surface the whole year.
 * Every NEW document's scans are saved; documents already on disk are SKIPPED (keyed on the
   document id / base HAID read from the result URL — NOT the folder title, so different
-  documents that share a title are never confused).
-* It keeps querying a year until TEN queries in a row return 0 new scans, then moves to the
-  next year. One login, one browser, headless by default.
+  documents that share a title are never confused). First query of a year saves everything.
+* It stops a year after TEN queries in a row return 0 new scans, then moves to the next year.
+  One login, one browser, headless by default.
+* --gazette "<NAME>" puts each year's scans in ONE folder «<NAME> <year>» (used by the gazette
+  presets hryc_minsk.py / hryc_mogilev.py); without it, each document gets its own folder.
 
 Run it
 ------
-    python hryc_pages_resume.py                      # 1914 → 1838, all combos, all sources
+    python hryc_pages_resume.py                      # 1914 → 1838, all sources, per-document folders
     python hryc_pages_resume.py --show               # show the window (first login / captcha)
     python hryc_pages_resume.py --from 1905 --to 1900
-    python hryc_pages_resume.py --source "губернские могилевские"
+    python hryc_pages_resume.py --source "губернские могилевские" --gazette "Могилевские"
     python hryc_pages_resume.py --instance 2         # run a 2nd copy in parallel (own profile)
 
-Headless can't solve a CAPTCHA or do the first login — do those once with --show; the profile
-remembers, then run headless. Several copies at once: give each a different --instance N.
+For a single gazette, prefer the presets: hryc_minsk.py (Минские, 1838-1847) and hryc_mogilev.py
+(Могилевские, 1917-1838). Headless can't solve a CAPTCHA or do the first login — do those once
+with --show; the profile remembers. Several copies at once: give each a different --instance N.
 """
 
 import argparse
 import asyncio
-import itertools
 import sys
 from pathlib import Path
 
@@ -45,15 +47,14 @@ except Exception:
 
 YEAR_HI, YEAR_LO = 1914, 1838     # default span (descending): 1914 → 1838
 ZERO_STOP        = 10             # stop a year after this many 0-new-scan queries in a row
-MAX_Q_PER_YEAR   = 600           # safety cap so a year can never loop forever
 
-# The most common Russian 2- and 3-letter substrings (+ digits). Searching these OCR fragments
-# surfaces the bulk of a year's documents; cycling them + the on-disk skip covers the year.
-# Ordered MOST-COMMON FIRST (ст, но, на, по, …) — these appear in almost every document, so a
-# year that has ANYTHING gets hits right away and can't be falsely declared empty. The user's
-# examples (ке, си, ад) and rarer fragments come later; surname-friendly endings (вич, ова,
-# ский, …) help in this genealogy corpus.
-COMBOS = [
+# Russian 2- and 3-letter substrings (+ digits). Searching these OCR fragments surfaces a
+# year's documents; MANY different ones + the on-disk skip cover the whole year. MOST-COMMON
+# FIRST (ст, но, на, по, …) so a year that has ANYTHING gets a hit right away and can't be
+# falsely declared empty; the user's examples (ке, си, ад), rarer fragments and surname endings
+# (вич, ский, штейн) come later. _make_combos() tops this curated list up to ~500 DISTINCT
+# variants with a systematic frequent-letter bigram fill.
+_LEAD = [
     # most common Russian bigrams — broadest coverage, tried first
     "ст", "но", "то", "на", "по", "ен", "ов", "ни", "ра", "ко", "ро", "не", "ли", "во",
     "ка", "ер", "ет", "ал", "ор", "ри", "ан", "ос", "ом", "ва", "ла", "ле", "та", "ре",
@@ -77,11 +78,30 @@ COMBOS = [
 ]
 
 
+def _make_combos(target=500):
+    """~`target` DISTINCT Russian substrings: the curated common-first _LEAD, then a systematic
+    fill of frequent-letter bigrams for breadth (so each year really gets 500 different tries)."""
+    out = list(dict.fromkeys(_LEAD))                 # dedup, keep order
+    freq = "оеаинтсрвлкмдпуяыьгзбйчхжшюцщ"
+    for x in freq:
+        for y in freq:
+            if len(out) >= target:
+                return out
+            xy = x + y
+            if xy not in out:
+                out.append(xy)
+    return out
+
+
+COMBOS = _make_combos(500)
+
+
 async def _search_capture(page, query, sources, year, out_root, done, max_pages,
-                          no_stemming, no_fuzziness, show_experts):
+                          no_stemming, no_fuzziness, show_experts, folder=None):
     """One query: paginate the results, capture every NEW document (base HAID not yet in
     `done`). `done` carries over between queries of the same year so a document found by one
-    substring isn't re-walked by another. Returns the number of scans saved this query."""
+    substring isn't re-walked by another. `folder` (if given) is the one «<gazette> <year>»
+    dir all of the year's scans go into. Returns the number of scans saved this query."""
     urls, seen = [], set()
     for pno in range(1, max_pages + 1):
         u = H.build_search_url(query, sources, pno, doc_dates=str(year),
@@ -103,22 +123,24 @@ async def _search_capture(page, query, sources, year, out_root, done, max_pages,
         if base in done:
             continue
         done.add(base)
-        scans += await _capture_folder(page, u, str(year), out_root, saved, _log)
+        scans += await _capture_folder(page, u, str(year), out_root, saved, _log, folder=folder)
     return scans
 
 
 async def run_auto(out_root, years, sources, max_pages, instance, shared,
-                   no_stemming, no_fuzziness, show_experts, headless, zero_stop):
+                   no_stemming, no_fuzziness, show_experts, headless, zero_stop, gazette=None):
     if not _PW_OK:
         _log("Playwright не установлен."); return
     out_root = Path(out_root); out_root.mkdir(parents=True, exist_ok=True)
     P._HEADLESS = headless
     profile = _instance_profile(instance, shared)
     _log(f"Автозагрузка hryc.by → {out_root}")
-    _log(f"Годы: {years[0]} … {years[-1]}  ({len(years)} лет), запросов-комбинаций: {len(COMBOS)}, "
+    if gazette:
+        _log(f"Ведомости: {gazette} — на каждый год своя папка «{gazette} <год>»")
+    _log(f"Годы: {years[0]} … {years[-1]}  ({len(years)} лет), запросов-вариантов: {len(COMBOS)}, "
          f"источников: {len(sources)}, профиль: {profile.name}, "
          f"браузер: {'headless' if headless else 'видимый (--show)'}")
-    _log(f"Стоп года: {zero_stop} нулевых запросов подряд. Capтча/первый вход — только с --show.")
+    _log(f"Стоп года: {zero_stop} нулевых запросов подряд. Капча/первый вход — только с --show.")
 
     def _clear_locks():
         for n in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
@@ -180,20 +202,25 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
             # ── year loop (descending) ───────────────────────────────────────
             for year in years:
                 done = _saved_bases(out_root, str(year))     # docs already on disk for this year
-                _log(f"\n===== ГОД {year} =====  на диске уже {len(done)} документов")
+                yfolder = out_root / H.safe_fn(f"{gazette} {year}") if gazette else None
+                where = f"→ «{yfolder.name}»" if yfolder else "(папка по документу)"
+                _log(f"\n===== ГОД {year} =====  на диске уже {len(done)} документов  {where}")
                 zero = total = q = 0
-                for combo in itertools.cycle(COMBOS):
-                    if zero >= zero_stop or q >= MAX_Q_PER_YEAR:
-                        break
+                stopped = False
+                for combo in COMBOS:                          # 500 different variants, one pass
                     q += 1
                     n = await _search_capture(page, combo, sources, year, out_root, done,
-                                              max_pages, no_stemming, no_fuzziness, show_experts)
+                                              max_pages, no_stemming, no_fuzziness, show_experts,
+                                              yfolder)
                     total += n
                     zero = zero + 1 if n == 0 else 0
                     _log(f"  [{year}] «{combo}» → новых сканов: {n}  "
                          f"(нулей подряд: {zero}/{zero_stop}, за год: {total})")
+                    if zero >= zero_stop:                     # 10 zeros in a row → next year
+                        stopped = True
+                        break
                 grand += total
-                why = "лимит запросов" if q >= MAX_Q_PER_YEAR else f"{zero_stop} нулей подряд"
+                why = f"{zero_stop} нулей подряд" if stopped else f"перебрал все {q} вариантов"
                 _log(f"===== ГОД {year} готов: новых сканов {total}, запросов {q} ({why}) =====")
             _log(f"\nВСЁ. Прошёл годы {years[0]}…{years[-1]}. Всего новых сканов за прогон: {grand}.")
             _log(f"Папка: {out_root}")
@@ -202,18 +229,22 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
             except Exception: pass
 
 
-def main(default_from=YEAR_HI, default_to=YEAR_LO):
+def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default_source=None):
     ap = argparse.ArgumentParser(
-        description="hryc.by AUTO bulk downloader: walks years (default 1914→1838), fires the most "
-                    "common Russian 2-3 letter substrings + digits, saves every NEW document's "
-                    "scans (skips ones already on disk), stops a year after 10 zero-result queries.")
+        description="hryc.by AUTO bulk downloader: walks years (default 1914→1838), fires ~500 of "
+                    "the most common Russian 2-3 letter substrings + digits, saves every NEW "
+                    "document's scans (skips ones already on disk), stops a year after 10 "
+                    "zero-result queries in a row.")
     ap.add_argument("--from", dest="y_from", type=int, default=default_from,
                     help=f"first year (default {default_from})")
     ap.add_argument("--to",   dest="y_to",   type=int, default=default_to,
                     help=f"last year (default {default_to})")
+    ap.add_argument("--gazette", default=default_gazette, metavar="NAME",
+                    help="put each year's scans in ONE folder «<NAME> <year>» (default: a "
+                         "per-document folder named after the document title).")
     ap.add_argument("--source", action="append", default=[], metavar="PHRASE",
                     help="limit to sources whose full path contains ALL these words; repeat for "
-                         "several; omit = all sources.")
+                         "several; omit = the script's default source (or all).")
     ap.add_argument("--list-sources", action="store_true",
                     help="print every source path (optionally filtered by --source) and exit")
     ap.add_argument("--out", default=DEFAULT_OUT)
@@ -233,22 +264,23 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO):
     ap.add_argument("--no-experts",   action="store_true", help="«Эксперты» OFF (default ON → more)")
     a = ap.parse_args()
 
-    source_ids, chosen = _resolve_sources(a.source)
+    phrases = a.source or ([default_source] if default_source else [])
+    source_ids, chosen = _resolve_sources(phrases)
     if a.list_sources:
         for sid, path in _source_paths():
-            if not a.source or sid in source_ids:
+            if not phrases or sid in source_ids:
                 print(f"{sid:24} {path}")
         return
-    if a.source and not source_ids:
-        ap.error(f"no source matches {a.source!r}. Run --list-sources to see them.")
-    if a.source:
+    if phrases and not source_ids:
+        ap.error(f"no source matches {phrases!r}. Run --list-sources to see them.")
+    if phrases:
         print("Источники:"); [print("  •", p) for p in chosen]
 
     step = -1 if a.y_from >= a.y_to else 1            # descending by default (1914 → 1838)
     years = list(range(a.y_from, a.y_to + step, step))
     asyncio.run(run_auto(a.out, years, source_ids, a.max_pages, a.instance, a.shared,
                          a.no_stemming, a.no_fuzziness, not a.no_experts,
-                         headless=not a.show, zero_stop=a.zero_stop))
+                         headless=not a.show, zero_stop=a.zero_stop, gazette=a.gazette))
 
 
 if __name__ == "__main__":
