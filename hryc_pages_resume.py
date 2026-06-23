@@ -194,13 +194,15 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
             except Exception: pass
 
 
-def main():
+def main(default_from=YEAR_HI, default_to=YEAR_LO):
     ap = argparse.ArgumentParser(
-        description="hryc.by AUTO bulk downloader: walks years 1914→1838, fires the most common "
-                    "Russian 2-3 letter substrings + digits, saves every NEW document's scans "
-                    "(skips ones already on disk), stops a year after 5 zero-result queries.")
-    ap.add_argument("--from", dest="y_from", type=int, default=YEAR_HI, help="first year (default 1914)")
-    ap.add_argument("--to",   dest="y_to",   type=int, default=YEAR_LO, help="last year (default 1838)")
+        description="hryc.by AUTO bulk downloader: walks years (default 1914→1838), fires the most "
+                    "common Russian 2-3 letter substrings + digits, saves every NEW document's "
+                    "scans (skips ones already on disk), stops a year after 5 zero-result queries.")
+    ap.add_argument("--from", dest="y_from", type=int, default=default_from,
+                    help=f"first year (default {default_from})")
+    ap.add_argument("--to",   dest="y_to",   type=int, default=default_to,
+                    help=f"last year (default {default_to})")
     ap.add_argument("--source", action="append", default=[], metavar="PHRASE",
                     help="limit to sources whose full path contains ALL these words; repeat for "
                          "several; omit = all sources.")
