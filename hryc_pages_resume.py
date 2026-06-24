@@ -229,7 +229,8 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
             except Exception: pass
 
 
-def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default_source=None):
+def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default_source=None,
+         default_out=DEFAULT_OUT):
     ap = argparse.ArgumentParser(
         description="hryc.by AUTO bulk downloader: walks years (default 1914→1838), fires ~500 of "
                     "the most common Russian 2-3 letter substrings + digits, saves every NEW "
@@ -247,7 +248,7 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
                          "several; omit = the script's default source (or all).")
     ap.add_argument("--list-sources", action="store_true",
                     help="print every source path (optionally filtered by --source) and exit")
-    ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--out", default=default_out)
     ap.add_argument("--max-pages", type=int, default=25, help="result pages per query")
     ap.add_argument("--zero-stop", type=int, default=ZERO_STOP,
                     help=f"stop a year after this many 0-new-scan queries in a row (default {ZERO_STOP})")

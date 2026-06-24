@@ -1,12 +1,12 @@
-"""
+r"""
 hryc_kiev.py — AUTO bulk downloader for «Киевские губернские ведомости» (hryc.by).
 
   • source = Газеты / Губернские ведомости / Киевские  (hcid1_4_8)
   • years 1854 → 1917 (override with --from / --to)
-  • writes into the EXISTING «hryc.by_<год>» folders, exactly like hryc_mogilev.py — it does
-    NOT create a separate «Киевские губернские ведомости <год>» folder. (No --gazette → the old
-    per-document folder naming «hryc.by_<год>» is kept; a year you've already downloaded is
-    reused, nothing duplicated.)
+  • writes into ITS OWN folder «D:\Archives\Киев\hryc.by_<год>» — SEPARATE from Mogilev (whose
+    legacy lives in «D:\Archives\hryc.by_<год>»). Kiev and Mogilev are different gazettes, and
+    their scan filenames are content hashes that don't say which gazette they came from, so they
+    must NOT share a folder. (Change with --out if you want a different location.)
   • ~500 query variants per year; saves every NEW document (skips what's already on disk);
     after 10 queries in a row with 0 new scans → next year.
 
@@ -26,7 +26,8 @@ YEAR_FROM, YEAR_TO = 1854, 1917
 
 if __name__ == "__main__":
     try:
-        # NO default_gazette → keeps the existing «hryc.by_<год>» folders (как могилевский).
-        RZ.main(default_from=YEAR_FROM, default_to=YEAR_TO, default_source=SOURCE)
+        # SEPARATE folder so Kiev never mixes with Mogilev's «D:\Archives\hryc.by_<год>».
+        RZ.main(default_from=YEAR_FROM, default_to=YEAR_TO, default_source=SOURCE,
+                default_out=r"D:\Archives\Киев")
     except KeyboardInterrupt:
         print("\nПрервано — скачанное сохранено.")
