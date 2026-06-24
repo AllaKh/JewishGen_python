@@ -232,7 +232,7 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
                     pool, ci, extend = _make_combos(combo_offset + COMBO_BATCH), combo_offset, True
                 why = ""
                 while True:
-                    if zero >= zero_stop:                     # 10 zeros in a row → year done
+                    if extend and zero >= zero_stop:          # zero-stop only in auto mode; --only/--alphabet runs ALL given queries
                         why = f"{zero_stop} нулей подряд"; break
                     if q >= MAX_Q_PER_YEAR:
                         why = f"предел {MAX_Q_PER_YEAR} запросов"; break
@@ -293,6 +293,9 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
                     help="run ONLY these exact queries (comma-separated), nothing else — skips the "
                          "500-combo set and auto-extend. E.g. --only ъ (the hard sign, in almost "
                          "every pre-1918 document → one query catches nearly everything).")
+    ap.add_argument("--alphabet", action="store_true",
+                    help="run the whole Russian alphabet + digits as wildcard queries «*а*», «*б*», "
+                         "…, «*я*», «*0*»…«*9*» (43 queries/year, all of them) — thorough sweep.")
     ap.add_argument("--shared", action="store_true",
                     help="reuse the app's .hryc_profile (close the app first)")
     ap.add_argument("--instance", type=int, default=0, metavar="N",
@@ -320,11 +323,13 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
 
     step = -1 if a.y_from >= a.y_to else 1            # descending by default (1914 → 1838)
     years = list(range(a.y_from, a.y_to + step, step))
+    only = [c for c in a.only.split(",") if c] or None
+    if a.alphabet:                                   # whole alphabet + digits as «*x*» wildcards
+        only = [f"*{c}*" for c in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя0123456789"]
     asyncio.run(run_auto(a.out, years, source_ids, a.max_pages, a.instance, a.shared,
                          a.no_stemming, a.no_fuzziness, not a.no_experts,
                          headless=not a.show, zero_stop=a.zero_stop, gazette=a.gazette,
-                         combo_offset=a.combo_offset,
-                         only=[c for c in a.only.split(",") if c] or None))
+                         combo_offset=a.combo_offset, only=only))
 
 
 if __name__ == "__main__":
