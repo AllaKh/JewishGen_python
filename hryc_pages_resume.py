@@ -144,7 +144,7 @@ async def _search_capture(page, query, sources, year, out_root, done, max_pages,
 
 async def run_auto(out_root, years, sources, max_pages, instance, shared,
                    no_stemming, no_fuzziness, show_experts, headless, zero_stop, gazette=None,
-                   combo_offset=0):
+                   combo_offset=0, only=None):
     if not _PW_OK:
         _log("Playwright не установлен."); return
     out_root = Path(out_root); out_root.mkdir(parents=True, exist_ok=True)
@@ -157,8 +157,10 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
          f"источников: {len(sources)}, профиль: {profile.name}, "
          f"браузер: {'headless' if headless else 'видимый (--show)'}")
     _log(f"Стоп года: {zero_stop} нулевых запросов подряд. Капча/первый вход — только с --show.")
-    if combo_offset:
+    if combo_offset and not only:
         _log(f"  ВТОРОЙ НАБОР: начинаю с сочетания #{combo_offset} (совершенно другие 500), не с начала.")
+    if only:
+        _log(f"  ТОЛЬКО заданные запросы: {only} — без 500-набора и без авто-добора, по одному на год.")
 
     def _clear_locks():
         for n in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
@@ -224,14 +226,19 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
                 where = f"→ «{yfolder.name}»" if yfolder else "(папка по документу)"
                 _log(f"\n===== ГОД {year} =====  на диске уже {len(done)} документов  {where}")
                 zero = total = q = 0
-                pool = _make_combos(combo_offset + COMBO_BATCH)   # covers combos [offset .. offset+500)
-                ci, why = combo_offset, ""                    # start at the offset (a different 500)
+                if only:                                      # ровно эти запросы, без авто-добора
+                    pool, ci, extend = list(only), 0, False
+                else:                                         # обычный режим: ~500 + авто-добор
+                    pool, ci, extend = _make_combos(combo_offset + COMBO_BATCH), combo_offset, True
+                why = ""
                 while True:
                     if zero >= zero_stop:                     # 10 zeros in a row → year done
                         why = f"{zero_stop} нулей подряд"; break
                     if q >= MAX_Q_PER_YEAR:
                         why = f"предел {MAX_Q_PER_YEAR} запросов"; break
-                    if ci >= len(pool):                       # ran out WITHOUT 10 zeros → +500 more
+                    if ci >= len(pool):                       # ran out WITHOUT 10 zeros
+                        if not extend:                        # --only: no auto-extend
+                            why = f"перебрал заданные запросы ({len(pool)})"; break
                         bigger = _make_combos(len(pool) + COMBO_BATCH)
                         if len(bigger) <= len(pool):
                             why = f"кончились сочетания ({len(pool)})"; break
@@ -282,6 +289,10 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
     ap.add_argument("--combo-offset", type=int, default=0, metavar="N",
                     help="start from combo #N instead of #0 — a SECOND pass with a COMPLETELY "
                          "different set of letter combos (e.g. --combo-offset 500 = the next 500).")
+    ap.add_argument("--only", default="", metavar="QUERIES",
+                    help="run ONLY these exact queries (comma-separated), nothing else — skips the "
+                         "500-combo set and auto-extend. E.g. --only ъ (the hard sign, in almost "
+                         "every pre-1918 document → one query catches nearly everything).")
     ap.add_argument("--shared", action="store_true",
                     help="reuse the app's .hryc_profile (close the app first)")
     ap.add_argument("--instance", type=int, default=0, metavar="N",
@@ -312,7 +323,8 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
     asyncio.run(run_auto(a.out, years, source_ids, a.max_pages, a.instance, a.shared,
                          a.no_stemming, a.no_fuzziness, not a.no_experts,
                          headless=not a.show, zero_stop=a.zero_stop, gazette=a.gazette,
-                         combo_offset=a.combo_offset))
+                         combo_offset=a.combo_offset,
+                         only=[c for c in a.only.split(",") if c] or None))
 
 
 if __name__ == "__main__":
