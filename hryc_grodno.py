@@ -3,13 +3,13 @@ hryc_grodno.py — AUTO bulk downloader for «Гродненские губер�
 
 Same engine as hryc_pages_resume.py, preset for the Grodno provincial gazette:
   • source = Газеты / Губернские ведомости / Гродненские  (hcid1_4_9)
-  • years 1838–1839 (override with --from / --to)
+  • years 1837–1917 (override with --from / --to)
   • each year → ONE folder «Гродненские губернские ведомости <год>»
   • ~500 query variants per year; saves every NEW document (skips what's already on disk);
     after 10 queries in a row with 0 new scans → next year.
 
     python hryc_grodno.py --show        # FIRST run: log in / solve captcha in the window
-    python hryc_grodno.py               # 1838, 1839, headless, logs only
+    python hryc_grodno.py               # 1837…1917, headless, logs only
     python hryc_grodno.py --instance 3  # run in parallel (its own Chrome profile)
 
 All hryc_pages_resume.py flags work (--zero-stop, --max-pages, --instance, --show, …); you can
@@ -20,7 +20,7 @@ import hryc_pages_resume as RZ
 
 GAZETTE      = "Гродненские губернские ведомости"
 SOURCE       = "губернские гродненские"   # → hcid1_4_9 (Газеты / Губернские ведомости / Гродненские)
-YEAR_FROM, YEAR_TO = 1838, 1839
+YEAR_FROM, YEAR_TO = 1837, 1917
 
 
 if __name__ == "__main__":
