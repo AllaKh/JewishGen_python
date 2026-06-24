@@ -47,6 +47,8 @@ except Exception:
 
 YEAR_HI, YEAR_LO = 1914, 1838     # default span (descending): 1914 → 1838
 ZERO_STOP        = 10             # stop a year after this many 0-new-scan queries in a row
+COMBO_BATCH      = 500            # if a year hasn't hit the zero-streak, add this many more combos
+MAX_Q_PER_YEAR   = 3000           # hard safety cap so a year can never loop forever
 
 # Russian 2- and 3-letter substrings (+ digits). Searching these OCR fragments surfaces a
 # year's documents; MANY different ones + the on-disk skip cover the whole year. MOST-COMMON
@@ -79,17 +81,30 @@ _LEAD = [
 
 
 def _make_combos(target=500):
-    """~`target` DISTINCT Russian substrings: the curated common-first _LEAD, then a systematic
-    fill of frequent-letter bigrams for breadth (so each year really gets 500 different tries)."""
-    out = list(dict.fromkeys(_LEAD))                 # dedup, keep order
+    """The first `target` DISTINCT Russian substrings, deterministic and EXTENSIBLE: the curated
+    common-first _LEAD, then ALL frequent-letter bigrams, then trigrams. Deterministic order means
+    _make_combos(500) is a prefix of _make_combos(1000) — so a year that hasn't hit its zero-streak
+    after 500 can ask for 500 more and just keep going. Pool size ≈ 22 900 (168 + 28² + 28³)."""
+    out, seen = [], set()
+    def add(c):
+        if c not in seen:
+            seen.add(c); out.append(c)
+    for c in _LEAD:
+        add(c)
+        if len(out) >= target:
+            return out
     freq = "оеаинтсрвлкмдпуяыьгзбйчхжшюцщ"
-    for x in freq:
+    for x in freq:                                   # bigrams
         for y in freq:
             if len(out) >= target:
                 return out
-            xy = x + y
-            if xy not in out:
-                out.append(xy)
+            add(x + y)
+    for x in freq:                                   # trigrams (the extra batches)
+        for y in freq:
+            for z in freq:
+                if len(out) >= target:
+                    return out
+                add(x + y + z)
     return out
 
 
@@ -206,8 +221,21 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
                 where = f"→ «{yfolder.name}»" if yfolder else "(папка по документу)"
                 _log(f"\n===== ГОД {year} =====  на диске уже {len(done)} документов  {where}")
                 zero = total = q = 0
-                stopped = False
-                for combo in COMBOS:                          # 500 different variants, one pass
+                pool = list(COMBOS)                           # start with ~500 combos
+                ci, why = 0, ""
+                while True:
+                    if zero >= zero_stop:                     # 10 zeros in a row → year done
+                        why = f"{zero_stop} нулей подряд"; break
+                    if q >= MAX_Q_PER_YEAR:
+                        why = f"предел {MAX_Q_PER_YEAR} запросов"; break
+                    if ci >= len(pool):                       # ran out WITHOUT 10 zeros → +500 more
+                        bigger = _make_combos(len(pool) + COMBO_BATCH)
+                        if len(bigger) <= len(pool):
+                            why = f"кончились сочетания ({len(pool)})"; break
+                        _log(f"  [{year}] {ci} сочетаний пройдено, {zero_stop} нулей подряд ещё НЕ "
+                             f"набрано → добавляю +{len(bigger) - len(pool)} сочетаний (всего {len(bigger)})")
+                        pool = bigger
+                    combo = pool[ci]; ci += 1
                     q += 1
                     n = await _search_capture(page, combo, sources, year, out_root, done,
                                               max_pages, no_stemming, no_fuzziness, show_experts,
@@ -216,11 +244,7 @@ async def run_auto(out_root, years, sources, max_pages, instance, shared,
                     zero = zero + 1 if n == 0 else 0
                     _log(f"  [{year}] «{combo}» → новых сканов: {n}  "
                          f"(нулей подряд: {zero}/{zero_stop}, за год: {total})")
-                    if zero >= zero_stop:                     # 10 zeros in a row → next year
-                        stopped = True
-                        break
                 grand += total
-                why = f"{zero_stop} нулей подряд" if stopped else f"перебрал все {q} вариантов"
                 _log(f"===== ГОД {year} готов: новых сканов {total}, запросов {q} ({why}) =====")
             _log(f"\nВСЁ. Прошёл годы {years[0]}…{years[-1]}. Всего новых сканов за прогон: {grand}.")
             _log(f"Папка: {out_root}")

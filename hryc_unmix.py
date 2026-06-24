@@ -70,22 +70,19 @@ def main():
         if not mixdir.exists() or mixdir.resolve() == refdir.resolve():
             continue                                       # nothing mixed for this year / same dir
 
-        # base HAIDs present in the CLEAN reference folder for this year
-        refbases = set()
-        for f in refdir.iterdir():
-            if f.is_file():
-                b = _base_haid(f.stem, year)
-                if b:
-                    refbases.add(b)
-        if not refbases:
+        # EXACT filenames present in the CLEAN reference folder (ПОЛНОЕ совпадение имени — не по
+        # части HAID): only a byte-for-byte same-named scan counts, so we never touch the other
+        # gazette's files by mistake.
+        refnames = set(f.name for f in refdir.iterdir() if f.is_file())
+        if not refnames:
             continue
 
         matches = [f for f in mixdir.iterdir()
-                   if f.is_file() and _base_haid(f.stem, year) in refbases]
+                   if f.is_file() and f.name in refnames]
         if not matches:
             continue
         total_match += len(matches)
-        print(f"[{year}] эталон: {len(refbases)} док.  →  в смешанной совпало: {len(matches)} файлов"
+        print(f"[{year}] эталон: {len(refnames)} файлов  →  ПОЛНОЕ совпадение в смешанной: {len(matches)}"
               + ("" if a.apply else "   (dry-run)"))
 
         if a.apply:
