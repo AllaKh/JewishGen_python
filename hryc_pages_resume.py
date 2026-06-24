@@ -46,9 +46,9 @@ except Exception:
     _PW_OK = False
 
 YEAR_HI, YEAR_LO = 1914, 1838     # default span (descending): 1914 → 1838
-ZERO_STOP        = 10             # stop a year after this many 0-new-scan queries in a row
-COMBO_BATCH      = 500            # if a year hasn't hit the zero-streak, add this many more combos
-MAX_Q_PER_YEAR   = 3000           # hard safety cap so a year can never loop forever
+ZERO_STOP        = 30             # stop a year after this many 0-new-scan queries in a row
+COMBO_BATCH      = 1500            # if a year hasn't hit the zero-streak, add this many more combos
+MAX_Q_PER_YEAR   = 5000           # hard safety cap so a year can never loop forever
 
 # Russian 2- and 3-letter substrings (+ digits). Searching these OCR fragments surfaces a
 # year's documents; MANY different ones + the on-disk skip cover the whole year. MOST-COMMON
@@ -296,6 +296,9 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
     ap.add_argument("--alphabet", action="store_true",
                     help="run the whole Russian alphabet + digits as wildcard queries «*а*», «*б*», "
                          "…, «*я*», «*0*»…«*9*» (43 queries/year, all of them) — thorough sweep.")
+    ap.add_argument("--lead", action="store_true",
+                    help="run exactly the curated _LEAD list (168 common bigrams/trigrams/surname "
+                         "fragments/digits), ALL of them every year, no early stop.")
     ap.add_argument("--shared", action="store_true",
                     help="reuse the app's .hryc_profile (close the app first)")
     ap.add_argument("--instance", type=int, default=0, metavar="N",
@@ -326,6 +329,8 @@ def main(default_from=YEAR_HI, default_to=YEAR_LO, default_gazette=None, default
     only = [c for c in a.only.split(",") if c] or None
     if a.alphabet:                                   # whole alphabet + digits as «*x*» wildcards
         only = [f"*{c}*" for c in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя0123456789"]
+    if a.lead:                                       # exactly the curated 168-combo _LEAD list
+        only = list(_LEAD)
     asyncio.run(run_auto(a.out, years, source_ids, a.max_pages, a.instance, a.shared,
                          a.no_stemming, a.no_fuzziness, not a.no_experts,
                          headless=not a.show, zero_stop=a.zero_stop, gazette=a.gazette,
