@@ -195,20 +195,54 @@ def _ratio(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
+def _common_prefix(a: str, b: str) -> int:
+    n = 0
+    for ca, cb in zip(a, b):
+        if ca != cb:
+            break
+        n += 1
+    return n
+
+
+def _surname_hit(q: str, t: str) -> bool:
+    """Is record token «t» the SAME surname as query surname «q»? Accepts clear
+    matches (≥0.94) AND a transliteration suffix-variant of equal-ish length that
+    shares a long common stem — «Shenderovich»↔«Shenderovitz» (0.83, same family) —
+    while still rejecting the look-alikes the user dislikes: «Sanderson» (0.88, an
+    ADDED suffix → len differs by 2), «Saunders» (0.93, short common prefix),
+    «Snyder» (0.77). The stem rule only kicks in for names ≥6 letters."""
+    rt = _ratio(q, t)
+    if rt >= 0.94:
+        return True
+    M = max(len(q), len(t))
+    if M >= 6 and abs(len(q) - len(t)) <= 1 and rt >= 0.80 \
+            and _common_prefix(q, t) >= 0.6 * M:
+        return True
+    return False
+
+
 def _match_name(first_q: str, last_q: str, full: str) -> float:
-    """Score a result's PERSON name against the query. Surname must match closely
-    (≥0.90 — «Sanders» keeps «Alexander Wolf Sanders» but rejects «Snyder» /
-    «Sanderson» / «Saunders»); the given name matches by initial / prefix / sim."""
+    """Score a result's PERSON name against the query. The surname query may list
+    SEVERAL alternative surnames — «Sanders Shenderovich» is one immigrant known by
+    both — so a record matches if ANY record token is the same surname as ANY of
+    them (_surname_hit, transliteration-aware). Given name matches by initial /
+    prefix / similarity.
+    WAS A BUG: a multi-word surname was glued into one string and compared whole,
+    so «Alexander Wolf Sanders» / «…Shenderovitz» scored ~31/37% → 0 kept, even
+    though Ancestry returned them as perfect matches."""
     toks = re.findall(r"[A-Za-zА-Яа-яёЁ]+", (full or "").lower())
     if not toks:
         return 0.0
-    lastq  = (last_q or "").strip().lower()
+    surqs  = (last_q or "").strip().lower().split()      # alternative surnames (OR)
     firstq = (first_q or "").strip().lower().split()
-    sur = max((_ratio(lastq, t) for t in toks), default=0.0) if lastq else 1.0
-    # surname must match closely: «Sanders»=1.0 kept; «Saunders»≈0.93 /
-    # «Sanderson»≈0.88 / «Snyder»≈0.6 rejected (user wants exactly this surname).
-    if lastq and sur < 0.94:
-        return round(sur * 60, 1)
+    if surqs:
+        best = max((_ratio(q, t) for q in surqs for t in toks), default=0.0)
+        hit  = any(_surname_hit(q, t) for q in surqs for t in toks)
+        if not hit:
+            return round(best * 60, 1)
+        sur = best
+    else:
+        sur = 1.0
     if not firstq:
         return round(85 + 14 * sur, 1)
     g = firstq[0]
