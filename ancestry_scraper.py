@@ -1350,7 +1350,7 @@ async def run_scraper(
     want_xlsx = output_format in ("xlsx", "both")
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
-    images_root = output_folder / "images"
+    images_root = output_folder / "images" / "Ancestry"
 
     qname  = " ".join(p for p in (first_names, last_names) if p)
     qlines = [ln for ln in [

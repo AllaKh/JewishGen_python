@@ -962,7 +962,7 @@ async def run_scraper(*,
                   doc_name=doc_name, doc_from=doc_from, doc_to=doc_to)
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
-    images_dir = output_folder / "images" / (safe_fn(query) or "memsearch")
+    images_dir = output_folder / "images" / "Мемориал" / (safe_fn(query) or "memsearch")
     summary = {"ok": False}
 
     if not query.strip() and not any(params.values()):

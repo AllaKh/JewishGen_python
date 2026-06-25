@@ -939,6 +939,65 @@ async def _get_2fa_codes(ctx, mail_email: str, mail_password: str,
 
 
 # ── LOGIN ─────────────────────────────────────────────────────────────────── #
+async def _mh_logged_in(page) -> bool:
+    """Logged in = NOT on a login/verify URL AND no e-mail / password / 2FA code
+    field visible. The URL alone is unreliable: on the .co.il (Hebrew) first login
+    MyHeritage leaves /login but STILL shows the e-mail/password form, so a
+    URL-only check wrongly reports "logged in" and the scraper searches while
+    signed out (Alla's bug). Checking for a visible login field fixes that."""
+    try:
+        u = (page.url or "").lower()
+    except Exception:
+        return False
+    if any(x in u for x in ("login", "signin", "verify", "auth")):
+        return False
+    for sel in ('input[type="password"]',
+                'input[autocomplete="one-time-code"]', 'input[maxlength="6"]',
+                '#registrationEmail', 'input[name="registrationEmail"]',
+                'input[type="email"]'):
+        try:
+            if await page.locator(sel).first.is_visible(timeout=400):
+                return False
+        except Exception:
+            pass
+    return True
+
+
+async def _wait_manual_login(page, log, minutes=8) -> bool:
+    """Auto-login didn't complete (typically the FIRST .co.il/Hebrew login, whose
+    form / 2-FA differ). Instead of pressing on signed-out, KEEP THE WINDOW OPEN
+    and wait for the user to sign in BY HAND — e-mail, password AND the e-mail
+    code — polling until MyHeritage is actually logged in, then continue. This is
+    the hryc / Ancestry pattern: never go to search while logged out."""
+    ctx = None
+    try:
+        ctx = page.context
+        ctx._mh_pause_autoclose = True      # don't auto-close her mail / verify tabs
+    except Exception:
+        pass
+    try:
+        await page.bring_to_front()
+    except Exception:
+        pass
+    log("  " + "=" * 60)
+    log("  АВТОВХОД НЕ ПРОШЁЛ. ВОЙДИ В ОТКРЫТОМ ОКНЕ MyHeritage РУКАМИ:")
+    log("  e-mail, пароль и код из почты. Окно НЕ закрою и поиск НЕ начну,")
+    log(f"  пока не увижу, что ты вошла (жду до {minutes} мин), потом продолжу сам.")
+    log("  " + "=" * 60)
+    try:
+        for _ in range(minutes * 30):       # poll every 2s
+            await asyncio.sleep(2)
+            if await _mh_logged_in(page):
+                log(f"  ✓ Вижу вход вручную — продолжаю поиск. URL: {page.url}")
+                return True
+    finally:
+        if ctx is not None:
+            try: ctx._mh_pause_autoclose = False
+            except Exception: pass
+    log("  !! Так и не дождался входа за отведённое время — прерываю.")
+    return False
+
+
 async def _login(page, login_url, has_cookies,
                  email, password, log,
                  ask_2fa_code=None,
@@ -966,10 +1025,12 @@ async def _login(page, login_url, has_cookies,
     await asyncio.sleep(0.5)
 
     # Step 0: ALREADY logged in? With the persistent profile MyHeritage
-    # redirects away from /login (e.g. to the family-site home). If we are not
-    # on a login/signin page, there's nothing to do — skip the whole form.
-    cur = page.url.lower()
-    if "login" not in cur and "signin" not in cur:
+    # redirects away from /login (e.g. to the family-site home). Treat as logged
+    # in ONLY when there is no login / 2FA form on screen (see _mh_logged_in) —
+    # the old URL-only check false-positived on the .co.il (Hebrew) first login
+    # (lands off /login but the e-mail/password form is still there) → the scraper
+    # skipped the form and searched signed-out, seeing no records (Alla's bug).
+    if await _mh_logged_in(page):
         log("  ✓ Уже авторизован (сессия из профиля) — логин не нужен")
         # Close any social popup tab that may have opened
         await _close_social_tabs(page.context, page, log)
@@ -1018,20 +1079,25 @@ async def _login(page, login_url, has_cookies,
             continue
 
     if not email_visible:
-        log("  !! Email field not found — saving screenshot for debugging…")
+        log("  !! Поле e-mail не найдено (другая форма, напр. ивритская) — перехожу на ручной вход.")
         try:
-            ss = Path(__file__).resolve().parent / "debug_login.png"
-            await page.screenshot(path=str(ss), full_page=True)
-            log(f"     Screenshot saved: {ss}")
+            # writable even in a PACKAGED install (Path(__file__).parent is read-only
+            # under Program Files → the dump silently failed there before)
+            dump_dir = user_data_dir()
+            await page.screenshot(path=str(dump_dir / "debug_login.png"), full_page=True)
+            (dump_dir / "debug_login.html").write_text(
+                await page.content(), encoding="utf-8")
+            log(f"     Дамп формы → {dump_dir}\\debug_login.html (+ .png) — пришли мне, поправлю селекторы")
         except Exception:
             pass
-        return False
+        return await _wait_manual_login(page, log)
 
     # Step 4: fill form
     ok_e = await _fill(page, EMAIL_SELS, email,    "Email",    log)
     ok_p = await _fill(page, PASS_SELS,  password, "Password", log)
     if not ok_e or not ok_p:
-        return False
+        log("  !! Не удалось вписать e-mail/пароль автоматически — перехожу на ручной вход.")
+        return await _wait_manual_login(page, log)
 
     # Step 5: submit
     SUBMIT_SELS = [
@@ -1077,18 +1143,7 @@ async def _login(page, login_url, has_cookies,
     ]
 
     async def _logged_in() -> bool:
-        u = page.url.lower()
-        if any(x in u for x in ("login", "signin", "verify", "auth")):
-            return False
-        # Guard: if a password or code field is still visible we are NOT in yet
-        for sel in ('input[type="password"]', 'input[autocomplete="one-time-code"]',
-                    'input[maxlength="6"]'):
-            try:
-                if await page.locator(sel).first.is_visible(timeout=500):
-                    return False
-            except Exception:
-                pass
-        return True
+        return await _mh_logged_in(page)
 
     async def _find_tfa():
         for sel in TFA_SELS:
@@ -1119,8 +1174,8 @@ async def _login(page, login_url, has_cookies,
         codes = await _get_2fa_codes(page.context, email, imap_password,
                                      log, ask_2fa_code)
         if not codes:
-            log("  !! 2FA: код не получен — прерываю.")
-            return False
+            log("  !! 2FA: код из почты прочитать не вышло — введи его в окне руками, жду.")
+            return await _wait_manual_login(page, log)
 
         async def _digits_in_field() -> str:
             try:
@@ -1277,8 +1332,8 @@ async def _login(page, login_url, has_cookies,
             log(f"  !! Login error: {err!r}")
     except Exception:
         pass
-    log(f"  !! Login failed. URL: {cur}")
-    return False
+    log(f"  !! Автовход не завершился (URL: {cur}) — перехожу на ручной вход.")
+    return await _wait_manual_login(page, log)
 
 # ── SELECT FAMILY SITE (FP/select-site.php) ───────────────────────────────── #
 async def _handle_select_site(page, family_site, log):
@@ -3867,7 +3922,7 @@ async def run_scraper(*,
                 return summary
 
             # Folder for the full-size photos
-            images_dir = output_folder / "images" / (safe_fn(qname) or "myheritage")
+            images_dir = output_folder / "images" / "MyHeritage" / (safe_fn(qname) or "myheritage")
 
             records = []
             paywalled = []                       # records hidden behind the wall

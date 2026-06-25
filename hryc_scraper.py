@@ -694,7 +694,7 @@ async def run_scraper(
             if open_documents and doc_rows:
                 # put the search YEAR (Doc dates) in the folder name when given
                 year_tag = "_" + safe_fn(doc_dates) if doc_dates else ""
-                images_dir = output_folder / "images" / (safe_fn(query) + year_tag)
+                images_dir = output_folder / "images" / "hryc.by" / (safe_fn(query) + year_tag)
                 # A broad query (*а* + year) returns the SAME /document?id= in many snippet
                 # rows. Open each UNIQUE url ONCE, and dedup by image content too — so the
                 # folder never gets duplicate scans. Duplicate rows reuse the same saved path.

@@ -410,7 +410,7 @@ def run_scraper(
     want_xlsx = output_format in ("xlsx", "both")
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
-    images_dir = output_folder / "images"
+    images_dir = output_folder / "images" / "Jewish Pogroms"
 
     qlines = [f"Family name: {family_name}",
               f"Sounds like: {'yes' if soundslike else 'no (exact)'}"]

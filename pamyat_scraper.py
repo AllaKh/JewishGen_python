@@ -1213,7 +1213,7 @@ async def run_scraper(*,
         log(f"  Фильтры результатов (выбрано): {len(result_tags)}")
     output_folder = Path(output_folder); output_folder.mkdir(parents=True, exist_ok=True)
     qkey = " ".join(p for p in (last_name, first_name, middle_name) if p) or "pamyat"
-    images_dir = output_folder / "images" / (safe_fn(qkey) or "pamyat")
+    images_dir = output_folder / "images" / "Память народа" / (safe_fn(qkey) or "pamyat")
     summary = {"ok": False}
 
     # «empty query» check ignores the always-set boolean flags

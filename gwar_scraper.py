@@ -1085,7 +1085,7 @@ async def run_scraper(*,
 
     output_folder = Path(output_folder); output_folder.mkdir(parents=True, exist_ok=True)
     qkey = " ".join(p for p in (last_name, first_name, middle_name) if p) or "gwar"
-    images_dir = output_folder / "images" / (safe_fn(qkey) or "gwar")
+    images_dir = output_folder / "images" / "Памяти героев Великой войны" / (safe_fn(qkey) or "gwar")
     summary = {"ok": False}
 
     if not any(params.get(k) for k in

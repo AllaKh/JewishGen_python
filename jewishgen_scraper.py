@@ -2673,7 +2673,7 @@ async def run_scraper(
                 # ── Download images linked from result rows ─────────── #
                 # Dir: {search_terms}_{db_name}
                 _db_part  = safe_filename(desc or label) or f"db_{i}"
-                _img_dir  = output_folder / "images" / f"{q_prefix}_{_db_part}"
+                _img_dir  = output_folder / "images" / "JewishGen" / f"{q_prefix}_{_db_part}"
                 _fs_u, _fs_p = _get_fs_credentials()
                 row_files = {}
                 try:

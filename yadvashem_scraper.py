@@ -604,7 +604,7 @@ async def run_scraper(*,
     output_folder = Path(output_folder); output_folder.mkdir(parents=True, exist_ok=True)
     qkey = " ".join(v for k, v in fields.items()
                     if not k.endswith("_type") and v) or global_text or "yadvashem"
-    images_dir = output_folder / "images" / (safe_fn(qkey) or "yadvashem")
+    images_dir = output_folder / "images" / "Yad Vashem" / (safe_fn(qkey) or "yadvashem")
     summary = {"ok": False}
 
     if not any(v for k, v in fields.items() if not k.endswith("_type") and v) \

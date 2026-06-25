@@ -509,7 +509,7 @@ async def run_scraper(
     want_xlsx     = output_format in ("xlsx", "both")
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
-    images_dir    = output_folder / "images"
+    images_dir    = output_folder / "images" / "АИС Скарб"
     summary       = {"ok": False}
 
     if not surnames:
