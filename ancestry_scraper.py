@@ -75,10 +75,9 @@ SEARCH_URL = "https://www.ancestry.com/search/"
 ANC_BASE   = "https://www.ancestry.com"
 SITE_NAME  = "Ancestry"
 MIN_MATCH  = int(_CFG.get("min_match", 80))
-MAX_PAGES  = int(_CFG.get("max_pages", 1))     # result pages (count=50 → page 1 is
-                                               # plenty; >1 re-collected dups and
-                                               # dropped click-applied filters)
-MAX_SCRAPE = int(_CFG.get("max_scrape", 40))   # cap records actually opened
+MAX_PAGES  = int(_CFG.get("max_pages", 1))     # (legacy &page=N walk — unused now)
+_PAGE_CAP  = int(_CFG.get("page_cap", 1000))   # ВСЕ страницы (стоп = последняя/нет новых; 1000 — лишь анти-зацикл)
+MAX_SCRAPE = int(_CFG.get("max_scrape", 100000))  # records opened (фактически без лимита — открываем ВСЁ)
 # Filter label → Ancestry code for /search/categories/<code>/ (or collection:<id>
 # → /search/collections/<id>/, or record_f=<id> for locations). Flattened from the
 # NESTED section JSONs (record_types: category→subcategory/decade→collections;
@@ -181,7 +180,7 @@ def _abs(href: str) -> str:
 
 def _is_record(href: str) -> bool:
     h = (href or "").lower()
-    return any(p in h for p in _REC_PATTERNS)
+    return any(p in h for p in _REC_PATTERNS) or bool(re.search(r"/collections/\d+/records/\d+", h))
 
 
 def _name_part(s: str) -> str:
@@ -214,11 +213,23 @@ def _surname_hit(q: str, t: str) -> bool:
     rt = _ratio(q, t)
     if rt >= 0.94:
         return True
+    # a single dropped/added TRAILING letter (Smit↔Smith, Cohe↔Cohen): one surname is
+    # a prefix of the other and the lengths differ by ≤1 → same name. Rejects
+    # «Saunders» (not a prefix of «Sanders») and «Sanderson» (a prefix but len +2).
+    short, lng = (q, t) if len(q) <= len(t) else (t, q)
+    if len(short) >= 4 and len(lng) - len(short) <= 1 and lng.startswith(short):
+        return True
     M = max(len(q), len(t))
     if M >= 6 and abs(len(q) - len(t)) <= 1 and rt >= 0.80 \
             and _common_prefix(q, t) >= 0.6 * M:
         return True
     return False
+
+
+def _is_subseq(short: str, full: str) -> bool:
+    """Is `short` a subsequence of `full`? (Tom⊂Thomas, Will⊂William)."""
+    it = iter(full)
+    return all(c in it for c in short)
 
 
 def _match_name(first_q: str, last_q: str, full: str) -> float:
@@ -251,6 +262,7 @@ def _match_name(first_q: str, last_q: str, full: str) -> float:
         or (len(g) == 1 and t.startswith(g))
         or (len(g) > 1 and t.startswith(g[:2]))
         or _ratio(g, t) >= 0.7
+        or (len(g) >= 3 and len(t) <= len(g) + 4 and _is_subseq(g, t))  # Tom⊂Thomas, Will⊂William
         for t in toks)
     return 99.0 if giv else 72.0
 
@@ -286,30 +298,49 @@ def _name_x_code(exact: dict) -> str:
 
 # ── Search-URL building ────────────────────────────────────────────────────── #
 
-def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
+def _build_search_url(fn, ln, place, year, year_range, exact, adv, category=None) -> str:
     """Ancestry /search/ URL — built by hand (spaces are a literal «+»).
     name=First+Middle_Last, birth=YEAR&birth_x=<N>-0-0 (N = ± year range, 0=exact),
     residence=…, father/mother/spouse/sibling/child=… (LISTS), count=50.
-    name_x encodes the slider exactness level (_NAME_X)."""
+    name_x encodes the slider exactness level (_NAME_X).
+    `category` (e.g. «2026_us_a250», «35», «34», «collection:1030») scopes the search
+    to a category/collection page (/search/categories/<code>/ or
+    /search/collections/<id>/) — the SAME params apply, only the base path changes."""
     exact = exact or {}
     adv   = adv or {}
     parts = []
+    base  = SEARCH_URL
+    if category:
+        c = str(category)
+        if c.startswith("collection:"):
+            base = SEARCH_URL + f"collections/{c.split(':', 1)[1]}/"
+        else:
+            base = SEARCH_URL + f"categories/{c}/"
 
     if fn or ln:
         parts.append(("name", f"{_name_part(fn)}_{_name_part(ln)}".strip("_")))
         nx = _name_x_code(exact)
         if nx:
             parts.append(("name_x", nx))
-    if year:
+    _has_birth_ev = any((e.get("type") == "birth") for e in (adv.get("events") or []))
+    if year and not _has_birth_ev:                    # a Birth event overrides the basic year
         y = re.sub(r"\D", "", str(year))[:4]
         if y:
             parts.append(("birth", y))
             n = 1 if year_range is None else int(year_range)
             parts.append(("birth_x", f"{n}-0-0"))     # ±N years (0 = this year)
-    if place:
+    # basic «Place» = residence; emit it ONLY when there is no «Lived In» event
+    # (else the site gets a duplicate residence= — the dated event supersedes it)
+    _has_res_ev = any((e.get("type") == "residence") for e in (adv.get("events") or []))
+    if place and not _has_res_ev:
         parts.append(("residence", _name_part(place)))
-        if exact.get("place"):
-            parts.append(("residence_x", "1"))
+        pc = exact.get("place")                       # «Exact to…» code: 1 / PAS / PC
+        if pc:
+            parts.append(("residence_x", str(pc) if pc is not True else "1"))
+    if adv.get("birth_place"):
+        parts.append(("birthplace", _name_part(adv["birth_place"])))
+        if adv.get("birth_place_exact"):
+            parts.append(("birthplace_x", "1"))
     for rel in ("father", "mother", "spouse", "sibling", "child"):
         for person in adv.get(rel, []) or []:
             rf, rl = person.get("first", ""), person.get("last", "")
@@ -319,18 +350,23 @@ def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
                 if (person.get("first_exact") or person.get("last_exact")
                         or person.get("exact")):
                     parts.append((f"{rel}_x", "1"))
-    # life events (Marriage / Death / Lived-In) — year(+range) and/or place
-    _EV = {"marriage": "marriage", "death": "death", "residence": "residence"}
+    # life events → <key>=<Y-M-D | start---end>_<place> & <key>_x=_<placecode>,
+    # exactly like the category tabs (Any Event = «event»).
+    _EV = {"birth": "birth", "marriage": "marriage", "death": "death",
+           "residence": "residence", "arrival": "arrival", "departure": "departure",
+           "military": "military", "any": "event"}
     for e in adv.get("events", []) or []:
         key = _EV.get(e.get("type", ""))
         if not key:
-            continue                       # «Any Event» param unknown → skip
-        y = re.sub(r"\D", "", str(e.get("year", "")))[:4]
-        if y:
-            parts.append((key, y))
-            parts.append((f"{key}_x", f"{int(e.get('range', 1))}-0-0"))
-        if e.get("place"):
-            parts.append((f"{key}place", _name_part(e["place"])))
+            continue
+        date = str(e.get("date", "")).strip()
+        place = e.get("place", "")
+        if not (date or place):
+            continue
+        parts.append((key, date + (f"_{_name_part(place)}" if place else "")))
+        pc = e.get("place_exact")
+        if pc:
+            parts.append((f"{key}_x", f"_{pc}"))
     if adv.get("keyword"):
         parts.append(("keyword", _name_part(adv["keyword"])))
     g = (adv.get("gender") or "").strip().lower()
@@ -340,9 +376,10 @@ def _build_search_url(fn, ln, place, year, year_range, exact, adv) -> str:
         parts.append(("gender", "f"))
     if adv.get("race"):
         parts.append(("race", _name_part(adv["race"])))
-    parts.append(("count", "50"))                     # 50 results per page
+    if adv.get("collection"):                         # Collection focus → priority=<slug>
+        parts.append(("priority", str(adv["collection"])))
     q = "&".join(f"{k}={quote(v, safe='+_-')}" for k, v in parts)
-    return f"{SEARCH_URL}?{q}" if q else SEARCH_URL
+    return f"{base}?{q}" if q else base
 
 
 # ── Field typing ──────────────────────────────────────────────────────────── #
@@ -371,8 +408,31 @@ async def _type_field(page, sel: str, val: str, label: str, log) -> bool:
 
 # ── 1. SEARCH (built URL — the home form selectors are unreliable) ──────────── #
 
-async def _search(page, fn, ln, place, year, year_range, exact, adv, log) -> str:
-    url = _build_search_url(fn, ln, place, year, year_range, exact, adv)
+def _build_category_url(category, params) -> str:
+    """Assemble a category-search URL from the GUI-built (key, value) params (Alla's
+    live-URL format). «collection:<id>» → /search/collections/<id>/, else
+    /search/categories/<code>/. Keeps Ancestry's literal + _ - . , in values."""
+    c = str(category or "")
+    params = list(params)
+    if c.startswith("collection:"):
+        base = SEARCH_URL + f"collections/{c.split(':', 1)[1]}/"
+    elif c.startswith("catalog:"):        # «All Family Trees in the Card Catalog»
+        base = SEARCH_URL + "collections/catalog/"
+        params = [("category", c.split(":", 1)[1])] + params
+    elif c:
+        base = SEARCH_URL + f"categories/{c}/"
+    else:
+        base = SEARCH_URL
+    q = "&".join(f"{k}={quote(str(v), safe='+_-.,')}" for k, v in params)
+    return f"{base}?{q}" if q else base
+
+
+async def _search(page, fn, ln, place, year, year_range, exact, adv, log,
+                  category=None, category_params=None) -> str:
+    if category_params:
+        url = _build_category_url(category, category_params)
+    else:
+        url = _build_search_url(fn, ln, place, year, year_range, exact, adv, category)
     log(f"  Поиск: {url}")
     await page.goto(url, wait_until="domcontentloaded", timeout=40000)
     await asyncio.sleep(5)
@@ -481,39 +541,46 @@ _COLLECT_JS = r"""() => {
     const out = [], seenRow = new Set(), seenHref = new Set();
     const pats = ["/discoveryui-content/view/", "/imageviewer/",
                   "/family-tree/person/", "recordpid", "/cgi-bin/sse.dll"];
-    const isRec = h => h && pats.some(p => h.toLowerCase().includes(p));
-    const labRe = /\b(Name|Spouse|Birth|Residence|Death|Marriage|Relative)\b/;
+    const recRe = /\/collections\/\d+\/records\/\d+/;     // …/collections/<db>/records/<id>
+    const isRec = h => h && (pats.some(p => h.toLowerCase().includes(p)) || recRe.test(h));
     for (const a of document.querySelectorAll('a[href]')) {
         const href = a.href || '';
         if (!isRec(href) || seenHref.has(href)) continue;
-        // climb to the RESULT ROW (an ancestor carrying labelled fields)
+        // climb to the CARD: nearest ancestor holding «Record information» / the «Name» field
         let row = a, best = null, hops = 0;
-        while (row && hops < 9) {
+        while (row && hops < 12) {
             const t = row.innerText || '';
-            if (labRe.test(t)) best = row;
-            if (best && (best.innerText || '').length > 80) break;
+            if (/record information/i.test(t) || /(^|\n)\s*Name\b/.test(t)) {
+                best = row;
+                if (t.length > 50) break;
+            }
             row = row.parentElement; hops++;
         }
         const cont = best || a;
         if (seenRow.has(cont)) { seenHref.add(href); continue; }
         seenRow.add(cont); seenHref.add(href);
         const text = (cont.innerText || '').trim();
-        // the PERSON name = the value on the line after a «Name» label
+        // PERSON name = the «Name» field value. Ancestry renders the card as a TABLE,
+        // so the label may sit on the SAME line as the value (tab/colon) OR the value
+        // is on the next line — handle both, and never fall back to «View»/«Preview».
         const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
         let name = '';
-        for (let i = 0; i < lines.length - 1; i++)
-            if (/^Name$/i.test(lines[i])) { name = lines[i + 1]; break; }
+        for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(/^name[\s :.\t]+(.{2,})$/i);
+            if (m) { name = m[1]; break; }
+            if (/^name$/i.test(lines[i]) && i + 1 < lines.length) { name = lines[i + 1]; break; }
+        }
+        if (/^(view|preview|record information\.?|name)$/i.test((name || '').trim())) name = '';
         if (!name) name = (a.innerText || '').trim();
         name = (name.split('\n')[0] || '')      // drop a glued «…\nGoodie Family Tree»
                    .replace(/^(Mr|Mrs|Dr|Miss|Mstr)\.?\s+/i, '')
                    .replace(/\[.*?\]/g, '').trim();
-        // collection title (the record's label) = the first labelled line OR
-        // the link text
         let coll = (a.innerText || '').trim();
-        // pick the best record link inside this row
+        // pick the best record link inside this row (the records/<id> URL first)
         const links = [...cont.querySelectorAll('a[href]')]
             .map(x => x.href).filter(isRec);
         const recUrl =
+            links.find(h => recRe.test(h)) ||
             links.find(h => /discoveryui-content\/view/.test(h)) ||
             links.find(h => /family-tree\/person/.test(h)) ||
             links.find(h => /imageviewer/.test(h)) || href;
@@ -541,29 +608,75 @@ async def _collect(page, first_q, last_q, log) -> list:
     return out
 
 
+_PAGE_SIZE_JS = r"""() => {
+    const sel = document.querySelector('select.pagingPer');
+    if (!sel) return 'no-select';
+    if (sel.value === '50') return 'already';
+    if (![...sel.options].some(o => o.value === '50')) return 'no-50';
+    sel.value = '50';
+    sel.dispatchEvent(new Event('change', {bubbles: true}));
+    return 'set';
+}"""
+
+_FIRST_REC_JS = ("() => { const a = document.querySelector('a[href*=\"/records/\"]');"
+                 " return a ? a.href : ''; }")
+
+
+async def _set_page_size_50(page, log):
+    """Set the results page-size dropdown (select.pagingPer) to 50 — like the user
+    does on the site — so each page carries 50 records, not the default 20."""
+    try:
+        r = await page.evaluate(_PAGE_SIZE_JS)
+    except Exception:
+        r = "err"
+    if r == "set":
+        log("  Размер страницы → 50")
+        await asyncio.sleep(4)          # results reload server-side
+
+
+async def _click_next_page(page) -> bool:
+    """Click «Next Page» (button.pagingNext). True only if a NEW page actually
+    loaded (first record link changed) → safe to keep paginating."""
+    try:
+        btn = page.locator(
+            'button.pagingNext, button[aria-label="Next Page"]').first
+        if not await btn.count() or await btn.is_disabled():
+            return False
+        before = await page.evaluate(_FIRST_REC_JS)
+        try:
+            await btn.scroll_into_view_if_needed(timeout=4000)
+            await btn.click(timeout=5000)
+        except Exception:
+            await btn.click(timeout=5000, force=True)
+        for _ in range(20):             # wait up to 10s for the new page
+            await asyncio.sleep(0.5)
+            after = await page.evaluate(_FIRST_REC_JS)
+            if after and after != before:
+                await asyncio.sleep(1)
+                return True
+        return False
+    except Exception:
+        return False
+
+
 async def _collect_all(page, first_q, last_q, base_url, log) -> list:
-    """Walk up to MAX_PAGES result pages (Ancestry paginates with &page=N). The
-    relevant records are top-ranked, so this rarely needs more than 1-2 pages."""
+    """Set the page size to 50, then walk EVERY result page via the site's own
+    «Next Page» button — collecting each — until the last page, a page with no NEW
+    records, or MAX_SCRAPE matches gathered. (Was capped at MAX_PAGES=1 → 20 only.)"""
+    await _set_page_size_50(page, log)
     all_rows, seen = [], set()
-    for pg in range(1, MAX_PAGES + 1):
-        if pg > 1:
-            base = re.sub(r"([?&])page=\d+", r"\1", base_url).rstrip("?&")
-            sep = "&" if "?" in base else "?"
-            nu = f"{base}{sep}page={pg}"
-            try:
-                await page.goto(nu, wait_until="domcontentloaded", timeout=40000)
-                await asyncio.sleep(4)
-            except Exception:
-                break
+    for pg in range(1, _PAGE_CAP + 1):
         rows = await _collect(page, first_q, last_q, log)
         new = [r for r in rows if r["url"] not in seen]
         for r in new:
             seen.add(r["url"])
         all_rows.extend(new)
-        if not new:
+        enough = len([r for r in all_rows if r["score"] >= MIN_MATCH]) >= MAX_SCRAPE
+        if enough or (pg > 1 and not new):
             break
-        if len([r for r in all_rows if r["score"] >= MIN_MATCH]) >= MAX_SCRAPE:
-            break
+        if not await _click_next_page(page):
+            break                       # last page / no pager → stop
+        log(f"  → страница {pg + 1}")
     return all_rows
 
 
@@ -743,18 +856,27 @@ async def _diag(page, log):
     """Dump page state when 0 results — so the real DOM can be inspected from the
     log (live site is anti-bot / login-walled for me)."""
     try:
-        d = await page.evaluate(r"""() => ({
-            url: location.href,
-            title: document.title,
-            anchors: document.querySelectorAll('a[href]').length,
-            recAnchors: [...document.querySelectorAll('a[href]')]
-                .filter(a => /discoveryui-content|imageviewer|family-tree\/person/i
-                    .test(a.href)).length,
-            hasLogin: /log\s*in|sign\s*in/i.test(document.body.innerText||''),
-            sample: [...document.querySelectorAll('a[href]')]
-                .map(a=>a.href).filter(h=>/ancestry\.com/.test(h)).slice(0,12),
-        })""")
-        log(f"  ДИАГНОСТИКА: {json.dumps(d, ensure_ascii=False)[:1200]}")
+        d = await page.evaluate(r"""() => {
+            const A = [...document.querySelectorAll('a[href]')];
+            const rec = h => /discoveryui-content|imageviewer|family-tree\/person|recordpid|cgi-bin\/sse/i.test(h);
+            const nav = h => /searchOrigin|navigation|c\/product|\/dna\/|checkout|messagecenter|support\/s|\/profile\/|family-tree\/tree\/$|^https?:\/\/www\.ancestry\.com\/$/i.test(h);
+            const interesting = A.map(a=>a.href).filter(h=>/ancestry\.com/.test(h) && !nav(h));
+            let card = '';
+            const cand = [...document.querySelectorAll('li,article,div')].find(e => {
+                const t = e.innerText || '';
+                return /Record information|Matching Person/i.test(t) && t.length>20 && t.length<700
+                       && e.querySelectorAll('a[href]').length>0;
+            });
+            if (cand) card = cand.outerHTML.replace(/\s+/g,' ').slice(0,900);
+            return {
+                url: location.href, title: document.title, anchors: A.length,
+                recAnchors: A.filter(a=>rec(a.href)).length,
+                hasLogin: /log\s*in|sign\s*in/i.test(document.body.innerText||''),
+                resultLinks: interesting.slice(0,18),
+                cardHTML: card,
+            };
+        }""")
+        log(f"  ДИАГНОСТИКА: {json.dumps(d, ensure_ascii=False)[:2000]}")
     except Exception as e:
         log(f"  ДИАГНОСТИКА не удалась: {e}")
 
@@ -1326,6 +1448,9 @@ async def run_scraper(
     advanced:      dict|None = None,
     exact:         dict|None = None,
     filters:       dict|None = None,  # {"types":[…], "locations":[…], "dates":[…]}
+    category:      str|None  = None,  # scope to a category/collection tab (URL base)
+    category_params          = None,  # GUI-built (k,v) URL params for a category tab
+    narrow                   = None,  # «Narrow by Category»: [(code, name), …] → drilled passes
     output_format: str       = "both",
     output_folder            = Path("."),
     email:         str|None  = None,
@@ -1367,6 +1492,8 @@ async def run_scraper(
                 qlines.append(f"{rel.capitalize()}: {nm}")
     summary   = {"ok": False}
     file_base = safe_fn(f"ancestry_{qname}") if qname else "ancestry_results"
+    if category:
+        file_base = safe_fn(f"{file_base}_{re.sub(r'[^A-Za-z0-9]+', '_', str(category)).strip('_')}")
     logged_in_ref = [False]
 
     _prog(0, "Запускаю браузер...")
@@ -1400,112 +1527,120 @@ async def run_scraper(
                                      logged_in_ref, log)
             if _done(): return summary
 
-            # 2. SEARCH (built URL, count=50)
-            _prog(20, "Поиск...")
-            search_url = await _search(page, first_names, last_names, place_lived,
-                                       birth_year, year_range, exact, adv, log)
-
-            # 3-5. Per FILTER PASS: collect + scrape + SAVE its OWN document and
-            # its OWN images folder (named by the filter), so every filter is
-            # separable. Passes = cartesian product across areas (see
-            # _filter_passes): the all-checkbox AND a specific child run as
-            # separate passes. No filters → one plain pass.
-            passes   = _filter_passes(filters)
-            fparents = filters.get("parents", {})
-            if len(passes) > 1 or passes[0]:
-                log(f"  Фильтры: {len(passes)} проход(ов) → отдельный документ на каждый")
+            # 2. SEARCH — ONE run per «Narrow by Category» tick (each drills into its
+            # own /categories/<code>/ and writes its OWN document), else one plain run.
             total, saved_docx, last_xlsx = 0, 0, None
-            for pi, p in enumerate(passes, 1):
+            narrow_runs = list(narrow) if narrow else [(category, "")]
+            for _ni, (_cat, _nlabel) in enumerate(narrow_runs, 1):
                 if _done(): break
-                pass_name = _pass_label(p)
-                # record-type (+ decade) → URL path; location → click afterwards
-                url, need_loc = _pass_url(search_url, p, filters.get("codes"))
-                if url is None:
-                    log(f"  → нет кода фильтра для «{pass_name}» — пропускаю "
-                        f"(добавь код категории в config/ancestry.json)")
-                    continue
-                try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-                    await asyncio.sleep(4)
-                except Exception:
-                    pass
-                if pass_name:
-                    _prog(25, f"Проход {pi}/{len(passes)} — фильтр: {pass_name}")
-                if need_loc:
-                    loc = p["location"]
-                    if not await _apply_filter_click(page, loc, log,
-                                                     parent=fparents.get(loc)):
-                        # location didn't apply → would save unfiltered junk → skip
-                        log(f"  → место «{loc}» не применилось — пропускаю проход "
-                            f"«{pass_name}» (без сохранения)")
-                        continue
-                    await asyncio.sleep(2)
+                _prog(20, "Поиск..." +
+                      (f"  [{_nlabel}] ({_ni}/{len(narrow_runs)})" if _nlabel else ""))
+                search_url = await _search(page, first_names, last_names, place_lived,
+                                           birth_year, year_range, exact, adv, log,
+                                           category=_cat, category_params=category_params)
 
-                raw, seen, qual = (await _collect_all(
-                    page, first_names, last_names, page.url, log)), set(), []
-                for r in raw:
-                    if r["score"] >= MIN_MATCH and r["url"] not in seen:
-                        seen.add(r["url"]); qual.append(r)
-                qual = qual[:MAX_SCRAPE]
-                log(f"  Подходящих (≥{MIN_MATCH}%): {len(qual)}")
-
-                suffix    = safe_fn(pass_name) if pass_name else ""
-                pass_imgs = (images_root / suffix) if suffix else images_root
-                pass_recs = []
-                for i, r in enumerate(qual, 1):
+                # 3-5. Per FILTER PASS within this category: collect + scrape + SAVE its
+                # OWN document and images folder (named by category + filter). No filters
+                # → one plain pass. See _filter_passes for the cartesian product.
+                passes   = _filter_passes(filters)
+                fparents = filters.get("parents", {})
+                if len(passes) > 1 or passes[0]:
+                    log(f"  Фильтры: {len(passes)} проход(ов) → отдельный документ на каждый")
+                for pi, p in enumerate(passes, 1):
                     if _done(): break
-                    _prog(25 + int(65 * pi / len(passes)),
-                          f"[проход {pi}] [{i}/{len(qual)}] {r['name'][:50]}...")
-                    det = await _scrape_page(ctx, page, r["url"], r["name"],
-                                             pass_imgs, logged_in_ref,
-                                             email or "", password or "", log)
-                    det["score"] = r["score"]
-                    coll = (r.get("coll") or "").strip()
-                    if (coll and coll.lower() not in ("view", "zoom in", "zoom out")
-                            and not det.get("collection")):
-                        det["collection"] = coll      # "View" link text is junk
-                    pass_recs.append(det)
-                    log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
-
-                # NO merging — one card on the site = one record in Word/Excel. The
-                # only dedup is by exact record URL (the same card collected twice),
-                # done during collection; similar/same-title cards stay SEPARATE.
-
-                if not pass_recs:
-                    if pass_name:
-                        log(f"  (по фильтру «{pass_name}» подходящих записей нет)")
-                    else:
-                        await _diag(page, log)
-                    continue
-
-                # save THIS pass to its own files (the filter is in the name)
-                base   = file_base + (f"__{suffix}" if suffix else "")
-                docx_p = output_folder / f"{base}.docx"
-                xlsx_p = output_folder / f"{base}.xlsx"
-                plines = qlines + ([f"Фильтр: {pass_name}"] if pass_name else [])
-                existing = [p.name for p, want in
-                            ((docx_p, want_docx), (xlsx_p, want_xlsx))
-                            if want and p.exists()]
-                decision = "overwrite"
-                if existing and ask_file_conflict:
+                    pass_name = _pass_label(p)
+                    # record-type (+ decade) → URL path; location → click afterwards
+                    url, need_loc = _pass_url(search_url, p, filters.get("codes"))
+                    if url is None:
+                        log(f"  → нет кода фильтра для «{pass_name}» — пропускаю "
+                            f"(добавь код категории в config/ancestry.json)")
+                        continue
                     try:
-                        decision = (ask_file_conflict(existing) or "overwrite").lower()
+                        await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+                        await asyncio.sleep(4)
                     except Exception:
-                        decision = "overwrite"
-                    log(f"  → {existing} существуют → {decision}")
-                if decision == "skip":
-                    log(f"  → пропуск сохранения «{base}»")
-                    continue
-                append = (decision == "append")
-                if want_docx:
-                    write_docx(docx_p, pass_recs, plines, append=append)
-                    saved_docx += 1
-                    log(f"  Word: {docx_p.name}")
-                if want_xlsx:
-                    write_xlsx(xlsx_p, pass_recs, plines, append=append)
-                    last_xlsx = str(xlsx_p)
-                    log(f"  Excel: {xlsx_p.name}")
-                total += len(pass_recs)
+                        pass
+                    if pass_name:
+                        _prog(25, f"Проход {pi}/{len(passes)} — фильтр: {pass_name}")
+                    if need_loc:
+                        loc = p["location"]
+                        if not await _apply_filter_click(page, loc, log,
+                                                         parent=fparents.get(loc)):
+                            # location didn't apply → would save unfiltered junk → skip
+                            log(f"  → место «{loc}» не применилось — пропускаю проход "
+                                f"«{pass_name}» (без сохранения)")
+                            continue
+                        await asyncio.sleep(2)
+
+                    raw, seen, qual = (await _collect_all(
+                        page, first_names, last_names, page.url, log)), set(), []
+                    for r in raw:
+                        if r["score"] >= MIN_MATCH and r["url"] not in seen:
+                            seen.add(r["url"]); qual.append(r)
+                    qual = qual[:MAX_SCRAPE]
+                    log(f"  Подходящих (≥{MIN_MATCH}%): {len(qual)}")
+
+                    # document / folder suffix = «Narrow category» + filter pass name
+                    combo = "__".join(x for x in
+                                      (safe_fn(_nlabel) if _nlabel else "",
+                                       safe_fn(pass_name) if pass_name else "") if x)
+                    pass_imgs = (images_root / combo) if combo else images_root
+                    pass_recs = []
+                    for i, r in enumerate(qual, 1):
+                        if _done(): break
+                        _prog(25 + int(65 * pi / len(passes)),
+                              f"[проход {pi}] [{i}/{len(qual)}] {r['name'][:50]}...")
+                        det = await _scrape_page(ctx, page, r["url"], r["name"],
+                                                 pass_imgs, logged_in_ref,
+                                                 email or "", password or "", log)
+                        det["score"] = r["score"]
+                        coll = (r.get("coll") or "").strip()
+                        if (coll and coll.lower() not in ("view", "zoom in", "zoom out")
+                                and not det.get("collection")):
+                            det["collection"] = coll      # "View" link text is junk
+                        pass_recs.append(det)
+                        log(f"  ✓  {det.get('title','')[:70]}  ({r['score']}%)")
+
+                    # NO merging — one card on the site = one record in Word/Excel. The
+                    # only dedup is by exact record URL (the same card collected twice),
+                    # done during collection; similar/same-title cards stay SEPARATE.
+
+                    if not pass_recs:
+                        if pass_name or _nlabel:
+                            log(f"  (по «{_nlabel or pass_name}» подходящих записей нет)")
+                        else:
+                            await _diag(page, log)
+                        continue
+
+                    # save THIS pass to its own files (category + filter in the name)
+                    base   = file_base + (f"__{combo}" if combo else "")
+                    docx_p = output_folder / f"{base}.docx"
+                    xlsx_p = output_folder / f"{base}.xlsx"
+                    plines = qlines + ([f"Категория: {_nlabel}"] if _nlabel else []) \
+                                    + ([f"Фильтр: {pass_name}"] if pass_name else [])
+                    existing = [pp.name for pp, want in
+                                ((docx_p, want_docx), (xlsx_p, want_xlsx))
+                                if want and pp.exists()]
+                    decision = "overwrite"
+                    if existing and ask_file_conflict:
+                        try:
+                            decision = (ask_file_conflict(existing) or "overwrite").lower()
+                        except Exception:
+                            decision = "overwrite"
+                        log(f"  → {existing} существуют → {decision}")
+                    if decision == "skip":
+                        log(f"  → пропуск сохранения «{base}»")
+                        continue
+                    append = (decision == "append")
+                    if want_docx:
+                        write_docx(docx_p, pass_recs, plines, append=append)
+                        saved_docx += 1
+                        log(f"  Word: {docx_p.name}")
+                    if want_xlsx:
+                        write_xlsx(xlsx_p, pass_recs, plines, append=append)
+                        last_xlsx = str(xlsx_p)
+                        log(f"  Excel: {xlsx_p.name}")
+                    total += len(pass_recs)
 
             _prog(100, f"Готово — {total} записей в {saved_docx} документ(ах).")
             summary.update({

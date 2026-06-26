@@ -6,6 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="12912a84-f40f-4be8-b84f-be2c2f12bdd8" name="Changes" comment="JewishGen_python 22 June">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/CLAUDE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ancestry_scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/ancestry_scraper.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/ancestry.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/ancestry.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/version.txt" beforeDir="false" afterPath="$PROJECT_DIR$/config/version.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/ancestry.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/ancestry.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
