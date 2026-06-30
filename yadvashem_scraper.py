@@ -489,6 +489,12 @@ async def _extract_record(page, url, images_dir, log, result_name="", dump=None)
                 ntabs = 1
             ntabs = max(1, min(ntabs, 15))
             records = []
+            # The detail page is NOT tab-scoped — _DETAIL_JS reads the WHOLE page, so every
+            # tab returned the SAME fields + scans → «Борис Берка» got 5 identical tables and
+            # the same scans saved 30 times. Dedup scans by URL across the record, and skip a
+            # tab whose field-set is IDENTICAL to one already taken (real distinct documents,
+            # with different fields, are still kept).
+            seen_urls, seen_tab_sigs = set(), set()
             for ti in range(ntabs):
                 if ntabs > 1:
                     try:
@@ -511,8 +517,16 @@ async def _extract_record(page, url, images_dir, log, result_name="", dump=None)
                     pass
                 info = await page.evaluate(_DETAIL_JS, _BAD_IMG)
                 fields = _clean_fields(info.get("pairs", []))
+                sig = tuple(fields)
+                dup_tab = bool(sig) and sig in seen_tab_sigs   # same fields as an earlier tab
+                seen_tab_sigs.add(sig)
+                if dup_tab:                       # a duplicate of an already-saved tab → skip
+                    continue
                 imgs, urls = [], list(info.get("imgs", [])) + list(info.get("docLinks", []))
                 for u in urls[:8]:
+                    if not u or u in seen_urls:    # same scan reached from another tab → skip
+                        continue
+                    seen_urls.add(u)
                     body = await _img_bytes_via_goto(page.context, u, page.url)
                     if _looks_image(body):     # skip misnamed HTML/error pages
                         images_dir.mkdir(parents=True, exist_ok=True)
@@ -672,22 +686,6 @@ async def run_scraper(*,
             _prog(15, "Сбор результатов…")
             recs_meta = await _collect_results(page, log, max_pages, max_records)
             log(f"  Записей: {len(recs_meta)}")
-            # DIAGNOSTIC ONLY (changes nothing): write each result's link so a duplicate
-            # can be diagnosed by record id — same /names/<id> = one record shown twice,
-            # different ids = two separate site records. Send this file to fix it precisely.
-            try:
-                lines = []
-                for di, rm in enumerate(recs_meta, 1):
-                    h = rm.get("href", "")
-                    m = re.search(r"/names/(\d+)", h)
-                    lines.append(f"{di}\tid={m.group(1) if m else '?'}\t"
-                                 f"{rm.get('name', '')}\t{h}")
-                (output_folder / "yadvashem_result_links.txt").write_text(
-                    "\n".join(lines), encoding="utf-8")
-                log(f"  ⚠ ДИАГНОСТИКА: ссылки результатов → "
-                    f"{output_folder / 'yadvashem_result_links.txt'} — пришли мне этот файл")
-            except Exception:
-                pass
             if not recs_meta:
                 _prog(100, "Ничего не найдено (или селекторы результата надо поправить).")
                 summary.update({"ok": True, "n_records": 0})
