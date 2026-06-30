@@ -192,18 +192,14 @@ _COLLECT_JS = r"""() => {
         'a[href*="/names/"]:not([href*="search"]):not([href*="advanced"])');
     links.forEach(a => {
         const href = a.href || '';
-        const m = href.match(/\/names\/(\d+)/);
-        // DEDUP BY RECORD ID, not the full href: one card links to the SAME record
-        // from the name AND the thumbnail with slightly different hrefs (#/query) →
-        // that doubled a person (e.g. «Борис Берка» twice). Same id = one record.
-        if (!m || seen.has(m[1])) return;
-        seen.add(m[1]);
+        if (!/\/names\/\d/.test(href) || seen.has(href)) return;
+        seen.add(href);
         let box = a;
         for (let up = 0; up < 6 && box.parentElement; up++) {
             box = box.parentElement;
             if (norm(box.innerText).length > 30) break;
         }
-        out.push({href, id: m[1], name: norm(a.innerText),
+        out.push({href, name: norm(a.innerText),
                   snippet: norm(box ? box.innerText : '').slice(0, 400)});
     });
     return out;
@@ -222,11 +218,10 @@ async def _collect_results(page, log, max_pages, max_records) -> list:
         new = 0
         for r in rows:
             href = r.get("href", "")
-            rid = r.get("id") or href            # dedup by RECORD ID (same record, two anchors)
-            if not href or rid in seen:
+            if not href or href in seen:
                 continue
-            seen.add(rid)
-            out.append({"name": r.get("name", ""), "href": href, "id": rid,
+            seen.add(href)
+            out.append({"name": r.get("name", ""), "href": href,
                         "snippet": r.get("snippet", "")})
             new += 1
             if len(out) >= max_records:
