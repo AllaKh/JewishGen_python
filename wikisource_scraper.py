@@ -451,9 +451,27 @@ def _stream(url: str, dest: Path):
         return 0, type(e).__name__, None
 
 
+def _sleep_cancellable(seconds: float, should_stop, log) -> bool:
+    """Sleep up to `seconds`, returning True early if should_stop() turns True. Logs a
+    countdown ~every 30s so a long anti-429 wait (Wikimedia sends Retry-After up to ~600s
+    on the huge PDFs) doesn't look like a freeze and Cancel works during it."""
+    end = time.time() + max(0.0, seconds)
+    next_log = time.time() + 30
+    while time.time() < end:
+        if should_stop and should_stop():
+            return True
+        if time.time() >= next_log:
+            log(f"        … ещё ~{int(end - time.time())}с (можно нажать Cancel)")
+            next_log += 30
+        time.sleep(1)
+    return False
+
+
 def _download_file(filename: str, dest: Path, preview: bool, log=print,
-                   max_tries: int = 6) -> int:
+                   max_tries: int = 6, should_stop=None) -> int:
     for attempt in range(max_tries):
+        if should_stop and should_stop():
+            return 0
         if preview:
             url = _imageinfo_thumb(filename, 1024, log) or _file_preview_url(filename, 960)
         else:
@@ -464,8 +482,11 @@ def _download_file(filename: str, dest: Path, preview: bool, log=print,
         if status == "429":
             wait = int(ra) if (ra and str(ra).isdigit()) else min(90, 6 * (2 ** attempt))
             _dl_gap[0] = min(15.0, _dl_gap[0] + 1.5)      # grow the gap, stay polite
-            log(f"      ⏳ 429 — waiting {wait}s, retry {attempt + 1}/{max_tries}…")
-            time.sleep(wait)
+            log(f"      ⏳ 429 (Wikimedia режет массовую закачку больших файлов) — "
+                f"жду {wait}с, попытка {attempt + 1}/{max_tries}…")
+            if _sleep_cancellable(wait, should_stop, log):
+                log("      ⏹ отменено во время ожидания 429")
+                return 0
             continue
         if status == "404" and not preview:               # odd shard or moved file
             alt = _imageinfo_url(filename, log)
@@ -482,7 +503,8 @@ def _download_file(filename: str, dest: Path, preview: bool, log=print,
             log(f"      !! file not found: {filename}")
             return 0
         if attempt < max_tries - 1:                       # transient → brief retry
-            time.sleep(4)
+            if _sleep_cancellable(4, should_stop, log):
+                return 0
             continue
         log(f"      !! couldn't fetch ({status}): {filename}")
         return 0
@@ -644,7 +666,7 @@ async def run_scraper(*,
             recs.append({"label": label, "file": it["file"], "page": page, "path": str(dest)})
             await asyncio.sleep(0)
             continue
-        got = _download_file(it["file"], dest, preview_only, log)
+        got = _download_file(it["file"], dest, preview_only, log, should_stop=_stop)
         rec = {"label": label, "file": it["file"], "page": page,
                "path": str(dest) if got else ""}
         if got:
