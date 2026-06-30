@@ -42,3 +42,5 @@ Output/
 config/app_icon.ico
 packaging/version_info.txt
 *.pfx
+# Per-build hardware-lock list (transient — written by -MachineId, never commit)
+config/machine_lock.txt

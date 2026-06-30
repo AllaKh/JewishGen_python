@@ -23,10 +23,12 @@ if getattr(sys, "frozen", False):
 
 from PySide6.QtWidgets import QApplication
 from gui.launcher import LauncherWindow
+import machine_lock
 
 
 def main():
     app = QApplication(sys.argv)
+    machine_lock.check_or_exit()     # hardware-locked package → refuse to run on other machines
     window = LauncherWindow()
     window.show()
     try:

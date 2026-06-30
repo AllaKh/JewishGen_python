@@ -49,6 +49,7 @@ param(
     [string]$TimestampUrl  = "http://timestamp.digicert.com",
     [string]$SetupPassword = $env:SETUP_PASSWORD,   # per-package install password (prompted if blank)
     [switch]$SelfDestruct,                          # installer deletes itself after a successful install
+    [string]$MachineId     = "",                    # hardware-lock the app to this machine id(s) (comma-separated)
     [switch]$SkipInstaller,
     [switch]$Clean
 )
@@ -104,6 +105,19 @@ Ok "version resource written"
 # version string the running app shows in its footer (bundled via config/)
 Set-Content -Path "config\version.txt" -Value $Version -NoNewline -Encoding utf8
 Ok "config\version.txt = $Version"
+
+# hardware lock (node-lock): if -MachineId is given, bundle the allowed machine id(s) so the
+# packaged app runs ONLY on those machines; otherwise make sure no stale lock file is bundled
+# (an ordinary build must NOT be locked). The whole config/ folder is bundled by the spec.
+$lockFile = "config\machine_lock.txt"
+if ($MachineId) {
+    ($MachineId -split '[,; ]+' | Where-Object { $_ }) -join "`r`n" |
+        Set-Content -Path $lockFile -Encoding utf8
+    Ok "MACHINE-LOCKED build - app will run ONLY on: $MachineId"
+} elseif (Test-Path $lockFile) {
+    Remove-Item $lockFile -Force
+    Warn "removed stale config\machine_lock.txt - this build is NOT machine-locked"
+}
 
 # -- 3. PyInstaller -----------------------------------------------------------
 if ($Clean -and (Test-Path "build")) { Remove-Item "build" -Recurse -Force }
