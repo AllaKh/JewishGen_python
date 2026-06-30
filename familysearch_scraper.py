@@ -1077,7 +1077,7 @@ async def _download_jpg(ctx, page, dest_dir: Path, title: str, log) -> str | Non
 # Require EXACTLY two single-line text children; skip anything wrapping a table.
 _FS_FIELDS_JS = r"""() => {
     const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-    const out = [], seen = new Set();
+    const out = [], seen = new Set(), linksOut = [];
     const BAD = /^(sign in|search|menu|save|print|share|view|home|family ?tree|memories|get involved|help|settings|tree|overview|sources|details|person details|tools|edit|add|learn more|collection information|cite this|attach|report|feedback|about)/i;
     // junk values: the «Learn more … FamilySearch Wiki» line, account chrome, etc.
     const BADV = /(learn more|familysearch wiki|sign in|log ?in|cite this|see all|view all)/i;
@@ -1098,11 +1098,16 @@ _FS_FIELDS_JS = r"""() => {
         if (!k || !v || k === v) continue;
         if (k.includes('\n') || k.length < 2 || k.length >= 45 || v.length >= 300) continue;
         if (!/[A-Za-z]/.test(k) || BAD.test(k) || BADV.test(v) || BADV.test(k)) continue;
+        // keep any REAL inline link in the value (e.g. a related person) clickable
+        const flinks = [...kids[1].querySelectorAll('a[href]')]
+            .map(a => ({t: norm(a.innerText), h: a.href}))
+            .filter(x => x.t && /^https?:/i.test(x.h)
+                    && !/^(view|search|edit|save|print|share|sign in|see all|view all)$/i.test(x.t));
         const key = k.toLowerCase();
         if (seen.has(key)) continue;
-        seen.add(key); out.push([k, v]);
+        seen.add(key); out.push([k, v]); linksOut.push(flinks);
     }
-    return out;
+    return {fields: out, fieldLinks: linksOut};
 }"""
 
 
@@ -1178,13 +1183,27 @@ async def _scrape_page(ctx, page, url: str, name_hint: str,
     # 2 single-line children, label<45/value<300, no nested tables). NOT a loose
     # <table tr> walk: that grabbed the WHOLE «Isidor Sitron person details…NARA)»
     # block as one cell (text_content concatenates) → a glued row.
+    fld = {}
     if not td:
         try:
-            for k, v in (await page.evaluate(_FS_FIELDS_JS)):
-                td.setdefault(k, v)
+            data = await page.evaluate(_FS_FIELDS_JS)
+            fl = data.get("fieldLinks", []) or []
+            for i, pair in enumerate(data.get("fields", []) or []):
+                if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+                    continue
+                k, v = pair
+                if k in td:
+                    continue
+                td[k] = v
+                lks = fl[i] if i < len(fl) else []
+                pairs = [(str(x.get("t", "")), str(x.get("h", "")))
+                         for x in lks if isinstance(x, dict) and x.get("h")]
+                if pairs:
+                    fld[k] = pairs
         except Exception:
             pass
     rec["table_data"] = td
+    rec["field_links"] = fld
 
     # Label for the file name
     img_label = name_hint
@@ -1249,6 +1268,33 @@ def _add_link(para, text, url):
     run.append(t); hl.append(run); para._p.append(hl)
 
 
+def _render_value_cell(cell, value, links):
+    """Value cell: if it carries inline links (a related person etc.), render line-by-line
+    making matched lines clickable; otherwise fall back to set_cell_lines unchanged."""
+    if not links:
+        set_cell_lines(cell, value)
+        return
+    link_map = {}
+    for t, h in links:
+        k = re.sub(r"\s+", " ", str(t)).strip().lower()
+        if k and h:
+            link_map.setdefault(k, h)
+    first = True
+    for ln in str(value).split("\n"):
+        para = cell.paragraphs[0] if first else cell.add_paragraph()
+        first = False
+        txt = re.sub(r"\s+", " ", ln).strip().lower()
+        href = link_map.get(txt)
+        if not href and txt:
+            for k, h in link_map.items():
+                if k and k in txt:
+                    href = h; break
+        if href and ln.strip():
+            _add_link(para, ln, href)
+        else:
+            para.add_run(ln)
+
+
 def _docx_add_record(doc, i, rec):
     """Render ONE record into an open Document (shared by fresh write + append)."""
     title = rec.get("title") or rec.get("name", "—")
@@ -1281,9 +1327,11 @@ def _docx_add_record(doc, i, rec):
         for cell in hdr:
             for run in cell.paragraphs[0].runs:
                 run.bold = True
+        flinks = rec.get("field_links", {})
         for f, v in rows_data:
             r = tbl.add_row().cells
-            r[0].text = f; set_cell_lines(r[1], v)
+            r[0].text = f
+            _render_value_cell(r[1], v, flinks.get(f, []))
 
     doc.add_paragraph("")
 

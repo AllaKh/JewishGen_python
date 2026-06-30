@@ -15,6 +15,12 @@ YOU RUN IT yourself after any code change, simply:
     .\build_installer.ps1 -Version 1.2.0        # set the version
     $env:CODESIGN_PFX = "C:\path\cert.pfx"; $env:CODESIGN_PFX_PASSWORD = "secret"
     .\build_installer.ps1 -Version 1.2.0        # signed build (cert from env)
+    .\build_installer.ps1 -SetupPassword pass1  # password-protected package (else you are prompted)
+
+  Install password: each build asks for (or takes -SetupPassword / $env:SETUP_PASSWORD) a
+  password. When set, the installer is ENCRYPTED and setup will not install without it. Make
+  a new package + new password for each recipient (same for upgrades). True single-use needs
+  online activation; this is per-package protection. Leave blank for an unprotected package.
 
 ONE-TIME PREREQUISITES (see packaging/BUILD.md for details):
   * pip install pyinstaller pillow           (into the project venv)
@@ -36,6 +42,7 @@ param(
     [string]$CertPfx       = $env:CODESIGN_PFX,
     [string]$CertPass      = $env:CODESIGN_PFX_PASSWORD,
     [string]$TimestampUrl  = "http://timestamp.digicert.com",
+    [string]$SetupPassword = $env:SETUP_PASSWORD,   # per-package install password (prompted if blank)
     [switch]$SkipInstaller,
     [switch]$Clean
 )
@@ -161,8 +168,23 @@ if (-not $iscc) {
     }
 }
 if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found. Install from https://jrsoftware.org/isinfo.php (or run with -SkipInstaller for a portable build)." }
+
+# Per-package install password: prompt for a NEW one each build (blank = unprotected).
+# Make a fresh package + password for each recipient; setup will require it AND the payload
+# is encrypted (a wrong password cannot extract the files). Same flow for upgrades.
+if (-not $SetupPassword) {
+    $SetupPassword = Read-Host "Enter a ONE-TIME install password for THIS package (leave blank for no password)"
+}
 Info "Compiling installer with Inno Setup"
-& $iscc "/DMyAppVersion=$Version" "packaging\installer.iss"
+$isccArgs = @("/DMyAppVersion=$Version")
+if ($SetupPassword) {
+    $isccArgs += "/DSetupPassword=$SetupPassword"
+    Ok "installer will be PASSWORD-PROTECTED (encrypted) - remember the password you just set"
+} else {
+    Warn "no install password set - this package installs WITHOUT a password"
+}
+$isccArgs += "packaging\installer.iss"
+& $iscc @isccArgs
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed." }
 $setup = Join-Path $Root "Output\JewishGenealogySearch-Setup-$Version.exe"
 if (-not (Test-Path $setup)) { throw "Installer not produced." }

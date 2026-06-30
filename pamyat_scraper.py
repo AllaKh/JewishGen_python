@@ -306,6 +306,19 @@ async def _fill_by_id(page, fid: str, value: str, log):
         log(f"  !! поле {fid}: {e}")
 
 
+def _place_in(want: str, *texts) -> bool:
+    """True if EVERY word of `want` (the conscription place) appears in the combined
+    text — order-independent, case/space-insensitive. Empty want → always True. Used to
+    DROP people whose record does not actually mention the searched place of conscription
+    (the site's «Дата и место призыва» field does not filter server-side, so «Сталинский
+    РВК» leaked into an «Уманский РВК» search)."""
+    if not want or not str(want).strip():
+        return True
+    hay = re.sub(r"\s+", " ", " ".join(str(t) for t in texts)).lower()
+    words = [w for w in re.sub(r"\s+", " ", str(want)).lower().split() if len(w) > 1]
+    return all(w in hay for w in words) if words else True
+
+
 async def _do_search(page, params, lang, log) -> bool:
     url = f"{_base(lang)}/heroes/?adv_search=y"
     log(f"  → Открываю расширенный поиск: {url}")
@@ -1255,6 +1268,7 @@ async def run_scraper(*,
                 return summary
 
             persons = []
+            want_callup = (params.get("place_conscription") or "").strip()
             n = len(people)
             for i, pr in enumerate(people, 1):
                 if _done():
@@ -1272,6 +1286,15 @@ async def run_scraper(*,
                         await dp.close()
                     if not rec.get("name"):
                         rec["name"] = pr["name"]
+                    # place-of-conscription filter (the site does not enforce it server-side):
+                    # keep only people whose card/snippet actually mentions the searched place.
+                    if want_callup:
+                        hay = (pr.get("snippet", "") + " "
+                               + " ".join(str(v) for _, v in (rec.get("summary") or []))
+                               + " " + str(rec.get("docs") or ""))
+                        if not _place_in(want_callup, hay):
+                            log(f"      → место призыва не «{want_callup}» — пропускаю")
+                            continue
                     persons.append(rec)
                 except Exception as _e:
                     log(f"      !! пропускаю человека ({type(_e).__name__})")

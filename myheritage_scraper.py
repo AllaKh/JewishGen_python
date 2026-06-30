@@ -276,8 +276,8 @@ def _name_relevant(record_name, first_q, last_q):
         return True
     qf = _gname_tokens(first_q)
     if qf:
-        if len(qf[0]) >= 2 and not _stem_match(qf[0], rt[0]):
-            return False                              # first token ≠ «Alexander»
+        if len(qf[0]) >= 2 and not _tok_in(qf[0], rt):
+            return False                              # first name not present ANYWHERE (was positional rt[0])
         for q in qf[1:]:                              # middle initials / names («W»)
             if not _tok_in(q, rt):
                 return False
@@ -2792,7 +2792,7 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
     # "more records"/Geni garbage). Labels are unique enough to scan the page.
     info = await page.evaluate(r"""() => {
         const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-        const res = {name: '', category: '', fields: [], household: '', profile: '', photo: ''};
+        const res = {name: '', category: '', fields: [], fieldLinks: [], household: '', profile: '', photo: ''};
 
         // category line
         let catEl = Array.from(document.querySelectorAll('*')).find(e =>
@@ -2845,7 +2845,7 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
             return norm(c.textContent);
         };
         const seen = new Set();
-        const push = (k, v) => {
+        const push = (k, v, links) => {
             k = norm(k); v = normNL(v);
             // NB: «Родные брат/сестра» can list 12+ people (700+ chars). The old
             // 600-char cap silently DROPPED that whole field for trees with many
@@ -2853,15 +2853,24 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
             // A single record-field cell never legitimately exceeds a few KB.
             if (!k || !v || k === v || v.length > 4000) return;
             const key = k + '=' + v;
-            if (!seen.has(key)) { seen.add(key); res.fields.push([k, v]); }
+            if (!seen.has(key)) {
+                seen.add(key); res.fields.push([k, v]);
+                res.fieldLinks.push(links || []);     // kept ALIGNED with res.fields
+            }
         };
-        // main fields (skip rows whose value holds a sub-table — handled below)
+        // main fields (skip rows whose value holds a sub-table — handled below).
+        // Capture the INLINE links inside the value (family-member profiles in
+        // «Отец/Дети/Родные брат-сестра» etc.) so they become clickable in Word —
+        // the user adds these by hand otherwise. ANY link in the copied value is kept.
         document.querySelectorAll('tr.recordFieldsRow').forEach(tr => {
             const lab = tr.querySelector('.recordFieldLabel');
             const val = tr.querySelector('.recordFieldValue');
             if (!val) return;
             if (val.querySelector('table.multi_table, table.groupTable')) return;
-            push(lab ? norm(lab.textContent) : '', valText(val));
+            const flinks = Array.from(val.querySelectorAll('a[href]'))
+                .map(a => ({t: norm(a.textContent), h: a.href}))
+                .filter(x => x.t && /^https?:/i.test(x.h));
+            push(lab ? norm(lab.textContent) : '', valText(val), flinks);
         });
         // 2-column sub-tables (Перепись: Город|Detroit  Выпуски|T628 …)
         document.querySelectorAll('table.multi_table').forEach(mt => {
@@ -2989,9 +2998,17 @@ async def _detail(page, url, has_cookies, log, card_thumb=""):
     d["source_text"] = _collection_name(url) or dom_src
     d["is_historical"] = bool(info.get("historical"))
     td = {}
-    for pair in info.get("fields", []):
+    flinks_list = info.get("fieldLinks", []) or []
+    d["field_links"] = {}                    # label -> [(link_text, href), …]
+    for i, pair in enumerate(info.get("fields", [])):
         if isinstance(pair, list) and len(pair) == 2:
-            td[str(pair[0])] = str(pair[1])
+            label = str(pair[0])
+            td[label] = str(pair[1])
+            lks = flinks_list[i] if i < len(flinks_list) else []
+            pairs = [(str(x.get("t", "")), str(x.get("h", "")))
+                     for x in lks if isinstance(x, dict) and x.get("h")]
+            if pairs:
+                d["field_links"][label] = pairs
     # «Источник» section (family-tree submitter: «Michael Neyman · 2 819 профилей
     # в 4 деревьях · 806 фото · Обновлено …») — add it as a table field too.
     submitter = (info.get("submitter") or "").strip()
@@ -3268,6 +3285,33 @@ def _hyperlink(para, text, url):
     run.append(t); hl.append(run); para._p.append(hl)
 
 
+def _render_value_cell(cell, value, links):
+    """Render a field value into a table cell — one line per paragraph — turning any
+    line whose text matches an inline link (family-member profile etc.) into a clickable
+    hyperlink, so EVERY link present in the copied value survives into Word (not just the
+    record link)."""
+    link_map = {}
+    for t, h in (links or []):
+        k = re.sub(r"\s+", " ", str(t)).strip().lower()
+        if k and h:
+            link_map.setdefault(k, h)
+    lines = str(value).split("\n")
+    first = True
+    for ln in lines:
+        para = cell.paragraphs[0] if first else cell.add_paragraph()
+        first = False
+        txt = re.sub(r"\s+", " ", ln).strip().lower()
+        href = link_map.get(txt)
+        if not href and txt:                 # fallback: a link's text is inside the line
+            for k, h in link_map.items():
+                if k and k in txt:
+                    href = h; break
+        if href and ln.strip():
+            _hyperlink(para, ln, href)
+        else:
+            para.add_run(ln)
+
+
 # The collection / source name is carried in the record URL, e.g.
 #   /research/collection-10970/новая-зеландия-индекс-записей-о-рождении-1840-1901?…
 # → «новая зеландия индекс записей о рождении 1840 1901». Far better than the
@@ -3328,7 +3372,7 @@ def _docx_add_record(doc, i, rec):
     if rec.get("url"):
         p3 = doc.add_paragraph()
         p3.add_run("Ссылка: ").bold = True
-        _hyperlink(p3, "Открыть запись на MyHeritage", rec["url"])
+        _hyperlink(p3, "Посмотреть запись", rec["url"])
     td = rec.get("table_data", {})
     if td:
         tbl = doc.add_table(rows=1, cols=2)
@@ -3338,15 +3382,12 @@ def _docx_add_record(doc, i, rec):
         for cell in hdr:
             for run in cell.paragraphs[0].runs:
                 run.bold = True
+        flinks = rec.get("field_links", {})
         for f, v in td.items():
             row = tbl.add_row().cells
             row[0].text = str(f)
-            # multi-line value (family members — one person per line)
-            lines = str(v).split("\n")
-            row[1].text = lines[0] if lines else ""
-            for extra in lines[1:]:
-                if extra.strip():
-                    row[1].add_paragraph(extra)
+            # value (family members one per line) — keep inline links clickable
+            _render_value_cell(row[1], v, flinks.get(str(f), []))
     # Household members («Домочадцы») — render as a real table (Родство | Имя |
     # Возраст …), the user wanted it tabular, not a text blob. Blank line BEFORE
     # the «Домочадцы:» label (separate it from the fields table), not after.

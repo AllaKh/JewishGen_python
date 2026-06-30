@@ -467,6 +467,7 @@ async def run_scraper(
     surnames:      list        = None,   # list of surnames to search
     keywords:      list        = None,   # filter keywords
     keyword_mode:  str         = "OR",
+    advanced:      bool        = False,  # site's «расширенный поиск» checkbox (name="add")
     output_format: str         = "both",
     output_folder              = Path("."),
     log                        = print,
@@ -539,8 +540,13 @@ async def run_scraper(
 
         try:
             # ── 1. Search ──────────────────────────────────────────── #
-            # AIS Skarb: GET param name="q" (from HTML: <input type="text" name="q">)
-            search_url = BASE_URL + "?" + urlencode({"q": query})
+            # AIS Skarb: GET param name="q" (from HTML: <input type="text" name="q">).
+            # «Расширенный поиск» = checkbox name="add" → sent as add=on only when ticked
+            # (an unticked checkbox is not submitted — same convention as the site form).
+            _params = {"q": query}
+            if advanced:
+                _params["add"] = "on"
+            search_url = BASE_URL + "?" + urlencode(_params)
             _prog(5, f"Поиск: {query}")
             await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(2)

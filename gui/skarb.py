@@ -118,6 +118,10 @@ class SkarbApp(QMainWindow):
             "Шендерович\nШур\nЛевин")
         self.f_surnames.setFixedHeight(90)
         sl.addWidget(self.f_surnames)
+        self.f_advanced = QCheckBox("Advanced search (site's «расширенный поиск»)")
+        self.f_advanced.setToolTip("Tick the site's «расширенный поиск» box (name=\"add\") "
+                                   "for a broader search.")
+        sl.addWidget(self.f_advanced)
         outer.addWidget(sg)
 
         # Filters
@@ -208,6 +212,7 @@ class SkarbApp(QMainWindow):
             "surnames":      self._surnames(),
             "keywords":      self._keywords(),
             "keyword_mode":  "AND" if self.rb_and.isChecked() else "OR",
+            "advanced":      self.f_advanced.isChecked(),
             "output_format": self._fmt(),
             "output_folder": Path(self.f_folder.text().strip() or _DEF_DIR),
             "log":           print,
@@ -278,6 +283,7 @@ class SkarbApp(QMainWindow):
                 "kw1": self.f_kw1.text(), "kw2": self.f_kw2.text(),
                 "kw3": self.f_kw3.text(),
                 "mode_and":      self.rb_and.isChecked(),
+                "advanced":      self.f_advanced.isChecked(),
                 "fmt_docx":      self.f_docx.isChecked(),
                 "fmt_xlsx":      self.f_xlsx.isChecked(),
                 "output_folder": self.f_folder.text(),
@@ -299,6 +305,7 @@ class SkarbApp(QMainWindow):
             self.f_kw3.setText(d.get("kw3", ""))
             if d.get("mode_and"):
                 self.rb_and.setChecked(True)
+            self.f_advanced.setChecked(d.get("advanced", False))
             self.f_docx.setChecked(d.get("fmt_docx", True))
             self.f_xlsx.setChecked(d.get("fmt_xlsx", True))
             if d.get("output_folder"):

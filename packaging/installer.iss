@@ -31,6 +31,14 @@ Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Per-package install password (optional). Compile with /DSetupPassword=THEPASS to require
+; it: setup prompts for the password AND the payload is encrypted, so a wrong password cannot
+; extract the files. Each build with a different password = a different protected package.
+; (A truly single-use password needs online activation; this is per-package protection.)
+#ifdef SetupPassword
+Password={#SetupPassword}
+Encryption=yes
+#endif
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"

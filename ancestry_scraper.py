@@ -1019,17 +1019,17 @@ async def _download_image(ctx, page, dest_dir: Path, title: str, log) -> str | N
 _FIELDS_JS = r"""() => {
     const norm = s => (s||'').replace(/ /g,' ')
         .replace(/[ \t]+/g,' ').replace(/\n+/g,'\n').trim();
-    const out = [], seen = new Set();
+    const out = [], seen = new Set(), linksOut = [];
     const BAD = /^(sign in|search|menu|save|print|share|detail|source|view|home|trees|memories|dna|add or update|report a problem|listen|suggested|neighbo|ancestry|cart|help|browse|filter|hint|collection|коллекц|zoom|увелич|уменьш|national archives|provided in|see all|rotate|tools|nothing to see|stay tuned|notifications?|provide alternate|submit alternate|add your own|attach\b|reason\b|apply\b|edit\b)/i;
     const BADVAL = /^(view|zoom in|zoom out|rotate|provided in association|stay tuned|we.?ll let you know|nothing to see|choose|cancel|close|apply|submit|attach)\b/i;
-    const push = (k, v) => {
+    const push = (k, v, links) => {
         k = norm(k).replace(/[: ]+$/,''); v = norm(v);
         if (!k || !v || k === v || k.length > 45 || v.length > 800) return;
         if (k.includes('\n') || !/[A-Za-z]/.test(k) || BAD.test(k)) return;
         if (BADVAL.test(v)) return;        // viewer chrome value (View / Zoom…)
         const key = k.toLowerCase();
         if (seen.has(key)) return;
-        seen.add(key); out.push([k, v]);
+        seen.add(key); out.push([k, v]); linksOut.push(links || []);  // ALIGNED with out
     };
     // Clean «label | value» rows only. A whole <table> (thead+tbody) or a wide
     // multi-column row must NOT be captured as one glued pair → require exactly 2
@@ -1059,7 +1059,15 @@ _FIELDS_JS = r"""() => {
             const names = [...new Set(links.filter(x => !JUNK.test(x)))];
             if (names.length >= 2) v = names.join('\n');
         }
-        push(k, v);
+        // keep the REAL inline links (person/record profiles) so they stay clickable in
+        // Word — drop Ancestry helper links (Search / View / Zoom / More …). ANY real
+        // link present in the value is kept (user rule: copy every link in the text).
+        const JUNKL = /^(more|see all|see less|show more|view|search|edit|save|print|share|zoom in|zoom out|zoom|\+?\s*\d+\s*more)$/i;
+        const flinks = [...kids[1].querySelectorAll('a[href]')]
+            .map(a => ({t: norm(a.innerText), h: a.href}))
+            .filter(x => x.t && /^https?:/i.test(x.h) && !JUNKL.test(x.t)
+                    && !/\/search\//i.test(x.h) && !/^javascript:/i.test(x.h));
+        push(k, v, flinks);
     }
     // Household members table — ONLY a real «Household Members» table, short cells
     // (a wide neighbours table would glue, so reject long cells).
@@ -1080,8 +1088,27 @@ _FIELDS_JS = r"""() => {
     const h1 = document.querySelector('h1');
     if (h1 && h1.nextElementSibling)
         sub = norm(h1.nextElementSibling.innerText).split('\n')[0];
-    return {fields: out, household: household, subtitle: sub};
+    return {fields: out, fieldLinks: linksOut, household: household, subtitle: sub};
 }"""
+
+
+def _merge_fields(td: dict, fld: dict, data: dict):
+    """Merge _FIELDS_JS output into td (label→value) and fld (label→[(text,href)]),
+    keeping the FIRST source per label plus its aligned inline links (so a person link
+    inside «Others in Record» / a relative field survives into Word)."""
+    fl = data.get("fieldLinks", []) or []
+    for i, pair in enumerate(data.get("fields", []) or []):
+        if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+            continue
+        k, v = pair
+        if k in td:
+            continue
+        td[k] = v
+        lks = fl[i] if i < len(fl) else []
+        pairs = [(str(x.get("t", "")), str(x.get("h", "")))
+                 for x in lks if isinstance(x, dict) and x.get("h")]
+        if pairs:
+            fld[k] = pairs
 
 
 def _detail_url(u: str):
@@ -1140,9 +1167,8 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
             data = await page.evaluate(_FIELDS_JS)
         except Exception:
             data = {"fields": [], "household": [], "subtitle": ""}
-    td = {}
-    for k, v in data.get("fields", []):
-        td.setdefault(k, v)
+    td, fld = {}, {}
+    _merge_fields(td, fld, data)
     rec["household"] = data.get("household", []) or []
     rec["subtitle"]  = data.get("subtitle", "") or ""
 
@@ -1167,8 +1193,7 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
                 await pg.goto(durl, wait_until="domcontentloaded", timeout=40000)
                 await asyncio.sleep(3)
                 d2 = await pg.evaluate(_FIELDS_JS)
-                for k, v in d2.get("fields", []):
-                    td.setdefault(k, v)
+                _merge_fields(td, fld, d2)
                 if not rec["household"]:
                     rec["household"] = d2.get("household", []) or []
                 if not rec["subtitle"]:
@@ -1193,8 +1218,7 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
                     await pg.goto(href, wait_until="domcontentloaded", timeout=40000)
                     await asyncio.sleep(3)
                     d2 = await pg.evaluate(_FIELDS_JS)
-                    for k, v in d2.get("fields", []):
-                        td.setdefault(k, v)
+                    _merge_fields(td, fld, d2)
                     if not rec["household"]:
                         rec["household"] = d2.get("household", []) or []
                     if not rec["subtitle"]:
@@ -1206,6 +1230,7 @@ async def _scrape_page(ctx, page, url, name_hint, images_root,
         except Exception as e:
             log(f"    !! print-страница: {type(e).__name__}")
     rec["table_data"] = td
+    rec["field_links"] = fld
 
     label = rec["title"] or name_hint
     img_dir = images_root / safe_fn(label)
@@ -1257,6 +1282,34 @@ def _add_link(para, text, url):
     run.append(t); hl.append(run); para._p.append(hl)
 
 
+def _render_value_cell(cell, value, links):
+    """Value cell: if it carries inline links (person/record profiles inside a field like
+    «Others in Record»), render line-by-line and make matched lines clickable; otherwise
+    fall back to set_cell_lines unchanged (no regression for plain values)."""
+    if not links:
+        set_cell_lines(cell, value)
+        return
+    link_map = {}
+    for t, h in links:
+        k = re.sub(r"\s+", " ", str(t)).strip().lower()
+        if k and h:
+            link_map.setdefault(k, h)
+    first = True
+    for ln in str(value).split("\n"):
+        para = cell.paragraphs[0] if first else cell.add_paragraph()
+        first = False
+        txt = re.sub(r"\s+", " ", ln).strip().lower()
+        href = link_map.get(txt)
+        if not href and txt:                 # a link's text is contained in the line
+            for k, h in link_map.items():
+                if k and k in txt:
+                    href = h; break
+        if href and ln.strip():
+            _add_link(para, ln, href)
+        else:
+            para.add_run(ln)
+
+
 def _docx_add_record(doc, i, rec):
     title = rec.get("title") or rec.get("name", "—")
     doc.add_heading(f"{i}. {title}", level=2)
@@ -1286,9 +1339,11 @@ def _docx_add_record(doc, i, rec):
         for cell in hdr:
             for run in cell.paragraphs[0].runs:
                 run.bold = True
+        flinks = rec.get("field_links", {})
         for f, v in rows:
             r = tbl.add_row().cells
-            r[0].text = f; set_cell_lines(r[1], v)
+            r[0].text = f
+            _render_value_cell(r[1], v, flinks.get(f, []))
     doc.add_paragraph("")
 
     # Household members table
