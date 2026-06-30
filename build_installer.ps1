@@ -16,11 +16,16 @@ YOU RUN IT yourself after any code change, simply:
     $env:CODESIGN_PFX = "C:\path\cert.pfx"; $env:CODESIGN_PFX_PASSWORD = "secret"
     .\build_installer.ps1 -Version 1.2.0        # signed build (cert from env)
     .\build_installer.ps1 -SetupPassword pass1  # password-protected package (else you are prompted)
+    .\build_installer.ps1 -SetupPassword pass1 -SelfDestruct   # one-time: deletes itself after install
 
   Install password: each build asks for (or takes -SetupPassword / $env:SETUP_PASSWORD) a
   password. When set, the installer is ENCRYPTED and setup will not install without it. Make
   a new package + new password for each recipient (same for upgrades). True single-use needs
   online activation; this is per-package protection. Leave blank for an unprotected package.
+
+  -SelfDestruct: after a SUCCESSFUL install the setup .exe deletes itself, so the same file
+  (and its password) cannot be used a second time. Offline deterrent only - a copy made
+  before running still works, and it cannot stop installing on a different machine.
 
 ONE-TIME PREREQUISITES (see packaging/BUILD.md for details):
   * pip install pyinstaller pillow           (into the project venv)
@@ -43,6 +48,7 @@ param(
     [string]$CertPass      = $env:CODESIGN_PFX_PASSWORD,
     [string]$TimestampUrl  = "http://timestamp.digicert.com",
     [string]$SetupPassword = $env:SETUP_PASSWORD,   # per-package install password (prompted if blank)
+    [switch]$SelfDestruct,                          # installer deletes itself after a successful install
     [switch]$SkipInstaller,
     [switch]$Clean
 )
@@ -182,6 +188,10 @@ if ($SetupPassword) {
     Ok "installer will be PASSWORD-PROTECTED (encrypted) - remember the password you just set"
 } else {
     Warn "no install password set - this package installs WITHOUT a password"
+}
+if ($SelfDestruct) {
+    $isccArgs += "/DSelfDestruct=1"
+    Ok "ONE-TIME package: the installer will delete itself after a successful install"
 }
 $isccArgs += "packaging\installer.iss"
 & $iscc @isccArgs

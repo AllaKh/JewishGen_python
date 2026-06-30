@@ -58,3 +58,30 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: deskto
 
 [Run]
 Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+
+; One-time package (optional): compile with /DSelfDestruct=1 so that, AFTER a successful
+; install, the setup .exe deletes itself and cannot be run a second time. This is an OFFLINE
+; deterrent only: a copy made BEFORE running still works, and it cannot block installing on a
+; different machine. Combine with /DSetupPassword=... to make a password-protected package
+; that is consumed by its first successful install.
+#ifdef SelfDestruct
+[Code]
+var
+  InstallDone: Boolean;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssDone then
+    InstallDone := True;
+end;
+
+procedure DeinitializeSetup();
+var
+  ResultCode: Integer;
+begin
+  if InstallDone then
+    Exec(ExpandConstant('{cmd}'),
+      '/C ping 127.0.0.1 -n 3 >nul & del /f /q "' + ExpandConstant('{srcexe}') + '"',
+      '', SW_HIDE, ewNoWait, ResultCode);
+end;
+#endif
