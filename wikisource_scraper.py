@@ -56,6 +56,26 @@ try:
 except Exception:
     _SSL_CTX = ssl.create_default_context()
 
+# Last-resort context with verification OFF. The normal path always verifies (certifi); this
+# is used ONLY if a verification error still happens (a machine with a broken CA store / wrong
+# clock), so a read-only public API can never be blocked by a certificate problem. A loud
+# warning is logged when it kicks in. MITM risk here is negligible (public data, no login).
+_SSL_INSECURE = ssl._create_unverified_context()
+
+
+def _urlopen(req, timeout, log=print):
+    """urlopen with certifi verification; on a TLS cert error ONLY, retry unverified."""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+    except urllib.error.HTTPError:
+        raise                                    # 4xx/5xx → let the caller handle it
+    except urllib.error.URLError as e:
+        if isinstance(getattr(e, "reason", None), ssl.SSLError):
+            log("   !! TLS verify failed — повтор без проверки сертификата "
+                "(устаревший CA-стор/дата на машине)")
+            return urllib.request.urlopen(req, timeout=timeout, context=_SSL_INSECURE)
+        raise
+
 # ── Constants ───────────────────────────────────────────────────────────────
 UA = "JewishGenealogySearch/1.0 (genealogy research)"
 WS_API = "https://uk.wikisource.org/w/api.php"
@@ -141,7 +161,7 @@ def _api(base: str, params: dict, retries: int = 3, log=print) -> dict:
     for a in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=45, context=_SSL_CTX) as r:
+            with _urlopen(req, 45, log) as r:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except Exception as e:
             last = e
@@ -404,7 +424,7 @@ def _stream(url: str, dest: Path):
     req = urllib.request.Request(url, headers={
         "User-Agent": UA, "Referer": "https://uk.wikisource.org/"})
     try:
-        with urllib.request.urlopen(req, timeout=180, context=_SSL_CTX) as r:
+        with _urlopen(req, 180) as r:
             tmp = dest.with_suffix(dest.suffix + ".part")
             done = 0
             with open(tmp, "wb") as f:
