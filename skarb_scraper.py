@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 from docx_util import set_cell_lines, add_page_numbers
-from urllib.parse import urljoin, urlencode, quote
+from urllib.parse import urljoin, urlencode
 
 if getattr(sys, "frozen", False):
     bd = Path(sys.executable).resolve().parent / "ms-playwright"

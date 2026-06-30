@@ -1485,13 +1485,9 @@ _JS_EXTRACT = r"""
         g.cells.forEach(function(c) { if (c && c.tagName === 'TH') n++; });
         if (n > thCount) { thCount = n; thRow = g.tr; }
     });
-    var debug = {columnsHTML: [], firstRowHTML: []};
     if (thRow) {
         var cells = trToCells.get(thRow) || [];
         columns = cells.map(function(c) { return c ? jg.getCellSegments(c) : []; });
-        debug.columnsHTML = cells.slice(0, 12).map(function(c) {
-            return c ? c.outerHTML.slice(0, 500) : '<covered/>';
-        });
     }
 
     // ── noise filter ──────────────────────────────────────────────────── //
@@ -1594,11 +1590,6 @@ _JS_EXTRACT = r"""
         if (seenKeys.has(rowKey)) return;
         seenKeys.add(rowKey);
 
-        if (!matched.length) {
-            debug.firstRowHTML = g.cells.slice(0, 12).map(function(c) {
-                return c ? c.outerHTML.slice(0, 500) : '<covered/>';
-            });
-        }
         matched.push(cellsSegs);
     });
 
@@ -1619,7 +1610,6 @@ _JS_EXTRACT = r"""
         headerLines: headerLines,
         columns: columns,
         rows: matched,
-        debug: debug,
         totalLeafRows: leafTrs.length,
         totalDataRows: dataGrid.length,
     };
@@ -1734,11 +1724,6 @@ async def follow_next_pages(page, keywords, acc, keyword_mode="OR",
             if not acc["headerLines"]:
                 acc["headerLines"] = result["headerLines"]
                 acc["columns"]     = result["columns"]
-                dbg = result.get("debug") or {}
-                if dbg.get("columnsHTML"):
-                    print("    --- DEBUG: first <th> ---")
-                    for ht in dbg["columnsHTML"][:2]:
-                        print("      " + ht.replace("\n", " "))
 
             new_rows = 0
             for row in result["rows"]:

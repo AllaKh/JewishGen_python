@@ -9,11 +9,10 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QTextEdit, QPushButton, QCheckBox,
     QFileDialog, QProgressBar, QMessageBox,
-    QApplication, QGroupBox, QRadioButton, QButtonGroup,
+    QApplication, QGroupBox, QRadioButton,
 )
-from PySide6.QtCore import QThread, Signal, Qt
-from PySide6.QtGui import QPixmap
-from gui._app_icon import app_icon, app_version, make_footer, make_header, make_cancel_button, autosave_path
+from PySide6.QtCore import QThread, Signal
+from gui._app_icon import app_icon, make_footer, make_header, make_cancel_button, autosave_path
 
 _HERE   = Path(__file__).resolve().parent
 _ROOT   = _HERE.parent

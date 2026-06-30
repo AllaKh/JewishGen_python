@@ -23,9 +23,9 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QToolButton,
     QFileDialog, QProgressBar, QMessageBox,
     QApplication, QGroupBox, QFrame, QGridLayout, QScrollArea, QTabWidget, QTabBar, QListWidget,
-    QSizePolicy, QMenu, QToolButton, QRadioButton, QButtonGroup, QWidgetAction,
+    QMenu, QToolButton, QRadioButton, QButtonGroup, QWidgetAction,
 )
-from gui._app_icon import app_icon, app_version, make_footer, make_header, make_cancel_button, autosave_path, clamp_on_screen
+from gui._app_icon import app_icon, make_footer, make_header, make_cancel_button, autosave_path, clamp_on_screen
 from PySide6.QtCore import QThread, Signal, Qt, QByteArray, QEvent, QTimer, QRegularExpression
 from PySide6.QtGui import QIcon, QStandardItem, QStandardItemModel, QRegularExpressionValidator
 
