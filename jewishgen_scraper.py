@@ -404,7 +404,7 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
 
     # Add a «Сохранённый файл» column with the exact download path(s) per row.
     if row_files:
-        columns = list(columns) + ["Сохранённый файл"]
+        columns = list(columns) + ["Saved file"]   # English to match the site's headers
         rows = [list(r) + ["\n".join(row_files.get(i, []))]
                 for i, r in enumerate(rows)]
 
@@ -483,30 +483,55 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
                     maxword = max(maxword, len(tok))
         return maxline, maxword
 
-    CW = 0.105                                # inches per character (slightly generous)
+    # HARD floor for EVERY column = its longest WORD + cell padding, so a word is NEVER
+    # split (the «More» column was 0.48" → «More» broke). The first-4 reach their whole
+    # LINE width only from the SPARE width (so they don't over-demand and trigger a
+    # uniform shrink that starves the small columns). PAD covers Word's ~0.16" cell
+    # margins so even a 4-letter word fits without wrapping.
+    CW, PAD = 0.105, 0.22
     first_n = min(4, ncols)
-    min_in, extra_wt = [], []
+    min_in, want_in, extra_wt = [], [], []
     for j in range(ncols):
         ml, mw = _col_metrics(j)
         is_last = j >= max(first_n, ncols - 2)
+        if is_last:                           # archive ref / saved-scan path (a path is one
+            word = min(mw, 12) * CW + PAD     #   long «word» → may break, lowest priority)
+        else:
+            word = min(mw, 22) * CW + PAD     # real words (names) must fit whole
+        word = max(0.45, word)
         if j < first_n:                       # place / surname / given / date
-            m = min(ml, 30) * CW + 0.20       # fit the WHOLE value, no wrap
-            extra_wt.append(0.0)              # already full width → no bonus
-        elif is_last:                         # archive ref / saved-scan path
-            m = min(mw, 20) * CW + 0.12       # just enough not to split a word
-            extra_wt.append(0.3)              # lowest priority for the spare width
-        else:                                 # relationships — wrap, never split a word
-            m = min(mw, 20) * CW + 0.12
-            extra_wt.append(float(min(ml, 40)))
-        min_in.append(max(0.5, m))
+            min_in.append(word)
+            want_in.append(min(ml, 30) * CW + PAD)   # would like the whole line on one row
+            extra_wt.append(3.0)                     # top priority for spare width
+        elif is_last:
+            min_in.append(word)
+            want_in.append(word)                     # stay minimal
+            extra_wt.append(0.4)
+        else:                                 # relationships — roomy but may wrap (no split)
+            min_in.append(word)
+            want_in.append(min(ml, 26) * CW + PAD)
+            extra_wt.append(1.5)
+    want_in = [max(want_in[j], min_in[j]) for j in range(ncols)]
 
     sum_min = sum(min_in)
-    if sum_min >= usable_in:                  # too tight → scale to fit (degenerate)
+    if sum_min >= usable_in:                  # cannot fit even all words → scale (last resort)
         widths = [m * usable_in / sum_min for m in min_in]
     else:
+        widths = list(min_in)
         spare = usable_in - sum_min
-        sw = sum(extra_wt) or 1.0
-        widths = [min_in[j] + spare * extra_wt[j] / sw for j in range(ncols)]
+        gaps = [want_in[j] - min_in[j] for j in range(ncols)]
+        wsum = sum(extra_wt[j] for j in range(ncols) if gaps[j] > 0.001)
+        if wsum > 0:
+            for j in range(ncols):
+                if gaps[j] > 0.001:
+                    widths[j] += min(gaps[j], spare * extra_wt[j] / wsum)
+        # leftover (columns capped at their want) → spread to first-4 + relationships
+        leftover = usable_in - sum(widths)
+        grow = [j for j in range(ncols)
+                if j < first_n or not (j >= max(first_n, ncols - 2))]
+        if leftover > 0.01 and grow:
+            for j in grow:
+                widths[j] += leftover / len(grow)
 
     table.autofit = False
     table.allow_autofit = False
@@ -661,7 +686,7 @@ def write_xlsx_all(out_path, databases, query_lines):
         # Add a «Сохранённый файл» column with the exact download path(s) per row.
         row_files = db.get("row_files") or {}
         if row_files:
-            columns = list(columns) + ["Сохранённый файл"]
+            columns = list(columns) + ["Saved file"]   # English to match the site's headers
             rows = [list(r) + ["\n".join(row_files.get(i, []))]
                     for i, r in enumerate(rows)]
 
