@@ -645,13 +645,14 @@ async def _grab_doc_scans(page, images_dir, base, rec, log):
     #btnSaveImage (catch the download); if that fails, download the largest
     displayed image via the browser. Move pages with td.to-right-arrow."""
     images_dir.mkdir(parents=True, exist_ok=True)
-    # how many pages does the document have?
+    # how many pages does the document have? Save ONLY the landing page + the next
+    # one (2 max) — even if the document has a huge tail of extra pages (user rule).
     pages = 1
     try:
         t = await page.evaluate(
             "() => { const m=(document.body.innerText||'').match(/из\\s*(\\d+)/);"
             " return m ? m[1] : '1'; }")
-        pages = max(1, min(int(t), 20))
+        pages = max(1, min(int(t), 2))
     except Exception:
         pages = 1
 

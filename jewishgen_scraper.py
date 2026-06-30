@@ -44,6 +44,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, Mm, Inches
 from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn
 from docx_util import add_page_numbers
 
 # Fix Playwright browser path inside PyInstaller bundle
@@ -454,24 +455,72 @@ def write_database_docx(out_path, db_name, header_lines, columns, rows, query_li
             cell_val = row[j] if j < len(row) else ""
             _set_cell_lines(table.rows[start_row + i].cells[j], cell_lines(cell_val))
 
-    # ── fit the columns to the page ──────────────────────────────────────────
-    # Word auto-sizing let the table run to ~11.45" (wider than the 11.3" usable
-    # landscape-A4 area) and made one column hog the width. Set explicit widths,
-    # proportional to each column's longest content (capped so no column dominates),
-    # summing to the usable width.
+    # ── fit the columns to the page (user PRIORITY rule) ─────────────────────
+    # The FIRST FOUR columns (place / surname / given name / date) MUST fit their
+    # value on ONE line — never wrapped to the next. Relationship columns (family &
+    # revision lists) MAY wrap, but a WORD is never split. Archive ref and the
+    # saved-scan path are LOWEST priority — kept just wide enough not to split a word
+    # (a long path has no spaces, so it may still break — acceptable). Allocation:
+    # a per-column minimum (first-4 = whole longest LINE; the rest = longest WORD)
+    # plus the remaining page width handed to the wrap-able middle columns.
     usable_in = (297 - 5 - 5) / 25.4          # landscape A4 minus 5 mm margins
-    weights = []
+
+    def _col_metrics(j):
+        """(longest single LINE, longest single WORD) in chars over header+cells."""
+        maxline, maxword = 1, 1
+        cells = ([columns[j]] if j < len(columns) else []) + \
+                [r[j] for r in rows if j < len(r)]
+        for c in cells:
+            for ln in cell_lines(c):
+                if isinstance(ln, str):
+                    t = ln
+                elif isinstance(ln, list):
+                    t = "".join(s.get("t", "") for s in ln if isinstance(s, dict))
+                else:
+                    t = str(ln)
+                maxline = max(maxline, len(t))
+                for tok in t.split():
+                    maxword = max(maxword, len(tok))
+        return maxline, maxword
+
+    CW = 0.105                                # inches per character (slightly generous)
+    first_n = min(4, ncols)
+    min_in, extra_wt = [], []
     for j in range(ncols):
-        longest = len(cell_text(columns[j])) if j < len(columns) else 4
-        for r in rows:
-            if j < len(r):
-                longest = max(longest, len(cell_text(r[j])))
-        weights.append(min(max(longest, 4), 32))   # clamp 4..32 chars
-    total_w = sum(weights) or ncols
+        ml, mw = _col_metrics(j)
+        is_last = j >= max(first_n, ncols - 2)
+        if j < first_n:                       # place / surname / given / date
+            m = min(ml, 30) * CW + 0.20       # fit the WHOLE value, no wrap
+            extra_wt.append(0.0)              # already full width → no bonus
+        elif is_last:                         # archive ref / saved-scan path
+            m = min(mw, 20) * CW + 0.12       # just enough not to split a word
+            extra_wt.append(0.3)              # lowest priority for the spare width
+        else:                                 # relationships — wrap, never split a word
+            m = min(mw, 20) * CW + 0.12
+            extra_wt.append(float(min(ml, 40)))
+        min_in.append(max(0.5, m))
+
+    sum_min = sum(min_in)
+    if sum_min >= usable_in:                  # too tight → scale to fit (degenerate)
+        widths = [m * usable_in / sum_min for m in min_in]
+    else:
+        spare = usable_in - sum_min
+        sw = sum(extra_wt) or 1.0
+        widths = [min_in[j] + spare * extra_wt[j] / sw for j in range(ncols)]
+
     table.autofit = False
     table.allow_autofit = False
+    # Word's FIXED layout sizes columns from the tblGrid <w:gridCol> widths — NOT the
+    # per-cell tcW. add_table writes EQUAL gridCols, so the per-cell widths set below
+    # were being ignored (every column came out the same → first columns wrapped). Set
+    # the gridCol widths to our computed values, then mirror them to each cell.
+    grid = table._tbl.find(qn("w:tblGrid"))
+    gridcols = grid.findall(qn("w:gridCol")) if grid is not None else []
     for j, col in enumerate(table.columns):
-        w = Inches(usable_in * weights[j] / total_w)
+        twips = max(1, int(widths[j] * 1440))
+        if j < len(gridcols):
+            gridcols[j].set(qn("w:w"), str(twips))
+        w = Inches(widths[j])
         for cell in col.cells:
             cell.width = w
 

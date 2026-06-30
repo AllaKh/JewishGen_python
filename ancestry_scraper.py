@@ -1611,6 +1611,15 @@ async def run_scraper(
                         else:
                             await _diag(page, log)
                         continue
+                    # Skip writing a file whose every record is contentless (matched by
+                    # name but the detail page had NO fields / household / image) — that
+                    # is the «file saved with an EMPTY table» the user hit.
+                    if not any(r.get("table_data") or r.get("household")
+                               or r.get("images") or r.get("thumb_bytes")
+                               for r in pass_recs):
+                        log(f"  (только пустые карточки по «{_nlabel or pass_name or 'поиску'}» "
+                            f"— файл не сохранён)")
+                        continue
 
                     # save THIS pass to its own files (category + filter in the name)
                     base   = file_base + (f"__{combo}" if combo else "")

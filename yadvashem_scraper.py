@@ -399,6 +399,19 @@ def _clean_text(txt: str) -> str:
 async def _img_bytes_via_goto(context, url, referer) -> bytes:
     if not url or not url.startswith("http"):
         return b""
+    # 1) APIRequest — shares the context's session cookies AND follows redirects, so a
+    #    DIRECT image URL (the YV scan/photo) comes back as real bytes. This is the
+    #    reliable path; the page-goto below is only a fallback for bytes that exist
+    #    solely after a real navigation.
+    try:
+        r = await context.request.get(url, headers={"referer": referer or ""},
+                                      timeout=20000)
+        if r.ok:
+            body = await r.body()
+            if body and len(body) > 500:
+                return body
+    except Exception:
+        pass
     p = await context.new_page()
     try:
         try:
@@ -408,7 +421,7 @@ async def _img_bytes_via_goto(context, url, referer) -> bytes:
         resp = await p.goto(url, timeout=20000, wait_until="commit")
         if resp and resp.ok:
             body = await resp.body()
-            if body and len(body) > 2000:
+            if body and len(body) > 500:
                 return body
     except Exception:
         pass
@@ -434,7 +447,24 @@ _REC_CLICK_JS = r"""(i) => {
 }"""
 
 
-async def _extract_record(page, url, images_dir, log, result_name=""):
+async def _dump_yv(page, out_dir, info, log):
+    """When a record yields 0 documents, dump the detail HTML + the candidate image/doc
+    URLs so the exact scan selector can be fixed (the site is not reachable from dev)."""
+    try:
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "yadvashem_detail_sample.html").write_text(
+            await page.content(), encoding="utf-8")
+        cand = ("IMGS:\n" + "\n".join(info.get("imgs", []) or []) +
+                "\n\nDOCLINKS:\n" + "\n".join(info.get("docLinks", []) or []))
+        (out / "yadvashem_candidates.txt").write_text(cand, encoding="utf-8")
+        log(f"      ⚠ ДАМП (документов 0): {out / 'yadvashem_detail_sample.html'} "
+            f"+ yadvashem_candidates.txt — пришли мне эти файлы")
+    except Exception:
+        pass
+
+
+async def _extract_record(page, url, images_dir, log, result_name="", dump=None):
     rec = {"name": "", "url": url, "records": []}
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -500,6 +530,9 @@ async def _extract_record(page, url, images_dir, log, result_name=""):
             nf = sum(len(r["fields"]) for r in records)
             nd = sum(len(r["images"]) for r in records)
             rec["records"] = records
+            if dump and nd == 0:           # first record came back with NO scans → dump once
+                await _dump_yv(page, dump, info, log)
+                dump = None
             if nf or nd:
                 log(f"      вкладок: {len(records)}, полей: {nf}, документов: {nd}")
                 break
@@ -655,7 +688,8 @@ async def run_scraper(*,
                     dp = await ctx.new_page()
                     try:
                         rec = await _extract_record(dp, rm["href"], images_dir, log,
-                                                    result_name=rm["name"])
+                                                    result_name=rm["name"],
+                                                    dump=(output_folder if i == 1 else None))
                     finally:
                         await dp.close()
                     if not rec.get("name"):

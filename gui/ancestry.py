@@ -272,14 +272,14 @@ except Exception:
     _CAT_COLLECTIONS = {}
 
 class _StretchTabBar(QTabBar):
-    """Tabs STRETCH to fill the WHOLE bar width (flush to the window's right edge),
-    keeping each tab's proportions. setExpanding(True) is ignored once a stylesheet
-    styles QTabBar::tab, so the spare width is distributed here. The available width
-    is CACHED from resizeEvent (the bar's real, settled width — the QTabWidget already
-    stretches the bar to its full width) so there is no size-hint timing lag."""
+    """EVERY tab is the SAME width — the bar width split evenly across the tabs, floored
+    at the widest label so no text is clipped. The width is IDENTICAL for every index and
+    does NOT depend on which tab is selected, so switching tabs never reflows the bar
+    (no "jumping tabs"). A small remainder gap on the right is left as-is — the window
+    keeps its margin (no flush-to-edge over-fill)."""
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        self.updateGeometry()                 # re-lay-out tabs to the new width
+        self.updateGeometry()                 # re-lay-out tabs to the new (settled) width
 
     def tabSizeHint(self, index):
         sz = super().tabSizeHint(index)
@@ -287,14 +287,17 @@ class _StretchTabBar(QTabBar):
         if n <= 0:
             return sz
         naturals = [super(_StretchTabBar, self).tabSizeHint(i).width() for i in range(n)]
-        natural = sum(naturals)
-        # the bar's own width LAGS while it grows; the parent QTabWidget already holds
-        # the full target width → take the larger so the bar stretches the whole way.
-        p = self.parentWidget()
-        avail = max(self.width(), p.width() if p else 0) + 4    # +4 = fill flush to the bar edge
-        if avail > natural > 0:               # spread spare width evenly (+1 to the first few = EXACT fill)
-            extra = avail - natural
-            sz.setWidth(naturals[index] + extra // n + (1 if index < extra % n else 0))
+        widest = max(naturals) if naturals else sz.width()
+        # Basis = the TOP-LEVEL WINDOW width (capped by the screen), NOT the bar's/parent's
+        # own width. Reading the parent feeds back into its own size hint → tabs inflate
+        # without bound. The window width is fixed by _fit/the screen, so no feedback loop.
+        win = self.window()
+        basis = win.width() if (win is not None and win.width() > 0) else self.width()
+        avail = max(0, basis - 48)            # window minus side margins / scroll chrome
+        # equal split, but never narrower than the widest label. Same value for ALL
+        # indices → no per-tab variation → no jump on select.
+        w = max(avail // n, widest)
+        sz.setWidth(w)
         return sz
 
 
@@ -339,7 +342,7 @@ QGroupBox#narrowBox{background:#eef5e2;}
 QTabBar::tab{background:#e3ecd6;color:#5a7030;padding:5px 9px;margin-right:1px;
   border:1px solid #b7cfa0;border-bottom:none;
   border-top-left-radius:6px;border-top-right-radius:6px;}
-QTabBar::tab:selected{background:#cfe0b5;color:#3c5618;font-weight:bold;}
+QTabBar::tab:selected{background:#cfe0b5;color:#2f4612;}  /* NO bold → label width is selection-independent → tabs don't jump on switch */
 QTabBar::tab:hover{background:#dcebc8;}
 """
 
@@ -1109,7 +1112,7 @@ class AncestryApp(QMainWindow):
         _ol.addWidget(self._content_scroll, 1)
         root = QWidget(); self._content_scroll.setWidget(root)
         self._outer = QVBoxLayout(root)
-        self._outer.setContentsMargins(4, 12, 4, 12)     # tabs reach (almost) the window edge
+        self._outer.setContentsMargins(18, 12, 18, 12)   # keep a right/left field (no flush-to-edge)
         self._outer.setSpacing(8)
 
         self._outer.addLayout(
@@ -1781,16 +1784,11 @@ class AncestryApp(QMainWindow):
         self.resize(w, min(hint, scr.height() - 48))
         self.setMaximumHeight(scr.height() - 48)
         clamp_on_screen(self)                            # keep on-screen after the resize
-        # FORCE the tab bar to the QTabWidget's full width so the tabs stretch flush to
-        # the right edge (Qt caches the bar geometry and won't re-stretch on a re-resize
-        # — which _fit does on open — unless the width is set explicitly).
+        # Nudge the bar to re-lay-out its equal-width tabs at the settled width —
+        # updateGeometry ONLY, never setFixedWidth (forcing a fixed width fights the bar
+        # on every tab switch → the "jumping tabs"). Equal widths are selection-stable.
         if tabs is not None:
-            QTimer.singleShot(0, self._stretch_tabbar)
-
-    def _stretch_tabbar(self):
-        tabs = getattr(self, "_tabs", None)
-        if tabs is not None and tabs.width() > 0:
-            tabs.tabBar().setFixedWidth(tabs.width())
+            QTimer.singleShot(0, lambda: tabs.tabBar().updateGeometry())
 
     # ── Autosave ──────────────────────────────────────────────────────────── #
     def _static_widgets(self) -> list:
