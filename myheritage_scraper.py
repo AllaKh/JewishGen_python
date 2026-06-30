@@ -1080,16 +1080,17 @@ async def _login(page, login_url, has_cookies,
 
     if not email_visible:
         log("  !! Поле e-mail не найдено (другая форма, напр. ивритская) — перехожу на ручной вход.")
-        try:
-            # writable even in a PACKAGED install (Path(__file__).parent is read-only
-            # under Program Files → the dump silently failed there before)
-            dump_dir = user_data_dir()
-            await page.screenshot(path=str(dump_dir / "debug_login.png"), full_page=True)
-            (dump_dir / "debug_login.html").write_text(
-                await page.content(), encoding="utf-8")
-            log(f"     Дамп формы → {dump_dir}\\debug_login.html (+ .png) — пришли мне, поправлю селекторы")
-        except Exception:
-            pass
+        if os.environ.get("JGS_DEBUG"):     # diagnostic dump of the login form, opt-in
+            try:
+                # writable even in a PACKAGED install (Path(__file__).parent is read-only
+                # under Program Files → the dump silently failed there before)
+                dump_dir = user_data_dir()
+                await page.screenshot(path=str(dump_dir / "debug_login.png"), full_page=True)
+                (dump_dir / "debug_login.html").write_text(
+                    await page.content(), encoding="utf-8")
+                log(f"     Дамп формы → {dump_dir}\\debug_login.html (+ .png) — пришли мне, поправлю селекторы")
+            except Exception:
+                pass
         return await _wait_manual_login(page, log)
 
     # Step 4: fill form

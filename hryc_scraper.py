@@ -12,7 +12,7 @@ R.S[i].Chk/.Id source toggles + R.Page + the option flags) and walk every page.
 For now results are plain lists → Word + Excel. Opening/saving the actual
 documents needs a paid account and will be added later.
 """
-import sys, re, json, time, asyncio, base64, hashlib
+import sys, os, re, json, time, asyncio, base64, hashlib
 import html as _html
 from pathlib import Path
 from urllib import parse as _up
@@ -529,7 +529,7 @@ async def _open_document(page, url, images_dir, base, dump, log, seen_hashes=Non
     except Exception as e:
         log(f"    !! документ не открылся: {e}")
         return saved, text
-    if dump is not False:
+    if dump is not False and os.environ.get("JGS_DEBUG"):   # diagnostic dump, opt-in
         try:
             (Path(dump) / "hryc_document_sample.html").write_text(
                 await page.content(), encoding="utf-8")
@@ -659,7 +659,7 @@ async def run_scraper(
                 if pno == 1:
                     await _wait_if_captcha(page, log)    # search may trigger «я не робот»
                 html = await page.content()
-                if pno == 1:
+                if pno == 1 and os.environ.get("JGS_DEBUG"):   # diagnostic dump, opt-in
                     try:
                         (output_folder / "hryc_last_results.html").write_text(
                             html, encoding="utf-8")

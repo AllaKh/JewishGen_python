@@ -20,6 +20,7 @@ NEVER crash on a broken/empty page: every record is wrapped in try/except.
 
 import asyncio
 import io
+import os
 import re
 import sys
 import time
@@ -449,7 +450,10 @@ _REC_CLICK_JS = r"""(i) => {
 
 async def _dump_yv(page, out_dir, info, log):
     """When a record yields 0 documents, dump the detail HTML + the candidate image/doc
-    URLs so the exact scan selector can be fixed (the site is not reachable from dev)."""
+    URLs so the exact scan selector can be fixed (the site is not reachable from dev).
+    OFF by default — set the JGS_DEBUG env var to write the dump when troubleshooting."""
+    if not os.environ.get("JGS_DEBUG"):
+        return
     try:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)

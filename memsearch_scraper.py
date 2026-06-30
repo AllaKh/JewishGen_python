@@ -23,6 +23,7 @@ No login required.
 
 import asyncio
 import io
+import os
 import re
 import sys
 from pathlib import Path
@@ -731,7 +732,7 @@ async def _open_card(ctx, page, idx: int, images_dir: Path, log, dump_dir=None):
     np = None
     same_tab = False
 
-    if dump_dir is not None:
+    if dump_dir is not None and os.environ.get("JGS_DEBUG"):   # diagnostic dump, opt-in
         try:
             html = await page.evaluate(
                 "(i) => { const c = document.querySelector('[data-pw-card=\"'+i+'\"]');"
