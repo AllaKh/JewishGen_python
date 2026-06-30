@@ -672,6 +672,22 @@ async def run_scraper(*,
             _prog(15, "Сбор результатов…")
             recs_meta = await _collect_results(page, log, max_pages, max_records)
             log(f"  Записей: {len(recs_meta)}")
+            # DIAGNOSTIC ONLY (changes nothing): write each result's link so a duplicate
+            # can be diagnosed by record id — same /names/<id> = one record shown twice,
+            # different ids = two separate site records. Send this file to fix it precisely.
+            try:
+                lines = []
+                for di, rm in enumerate(recs_meta, 1):
+                    h = rm.get("href", "")
+                    m = re.search(r"/names/(\d+)", h)
+                    lines.append(f"{di}\tid={m.group(1) if m else '?'}\t"
+                                 f"{rm.get('name', '')}\t{h}")
+                (output_folder / "yadvashem_result_links.txt").write_text(
+                    "\n".join(lines), encoding="utf-8")
+                log(f"  ⚠ ДИАГНОСТИКА: ссылки результатов → "
+                    f"{output_folder / 'yadvashem_result_links.txt'} — пришли мне этот файл")
+            except Exception:
+                pass
             if not recs_meta:
                 _prog(100, "Ничего не найдено (или селекторы результата надо поправить).")
                 summary.update({"ok": True, "n_records": 0})
