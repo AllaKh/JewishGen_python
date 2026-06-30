@@ -25,6 +25,7 @@ what was downloaded is written.
 import urllib.request
 import urllib.parse
 import urllib.error
+import ssl
 import json
 import hashlib
 import re
@@ -43,6 +44,17 @@ except Exception:
     _DOCX_OK = False
 
 from docx_util import add_page_numbers
+
+# This is the only urllib-based scraper (no browser). Python's CA bundle on the user's
+# machine is stale → Wikimedia's chain failed with «certificate has expired». Use certifi's
+# up-to-date Mozilla root bundle for every HTTPS call (the browser-based scrapers don't hit
+# this because Chromium ships its own current roots). Fall back to the default context if
+# certifi is somehow absent.
+try:
+    import certifi
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CTX = ssl.create_default_context()
 
 # ── Constants ───────────────────────────────────────────────────────────────
 UA = "JewishGenealogySearch/1.0 (genealogy research)"
@@ -129,7 +141,7 @@ def _api(base: str, params: dict, retries: int = 3, log=print) -> dict:
     for a in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=45) as r:
+            with urllib.request.urlopen(req, timeout=45, context=_SSL_CTX) as r:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except Exception as e:
             last = e
@@ -392,7 +404,7 @@ def _stream(url: str, dest: Path):
     req = urllib.request.Request(url, headers={
         "User-Agent": UA, "Referer": "https://uk.wikisource.org/"})
     try:
-        with urllib.request.urlopen(req, timeout=180) as r:
+        with urllib.request.urlopen(req, timeout=180, context=_SSL_CTX) as r:
             tmp = dest.with_suffix(dest.suffix + ".part")
             done = 0
             with open(tmp, "wb") as f:

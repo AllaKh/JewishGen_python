@@ -541,6 +541,7 @@ no_viewport=True, accept_downloads=True
 
 ### Сайт ДОСТУПЕН напрямую (в отличие от yadvashem/mil.ru)
 - Wikimedia НЕ блокируется ни Chrome MCP, ни WebFetch, ни `urllib` с моей машины → DOM/структуру беру сам через **MediaWiki action API**. Это первый скрапер **без браузера** (urllib + API), Playwright не нужен.
+- **TLS: использовать набор корней `certifi`, НЕ системный** (`_SSL_CTX = ssl.create_default_context(cafile=certifi.where())`, фолбэк на дефолт). У пользователя `urllib` падал `CERTIFICATE_VERIFY_FAILED: certificate has expired` — устаревший CA-стор ОС/Python, цепочка Wikimedia читалась через просроченный корень. Браузерные скраперы не страдают (Chromium со своими свежими корнями). Контекст прокинут в ОБА `urlopen` (`_api` и `_stream`). `certifi` — в `requirements.txt` И в spec (`collect_all("certifi")` → `cacert.pem` в пакет), иначе frozen-сборка не найдёт bundle.
 - Namespaces uk.wikisource: **Архів = 116, Індекс = 252** (НЕ 104/106 — те «Сторінка»).
 
 ### Дерево «Архів:Єврейське містечко»

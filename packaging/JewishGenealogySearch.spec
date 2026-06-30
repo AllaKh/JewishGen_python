@@ -46,11 +46,16 @@ for f in glob.glob(_p("*.py")):
 pw_datas, pw_bins, pw_hidden = collect_all("playwright")
 hidden += pw_hidden
 
+# ── certifi: ship its up-to-date CA bundle (cacert.pem) so the urllib-based Wikisource
+#    scraper can verify Wikimedia's TLS — the OS CA store on the user's machine is stale. ──
+cf_datas, cf_bins, cf_hidden = collect_all("certifi")
+hidden += cf_hidden
+
 a = Analysis(
     [_p("JewishGenealogySearch.py")],
     pathex=[ROOT],
-    binaries=pw_bins,
-    datas=datas + pw_datas,
+    binaries=pw_bins + cf_bins,
+    datas=datas + pw_datas + cf_datas,
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],
